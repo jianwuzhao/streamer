@@ -285,4 +285,76 @@ CREATE TABLE IF NOT EXISTS gift_ack (
 );
 `,
   },
+  {
+    version: 6,
+    name: '006_retrieval_index',
+    sql: `
+CREATE TABLE IF NOT EXISTS graph_nodes (
+  node_id     TEXT PRIMARY KEY,
+  kind        TEXT NOT NULL CHECK (kind IN ('memory','skill','scene','game','event','viewer_profile','claim')),
+  ref         TEXT NOT NULL DEFAULT '',
+  character_id TEXT NOT NULL,
+  scene       TEXT NOT NULL DEFAULT '',
+  viewer_key  TEXT,
+  label       TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_graph_nodes_scope ON graph_nodes(character_id, scene);
+
+CREATE TABLE IF NOT EXISTS graph_edges (
+  edge_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+  src         TEXT NOT NULL,
+  dst         TEXT NOT NULL,
+  relation    TEXT NOT NULL CHECK (relation IN ('supports','contradicts','derived_from','supersedes','applies_to','used_in','preference_for')),
+  weight      REAL NOT NULL DEFAULT 1,
+  valid_from  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  valid_until TEXT,
+  extractor   TEXT NOT NULL DEFAULT '',
+  review_status TEXT NOT NULL CHECK (review_status IN ('candidate','verified')),
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_src ON graph_edges(src);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_dst ON graph_edges(dst);
+
+CREATE TABLE IF NOT EXISTS vector_chunks (
+  chunk_id     TEXT PRIMARY KEY,
+  kind         TEXT NOT NULL CHECK (kind IN ('memory','skill')),
+  ref          TEXT NOT NULL,
+  text         TEXT NOT NULL,
+  character_id TEXT NOT NULL,
+  namespace    TEXT NOT NULL,
+  scene        TEXT NOT NULL DEFAULT '',
+  viewer_key   TEXT,
+  embedding    TEXT NOT NULL,
+  embedding_model_revision TEXT NOT NULL,
+  index_generation INTEGER NOT NULL,
+  document_revision INTEGER NOT NULL DEFAULT 1,
+  expires_at   TEXT,
+  revoked      INTEGER NOT NULL DEFAULT 0,
+  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_vector_scope ON vector_chunks(character_id, kind, revoked);
+
+CREATE TABLE IF NOT EXISTS index_generations (
+  generation   INTEGER PRIMARY KEY,
+  embedding_model_revision TEXT NOT NULL,
+  status       TEXT NOT NULL CHECK (status IN ('building','active','retired')),
+  event_cursor INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  activated_at TEXT,
+  retired_at   TEXT
+);
+
+CREATE TABLE IF NOT EXISTS index_outbox (
+  op_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  generation INTEGER NOT NULL,
+  op         TEXT NOT NULL CHECK (op IN ('upsert','delete')),
+  kind       TEXT NOT NULL,
+  ref        TEXT NOT NULL,
+  status     TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','done','failed')),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  processed_at TEXT
+);
+`,
+  },
 ]

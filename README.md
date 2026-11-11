@@ -11,12 +11,13 @@
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 0.3.0 | 2026-11-11 | 阶段 C（检索优化）：BM25/向量/图谱三路召回、RRF 融合与重排、实时复检、token 预算截断、索引 generation 迁移与墓碑即时过滤、向量路降级、评测与消融（Recall@5/nDCG@5/延迟分位）；`runtime.retrieve` 实装；累计 115 项测试 |
 | 0.2.0 | 2026-11-11 | 阶段 B（完整数据层）：L2/L4 记忆生命周期与矛盾处理、全量观众画像（伪名化身份/字段版本链/删除墓碑）、技能库（manifest/受控执行/示例技能包）、反馈状态机、礼物幂等账本与合并答谢；累计 103 项测试 |
 | 0.1.0 | 2026-11-11 | 阶段 A（基础与资源）：插件骨架、统一配置、SQLite 存储基座、感知/黑板、本地优先路由、模型适配器、资源仲裁、政策授权骨架；70 项测试 |
 
-## 当前状态（阶段 A、B 已完成）
+## 当前状态（阶段 A、B、C 已完成）
 
-按方案 §20.1 的 A–G 七阶段逐步交付。**当前完成阶段 A（基础与资源）与阶段 B（完整数据层）**：
+按方案 §20.1 的 A–G 七阶段逐步交付。**当前完成阶段 A（基础与资源）、B（完整数据层）与 C（检索优化）**：
 
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
@@ -28,20 +29,21 @@
 | 模型适配器（§3.1/§4.3） | ✅ | Ollama（超时/不可达映射原因码、能力探测）、OpenAI 兼容云端（预算硬闸门）、固定降级模板 |
 | 资源仲裁（§3.2） | ✅ | 1s 采样环、优先级排序、训练准入 `free_vram ≥ peak + reserve`（探测不可用 fail-safe） |
 | 政策授权骨架（§11.1） | ✅ | PolicyDecision 签发/校验、payloadHash 绑定、治理 epoch、TTL、fail-closed |
-| LearningRuntime | ✅ A+B 范围 | `ingest`/`answer`/`updateProfile`/`proposeCognition` 实装；C/D/E 接口显式 `NotImplementedError` |
 | L2/L4 记忆（§5） | ✅ | 独立证据判定（同簇/同账号/同源派生不计数）、生命周期 proposed→active→challenged/superseded、查询时过期、修订血缘保留、保守矛盾检测（双方 challenged 不呈现为事实） |
 | 全量观众画像（§6） | ✅ | HMAC 伪名化身份键（昵称变化不换身份/跨平台不合并）、字段版本链（value/来源/置信/用途/TTL）、可重放聚合、观众纠错覆盖推测、删除墓碑+传播状态（未建成系统如实标注）、画像隔离读取、退出个性化 |
 | 技能库（§7） | ✅ | manifest zod 校验、版本不可覆盖、生命周期逐级推进、权限扩张拒晋级、受控执行（active 实时检查/权限/schema/幂等/后置条件/技能 fallback）、包目录加载与播种（示例 `skill-packages/gift-ack-phrase`） |
 | 反馈（§10.1） | ✅ | 归因记录（无目标→片段级）、received→verifying→resolved/insufficient_evidence 状态机、隐私投诉立即升级、按回复定位 |
 | 礼物账本与答谢（§10.2） | ✅ | (platform,event_id) 幂等、连击按累计数算增量（重复/乱序不重复累加）、退款抵消记录不删历史、未验证如实标记、合并答谢（30s/10s/6s、危险昵称不点名、本地模板不调模型） |
+| 三路检索（§8） | ✅ | BM25（中文 bigram）+ 向量（目标机 Qwen3-Embedding-0.6B via Ollama；测试桩语义映射）+ 图谱（逐跳作用域校验/2 跳/50 节点/高出度截断）；RRF 融合、证据质量与多样性重排、实时复检（challenged/过期/撤销不注入）、记忆 top-3 + 技能 top-2 + token 预算截断；索引 outbox 幂等消费、generation 迁移（building→active 原子切换）、墓碑即时过滤、向量路损坏降级词法并显式标记；评测 harness（Recall@5/nDCG@5/p50/p95）与三路消融 |
+| LearningRuntime | ✅ A+B+C 范围 | `ingest`/`answer`/`updateProfile`/`proposeCognition`/`retrieve` 实装；D/E 接口显式 `NotImplementedError` |
 
-**未完成（后续阶段）**：C 检索（BM25/向量/图谱/融合/索引迁移）→ D 训练（Python worker）→ E 发布/固化 → F 产品入口（Web UI、抖音规则包）→ G 整体验收。
+**未完成（后续阶段）**：D 训练（Python worker：QLoRA 分时窗口/检查点/GGUF 导出）→ E 发布/固化 → F 产品入口（Web UI、抖音规则包）→ G 整体验收。
 
 ## 开发
 
 ```bash
 pnpm install
-pnpm test        # 103 个单元/契约测试（node:test，零额外依赖）
+pnpm test        # 115 个单元/契约测试（node:test，零额外依赖）
 pnpm typecheck   # tsc --noEmit（strict + exactOptionalPropertyTypes）
 pnpm build       # tsdown → lib/index.js（ESM，宿主插件规范）
 ```
@@ -53,7 +55,7 @@ pnpm build       # tsdown → lib/index.js（ESM，宿主插件规范）
 ```text
 config/default.yaml        # §18 配置草案初值（mode: shadow）
 src/
-  index.ts / runtime.ts    # 插件入口 / LearningRuntime（A：ingest+answer；B：画像+认知候选）
+  index.ts / runtime.ts    # 插件入口 / LearningRuntime（A：ingest+answer；B：画像+认知候选；C：retrieve）
   config.ts / types.ts     # zod 配置 schema / §17 领域契约
   storage/                 # db、migrations（001–005）、outbox、publish
   perception/              # envelope、dedup（去重+迟到窗口）
@@ -67,11 +69,13 @@ src/
   skills/                  # 注册表、受控执行器、包加载、schema 校验
   feedback/                # 反馈归因与纠错状态机
   gifts/                   # 幂等账本（连击/退款）、合并答谢
+  retrieval/               # BM25、embedding、向量库、图谱、索引器、三路融合、评测
   testing/                 # 测试公共设施
 skill-packages/            # 技能包目录（示例：gift-ack-phrase）
 training-worker/           # 阶段 D：Python 训练进程（占位）
 docs/                      # §25 文档集（随阶段补齐）
-evals/ policy-packs/ installer/   # 后续阶段
+evals/                     # 评测数据集与结果（harness 在 src/retrieval/eval.ts）
+policy-packs/ installer/   # 后续阶段
 ```
 
 ## 关键运行语义（已实现并测试）

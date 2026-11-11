@@ -33,8 +33,11 @@ test('插件装配：配置加载 → 迁移 → 恢复 → 各组件就绪', as
     const r2 = plugin.runtime.ingest(env)
     assert.equal((await r1).duplicate, false)
     assert.equal((await r2).duplicate, true)
-    // 阶段 A 未实现接口显式声明边界
-    assert.throws(() => plugin.runtime.retrieve({ text: 'x', sessionId: 's', characterId: 'dafeiyu' }), NotImplementedError)
+    // 阶段 C 起已实装的接口正常工作；D/E 接口仍显式声明边界
+    assert.throws(() => plugin.runtime.trainSlice({ runId: 'r', decision: null as never }), NotImplementedError)
+    const bundle = await plugin.runtime.retrieve({ text: '种田', sessionId: 'sess-1', characterId: 'dafeiyu' })
+    assert.ok(Array.isArray(bundle.memories))
+    assert.equal(bundle.injectedTokens, 0)
     // 政策服务与黑板可用
     const dec = plugin.policy.issue({ action: 'memory_write', payloadHash: 'h1' })
     assert.equal(plugin.policy.verify(dec).valid, true)

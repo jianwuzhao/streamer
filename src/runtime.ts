@@ -4,16 +4,19 @@
  */
 import type {
   AnswerReceipt,
+  ContextBundle,
   DurableReceipt,
   LearningRuntime,
   LiveEnvelope,
   LiveRequest,
+  ScopedQuery,
 } from './types.ts'
 import { NotImplementedError } from './types.ts'
 import type { BlackboardStore } from './blackboard/store.ts'
 import type { DafeiyuConfigType, FeatureGates } from './config.ts'
 import type { MemoryStore } from './memory/l2-store.ts'
 import type { ProfileStore } from './audience/profile-store.ts'
+import type { RetrievalService } from './retrieval/retrieval.ts'
 import { EventDedup } from './perception/dedup.ts'
 import { RequestRouter, type RouteContext, type UsageEntry, type UsageRecorder } from './routing/router.ts'
 import { get, run, type DB } from './storage/db.ts'
@@ -58,6 +61,7 @@ export interface RuntimeDeps {
   readonly blackboard: BlackboardStore
   readonly memory?: MemoryStore
   readonly profiles?: ProfileStore
+  readonly retrieval?: RetrievalService
 }
 
 interface EventRow {
@@ -139,8 +143,18 @@ export class DafeiyuRuntime implements LearningRuntime {
 
   // ---- 阶段 C/D/E ---------------------------------------------------------
 
-  retrieve(): Promise<never> {
-    throw new NotImplementedError('retrieve', 'C（检索优化）')
+  /** 三路检索（阶段 C）：融合上下文装配（记忆 top-K + 技能 top-K + 预算截断）。 */
+  async retrieve(query: ScopedQuery): Promise<ContextBundle> {
+    if (this.deps.retrieval === undefined) {
+      throw new NotImplementedError('retrieve', 'C（未装配 RetrievalService）')
+    }
+    const result = await this.deps.retrieval.retrieve({
+      text: query.text,
+      characterId: query.characterId,
+      ...(query.namespaces !== undefined ? { namespaces: query.namespaces } : {}),
+      ...(query.viewerKey !== undefined ? { viewerKey: query.viewerKey } : {}),
+    })
+    return { memories: result.memories, skills: result.skills, injectedTokens: result.injectedTokens }
   }
 
   trainSlice(): Promise<never> {

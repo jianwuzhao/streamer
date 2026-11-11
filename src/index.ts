@@ -18,6 +18,11 @@ import { ProfileStore } from './audience/profile-store.ts'
 import { FeedbackStore } from './feedback/feedback-store.ts'
 import { GiftAckService } from './gifts/ack.ts'
 import { GiftLedger } from './gifts/ledger.ts'
+import { OllamaEmbeddingProvider } from './retrieval/embedding.ts'
+import { GraphStore } from './retrieval/graph.ts'
+import { RetrievalIndexer } from './retrieval/indexer.ts'
+import { RetrievalService } from './retrieval/retrieval.ts'
+import { VectorStore } from './retrieval/vector-store.ts'
 import { MemoryStore } from './memory/l2-store.ts'
 import { PolicyService } from './governance/policy-decision.ts'
 import { EventDedup } from './perception/dedup.ts'
@@ -63,6 +68,12 @@ export interface DafeiyuPluginHandle {
     readonly ack: GiftAckService
     /** 便捷入口：入账 + 答谢入队（仅已验证且非退款增量入队） */
     ingestGift(input: Parameters<GiftLedger['ingest']>[0], nickname?: string): ReturnType<GiftLedger['ingest']>
+  }
+  readonly retrieval: {
+    readonly service: RetrievalService
+    readonly indexer: RetrievalIndexer
+    readonly vector: VectorStore
+    readonly graph: GraphStore
   }
   dispose(): void
 }
@@ -168,6 +179,18 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   registerBuiltinHandlers(skillExecutor, qualityGate)
   seedSkillPackages(skillRegistry, skillPackagesDir(), (message) => log(ctx, message))
 
+  // 6. 阶段 C 检索：向量（目标机 Qwen3-Embedding）+ 图谱 + 三路融合
+  const embeddingProvider = new OllamaEmbeddingProvider({
+    baseURL: process.env.DAFEIFYU_OLLAMA_URL ?? 'http://127.0.0.1:11434',
+    model: config.retrieval.embeddingModel,
+  })
+  const vectorStore = new VectorStore(db)
+  const graphStore = new GraphStore(db)
+  const retrievalIndexer = new RetrievalIndexer(db, vectorStore, graphStore, embeddingProvider)
+  const retrievalIndexerGeneration = retrievalIndexer.ensureGeneration()
+  log(ctx, `检索索引就绪：generation=${retrievalIndexerGeneration} model=${config.retrieval.embeddingModel}`)
+  const retrievalService = new RetrievalService({ db, vector: vectorStore, graph: graphStore, embedder: embeddingProvider, config })
+
   const runtime = new DafeiyuRuntime({
     db,
     config,
@@ -177,6 +200,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
     blackboard,
     memory,
     profiles,
+    retrieval: retrievalService,
   })
 
   return {
@@ -206,6 +230,12 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
         }
         return result
       },
+    },
+    retrieval: {
+      service: retrievalService,
+      indexer: retrievalIndexer,
+      vector: vectorStore,
+      graph: graphStore,
     },
     dispose() {
       arbiter.stop()

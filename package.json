@@ -1,6 +1,6 @@
 {
   "name": "dsh-dafeiyu-evolve",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "大肥鱼自学习直播系统：本地优先推理、统一记忆、技能库、观众画像、训练与自动发布（DSH 插件，阶段 A 基础层）",
   "type": "module",
   "main": "lib/index.js",

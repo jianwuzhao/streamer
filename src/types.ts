@@ -179,6 +179,8 @@ export interface ScopedQuery {
   readonly sessionId: string
   readonly characterId: string
   readonly namespaces?: readonly string[]
+  /** 观众作用域：非空时才可能召回该观众私有内容（§8.1 ACL） */
+  readonly viewerKey?: string | undefined
 }
 
 export interface ContextBundle {
