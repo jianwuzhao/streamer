@@ -9,11 +9,15 @@ import type {
   LearningRuntime,
   LiveEnvelope,
   LiveRequest,
+  PolicyDecision,
   ScopedQuery,
+  VerificationReport,
 } from './types.ts'
 import { NotImplementedError } from './types.ts'
 import type { BlackboardStore } from './blackboard/store.ts'
 import type { DafeiyuConfigType, FeatureGates } from './config.ts'
+import type { ConsolidationService } from './governance/consolidation.ts'
+import type { ReleaseController } from './governance/release.ts'
 import type { MemoryStore } from './memory/l2-store.ts'
 import type { ProfileStore } from './audience/profile-store.ts'
 import type { RetrievalService } from './retrieval/retrieval.ts'
@@ -62,6 +66,8 @@ export interface RuntimeDeps {
   readonly memory?: MemoryStore
   readonly profiles?: ProfileStore
   readonly retrieval?: RetrievalService
+  readonly releases?: ReleaseController
+  readonly consolidation?: ConsolidationService
 }
 
 interface EventRow {
@@ -158,22 +164,60 @@ export class DafeiyuRuntime implements LearningRuntime {
   }
 
   trainSlice(): Promise<never> {
-    throw new NotImplementedError('trainSlice', 'D（在线与离线训练）')
+    throw new NotImplementedError('trainSlice', 'D（经 TrainingScheduler.executeWindow 调用）')
   }
 
-  evaluateRelease(): Promise<never> {
-    throw new NotImplementedError('evaluateRelease', 'E（自动发布与固化）')
+  /** 阶段 E：对候选执行七道门验证（不改变发布状态；inconclusive 不放行）。 */
+  async evaluateRelease(candidate: { releaseId: string; candidateHash: string }): Promise<VerificationReport> {
+    if (this.deps.releases === undefined) {
+      throw new NotImplementedError('evaluateRelease', 'E（未装配 ReleaseController）')
+    }
+    const release = this.deps.releases.get(candidate.releaseId)
+    if (!release) throw new Error(`发布不存在: ${candidate.releaseId}`)
+    const { Verifier } = await import('./governance/verifier.ts')
+    const verifier = new Verifier(this.deps.db)
+    return verifier.verify({
+      manifest: JSON.parse(release.manifest) as import('./governance/verifier.ts').ReleaseManifest,
+      candidateHash: candidate.candidateHash,
+      baselineReleaseId: release.previous_release_id ?? 'baseline',
+    })
   }
 
-  publish(): Promise<never> {
-    throw new NotImplementedError('publish', 'E（自动发布与固化）')
+  /** 阶段 E：授权校验 → 自动检查 → 灰度 → 激活（无逐次人工点击 §12.1）。 */
+  async publish(grant: PolicyDecision): Promise<{ releaseId: string }> {
+    if (this.deps.releases === undefined) {
+      throw new NotImplementedError('publish', 'E（未装配 ReleaseController）')
+    }
+    if (grant.result !== 'allow') throw new Error('publish 授权非 allow')
+    // payloadHash 绑定候选哈希（issuePublishGrant 签发）
+    const releaseId = this.deps.releases.findIdByCandidateHash(grant.payloadHash)
+    if (releaseId === null) throw new Error('publish 授权未绑定有效候选')
+    const report = this.deps.releases.runAutomatedChecks(releaseId)
+    if (report.verdict !== 'pass') {
+      throw new Error(`自动检查未通过（${report.verdict}），不发布`)
+    }
+    this.deps.releases.enterCanary(releaseId)
+    const manifest = JSON.parse(this.deps.releases.get(releaseId)?.manifest ?? '{}') as {
+      observation?: { sessions: number; samples: number }
+    }
+    // 观察数据来自 manifest；每阶段至少两场次，不足 ⇒ 停留灰度（§12.3）
+    this.deps.releases.advanceCanary(releaseId, manifest.observation ?? { sessions: 0, samples: 0 })
+    return { releaseId }
   }
 
-  consolidate(): Promise<never> {
-    throw new NotImplementedError('consolidate', 'E（自动发布与固化）')
+  /** 阶段 E：固化（授权 payloadHash = memory:<sourceId>；条件门全过才写 learned_stable）。 */
+  async consolidate(grant: PolicyDecision, sourceMemoryId: string): Promise<{ stableRevision: number }> {
+    if (this.deps.consolidation === undefined) {
+      throw new NotImplementedError('consolidate', 'E（未装配 ConsolidationService）')
+    }
+    return this.deps.consolidation.consolidate(grant, sourceMemoryId)
   }
 
-  rollback(): Promise<never> {
-    throw new NotImplementedError('rollback', 'E（自动发布与固化）')
+  /** 阶段 E：回滚（epoch+1 阻断 + 恢复上一联合版本 §12.4）。 */
+  async rollback(releaseId: string): Promise<{ restoredReleaseId: string }> {
+    if (this.deps.releases === undefined) {
+      throw new NotImplementedError('rollback', 'E（未装配 ReleaseController）')
+    }
+    return this.deps.releases.rollback(releaseId)
   }
 }

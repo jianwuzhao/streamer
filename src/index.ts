@@ -23,6 +23,10 @@ import { GraphStore } from './retrieval/graph.ts'
 import { RetrievalIndexer } from './retrieval/indexer.ts'
 import { RetrievalService } from './retrieval/retrieval.ts'
 import { VectorStore } from './retrieval/vector-store.ts'
+import { ConsolidationService } from './governance/consolidation.ts'
+import { ReleaseController } from './governance/release.ts'
+import { TrainingSamplePipeline } from './training/samples.ts'
+import { TrainingScheduler } from './training/scheduler.ts'
 import { MemoryStore } from './memory/l2-store.ts'
 import { PolicyService } from './governance/policy-decision.ts'
 import { EventDedup } from './perception/dedup.ts'
@@ -52,6 +56,14 @@ export interface DafeiyuPluginHandle {
   readonly blackboard: BlackboardStore
   readonly arbiter: ResourceArbiter
   readonly policy: PolicyService
+  readonly governance: {
+    readonly releases: ReleaseController
+    readonly consolidation: ConsolidationService
+  }
+  readonly training: {
+    readonly samples: TrainingSamplePipeline
+    readonly scheduler: TrainingScheduler
+  }
   readonly memory: MemoryStore
   readonly audience: {
     readonly identity: ViewerIdentity
@@ -159,6 +171,26 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
     l4TtlDays: config.memory.l4DefaultTtlDays,
     conflictDetection: config.memory.conflictDetection,
   })
+
+  const releaseController = new ReleaseController(db, policy)
+  const consolidationService = new ConsolidationService(db, policy, memory, {
+    conditions: {
+      minIndependentSessions: config.consolidation.minIndependentSessions,
+      minEvidenceClusters: config.consolidation.minEvidenceClusters,
+      observationDays: config.consolidation.observationDays,
+      reviewEveryDays: config.consolidation.reviewEveryDays,
+    },
+  })
+  const trainingSamples = new TrainingSamplePipeline(db)
+  const trainingScheduler = new TrainingScheduler({
+    db,
+    config,
+    featureGates,
+    arbiter,
+    policy,
+    samples: trainingSamples,
+    championReleaseId: releaseController.activeReleaseId() ?? 'rel-baseline',
+  })
   const identity = new ViewerIdentity(db)
   const profiles = new ProfileStore(db)
   const deletionService = new DeletionService(db)
@@ -201,6 +233,8 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
     memory,
     profiles,
     retrieval: retrievalService,
+    releases: releaseController,
+    consolidation: consolidationService,
   })
 
   return {
@@ -236,6 +270,14 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
       indexer: retrievalIndexer,
       vector: vectorStore,
       graph: graphStore,
+    },
+    governance: {
+      releases: releaseController,
+      consolidation: consolidationService,
+    },
+    training: {
+      samples: trainingSamples,
+      scheduler: trainingScheduler,
     },
     dispose() {
       arbiter.stop()

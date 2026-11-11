@@ -209,10 +209,10 @@ export interface LearningRuntime {
   trainSlice(run: { runId: string; decision: PolicyDecision }): Promise<{ checkpointRef: string }>
   /** 阶段 E */
   evaluateRelease(candidate: { releaseId: string; candidateHash: string }): Promise<VerificationReport>
-  /** 阶段 E */
+  /** 阶段 E：授权校验 → 自动检查 → 灰度 → 激活（无逐次人工点击） */
   publish(grant: PolicyDecision): Promise<{ releaseId: string }>
-  /** 阶段 E */
-  consolidate(grant: PolicyDecision): Promise<{ stableRevision: number }>
+  /** 阶段 E：grant.payloadHash 须为 `memory:<sourceMemoryId>` */
+  consolidate(grant: PolicyDecision, sourceMemoryId: string): Promise<{ stableRevision: number }>
   /** 阶段 E */
   rollback(releaseId: string): Promise<{ restoredReleaseId: string }>
 }

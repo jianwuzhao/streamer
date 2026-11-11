@@ -38,6 +38,11 @@ test('插件装配：配置加载 → 迁移 → 恢复 → 各组件就绪', as
     const bundle = await plugin.runtime.retrieve({ text: '种田', sessionId: 'sess-1', characterId: 'dafeiyu' })
     assert.ok(Array.isArray(bundle.memories))
     assert.equal(bundle.injectedTokens, 0)
+    // 阶段 E：发布控制器与固化服务上句柄；无 active 版本时为 null
+    assert.ok(plugin.governance.releases.activeReleaseId() === null || typeof plugin.governance.releases.activeReleaseId() === 'string')
+    assert.ok(plugin.governance.consolidation.evaluateEligibility('nonexistent').blockers.length > 0)
+    assert.ok(plugin.training.samples.eligibleNewCount() === 0)
+
     // 政策服务与黑板可用
     const dec = plugin.policy.issue({ action: 'memory_write', payloadHash: 'h1' })
     assert.equal(plugin.policy.verify(dec).valid, true)

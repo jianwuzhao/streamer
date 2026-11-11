@@ -408,4 +408,67 @@ CREATE TABLE IF NOT EXISTS checkpoints (
 CREATE INDEX IF NOT EXISTS idx_checkpoints_run ON checkpoints(run_id, created_at);
 `,
   },
+  {
+    version: 8,
+    name: '008_release_consolidation',
+    sql: `
+CREATE TABLE IF NOT EXISTS releases (
+  release_id     TEXT PRIMARY KEY,
+  candidate_hash TEXT NOT NULL,
+  manifest       TEXT NOT NULL,
+  status         TEXT NOT NULL CHECK (status IN ('candidate','rejected','staged','canary','active','suspended','rolled_back','retired')),
+  canary_fraction REAL NOT NULL DEFAULT 0,
+  previous_release_id TEXT,
+  verification_report_id TEXT,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  activated_at TEXT,
+  retired_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_releases_status ON releases(status, created_at);
+
+CREATE TABLE IF NOT EXISTS verification_reports (
+  report_id    TEXT PRIMARY KEY,
+  candidate_hash TEXT NOT NULL,
+  baseline_release_id TEXT NOT NULL,
+  verdict      TEXT NOT NULL CHECK (verdict IN ('pass','fail','inconclusive')),
+  checks       TEXT NOT NULL DEFAULT '[]',
+  metrics      TEXT NOT NULL DEFAULT '{}',
+  expires_at   TEXT NOT NULL,
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS consolidations (
+  consolidation_id   TEXT PRIMARY KEY,
+  source_id          TEXT NOT NULL,
+  source_revision    INTEGER NOT NULL,
+  stable_id          TEXT NOT NULL,
+  stable_revision    INTEGER NOT NULL,
+  status             TEXT NOT NULL CHECK (status IN ('eligible','proposed','policy_checked','staged_stable','active_stable','challenged','revoked','superseded')),
+  evidence_clusters  INTEGER NOT NULL DEFAULT 0,
+  independent_sessions INTEGER NOT NULL DEFAULT 0,
+  observation_days   INTEGER NOT NULL DEFAULT 0,
+  gates              TEXT NOT NULL DEFAULT '[]',
+  review_at          TEXT,
+  valid_until        TEXT,
+  revoked_at         TEXT,
+  created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS learned_stable (
+  id          TEXT NOT NULL,
+  revision    INTEGER NOT NULL,
+  layer       TEXT NOT NULL CHECK (layer IN ('L1','L3')),
+  namespace   TEXT NOT NULL DEFAULT 'learned_stable',
+  claim       TEXT NOT NULL,
+  scope       TEXT NOT NULL,
+  source_consolidation TEXT NOT NULL,
+  review_at   TEXT NOT NULL,
+  valid_until TEXT NOT NULL,
+  revoked_at  TEXT,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE (id, revision)
+);
+CREATE INDEX IF NOT EXISTS idx_learned_stable_active ON learned_stable(id);
+`,
+  },
 ]

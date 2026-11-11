@@ -11,14 +11,15 @@
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 0.5.0 | 2026-11-11 | 阶段 E（自动发布与固化）：统一验证器（七道门→结构化报告，inconclusive 不放行）、联合发布控制器（candidate→staged→canary→active 状态链、灰度 5→20→50→100 每阶段≥2 场次、每日一次晋级、epoch 回滚）、自动固化（条件门→learned_stable L1/L3、去重键、反例撤回、注入过滤、30 天复核）；runtime 四接口实装；TS 132 例 |
 | 0.4.0 | 2026-11-11 | 阶段 D（训练）：训练样本管道（用途过滤/脱敏/去重簇/heldout 隔离/30-70 回放配比）、训练窗口调度器（样本/资源/政策三门、champion 不动、断点续跑）、Python worker（分时状态机/检查点/授权协议/QLoRA 依赖守卫/GGUF 导出守卫）；TS 123 例 + Python 11 例 |
 | 0.3.0 | 2026-11-11 | 阶段 C（检索优化）：BM25/向量/图谱三路召回、RRF 融合与重排、实时复检、token 预算截断、索引 generation 迁移与墓碑即时过滤、向量路降级、评测与消融（Recall@5/nDCG@5/延迟分位）；`runtime.retrieve` 实装；累计 115 项测试 |
 | 0.2.0 | 2026-11-11 | 阶段 B（完整数据层）：L2/L4 记忆生命周期与矛盾处理、全量观众画像（伪名化身份/字段版本链/删除墓碑）、技能库（manifest/受控执行/示例技能包）、反馈状态机、礼物幂等账本与合并答谢；累计 103 项测试 |
 | 0.1.0 | 2026-11-11 | 阶段 A（基础与资源）：插件骨架、统一配置、SQLite 存储基座、感知/黑板、本地优先路由、模型适配器、资源仲裁、政策授权骨架；70 项测试 |
 
-## 当前状态（阶段 A–D 已完成）
+## 当前状态（阶段 A–E 已完成）
 
-按方案 §20.1 的 A–G 七阶段逐步交付。**当前完成阶段 A（基础与资源）、B（完整数据层）、C（检索优化）与 D（训练）**：
+按方案 §20.1 的 A–G 七阶段逐步交付。**当前完成阶段 A–E（基础与资源 / 完整数据层 / 检索优化 / 训练 / 自动发布与固化）**：
 
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
@@ -38,13 +39,13 @@
 | 三路检索（§8） | ✅ | BM25（中文 bigram）+ 向量（目标机 Qwen3-Embedding-0.6B via Ollama；测试桩语义映射）+ 图谱（逐跳作用域校验/2 跳/50 节点/高出度截断）；RRF 融合、证据质量与多样性重排、实时复检（challenged/过期/撤销不注入）、记忆 top-3 + 技能 top-2 + token 预算截断；索引 outbox 幂等消费、generation 迁移（building→active 原子切换）、墓碑即时过滤、向量路损坏降级词法并显式标记；评测 harness（Recall@5/nDCG@5/p50/p95）与三路消融 |
 | LearningRuntime | ✅ A+B+C 范围 | `ingest`/`answer`/`updateProfile`/`proposeCognition`/`retrieve` 实装；D/E 接口显式 `NotImplementedError` |
 
-**未完成（后续阶段）**：E 自动发布与固化（联合版本/灰度/回滚/learned_stable）→ F 产品入口（Web UI、抖音规则包、一键开播）→ G 整体验收。
+**未完成（后续阶段）**：F 产品入口（Web UI 面板/四主操作、抖音规则包、一键开播/训练、首次配置向导、continual-harness/live-studio 适配）→ G 整体验收（安装器、诊断导出、故障注入与长稳）。
 
 ## 开发
 
 ```bash
 pnpm install
-pnpm test        # 123 个单元/契约测试（node:test）
+pnpm test        # 132 个单元/契约测试（node:test）
 pnpm test:worker # Python worker 11 例（unittest，纯标准库）
 pnpm typecheck   # tsc --noEmit（strict + exactOptionalPropertyTypes）
 pnpm build       # tsdown → lib/index.js（ESM，宿主插件规范）
@@ -65,14 +66,14 @@ src/
   routing/                 # 预算、质量门、本地优先路由器
   adapters/                # model-adapter、ollama、cloud、fallback
   resources/               # probe（nvidia-smi）、arbiter
-  governance/              # policy-decision（授权骨架）
+  governance/              # policy-decision、verifier（七道门）、release（联合发布/灰度/回滚）、consolidation（learned_stable）
   memory/                  # L2/L4 生命周期、独立证据、矛盾检测
   audience/                # 伪名化身份、字段版本链、删除墓碑
   skills/                  # 注册表、受控执行器、包加载、schema 校验
   feedback/                # 反馈归因与纠错状态机
   gifts/                   # 幂等账本（连击/退款）、合并答谢
   retrieval/               # BM25、embedding、向量库、图谱、索引器、三路融合、评测
-  training/                # 样本管道、训练窗口调度器、Python worker 启动器
+  training/                # 样本管道、训练窗口调度器、Python worker 启动器（另见 training-worker/）
   testing/                 # 测试公共设施
 skill-packages/            # 技能包目录（示例：gift-ack-phrase）
 training-worker/           # Python 训练进程：分时状态机/检查点/QLoRA（dry-run 零依赖）
@@ -95,6 +96,10 @@ policy-packs/ installer/   # 后续阶段
 - 训练样本先用途过滤再脱敏（vw_* 伪名/手机号/长数字不入参数）；heldout 冻结集不参与梯度；批量按簇/场次限量、30/70 回放配比
 - 训练窗口三门（样本 ≥32、free_vram ≥ peak+reserve fail-safe、政策 train 授权 payloadHash 绑定）；challenger 专用 adapter，champion 全程不动；断点续跑承载数据游标+步数
 - Python worker 授权不通过即退出（码 2）；QLoRA 依赖缺失明确报错，不以 dry-run 冒充真实训练；NF4 权重不得直接转 GGUF
+- 发布只读结构化验证报告（七道门：完整性/政策回归/任务质量 CI 下界/工具执行/资源 OOM/数据证据/观察样本）；指标缺失 ⇒ inconclusive 继续观察，不放宽不跳过
+- 灰度 5%→20%→50%→100%，每阶段至少两场次，样本不足停留当前阶段；每天最多一次模型晋级
+- 回滚抬高治理 epoch（旧授权即刻失效）、恢复上一联合版本、被撤回版本标记 rolled_back
+- 固化条件门（≥3 独立场次、≥5 独立证据、7 天观察、无反例、内容边界）；learned_stable 注入前强制过滤（撤销/过期）；反例即时暂停并留审计
 - 启动恢复：遗留 pending 写操作转 `reconcile_required`，不盲写
 
 ## 环境变量
