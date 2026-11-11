@@ -1,0 +1,56 @@
+{
+  "pack_id": "douyin-policy-v1",
+  "platform": "douyin",
+  "fetched_at": "2026-11-11T00:00:00Z",
+  "reviewer": "release-pinned",
+  "rules": [
+    {
+      "rule_id": "douyin.live-conduct.2024-06-13",
+      "source_url": "https://sf3-draftcdn-tos.pstatp.com/obj/ies-hotsoon-draft/webcast_all_anchor/webcast_ban_protocol.html",
+      "published_at": "2024-06-13",
+      "fetched_at": "2026-11-11T00:00:00Z",
+      "content_hash": "pinned-no-fetch",
+      "effective_scope": ["live_start", "content_output"],
+      "check": "rulepack_valid",
+      "action": "block_new_public_live",
+      "tests": ["开播前规则包必须有效且适用账号"],
+      "reviewer": "release-pinned"
+    },
+    {
+      "rule_id": "douyin.companion-start",
+      "source_url": "https://streamingtool.douyin.com/docs/qna_start_error",
+      "published_at": "unknown",
+      "fetched_at": "2026-11-11T00:00:00Z",
+      "content_hash": "pinned-no-fetch",
+      "effective_scope": ["live_start"],
+      "check": "official_confirmation",
+      "action": "require_official_client",
+      "tests": ["平台状态未确认时不得显示直播中"],
+      "reviewer": "release-pinned"
+    },
+    {
+      "rule_id": "cac.ai-content-label.2025-03-14",
+      "source_url": "https://www.cac.gov.cn/2025-03/14/c_1743654684782215.htm",
+      "published_at": "2025-03-14",
+      "fetched_at": "2026-11-11T00:00:00Z",
+      "content_hash": "pinned-no-fetch",
+      "effective_scope": ["scene_composition"],
+      "check": "ai_label_visible",
+      "action": "safe_scene_or_stop",
+      "tests": ["最终画面持续显著展示 AI 驱动角色", "模型与技能不可关闭标识"],
+      "reviewer": "release-pinned"
+    },
+    {
+      "rule_id": "cac.gift-management.2026-04-13",
+      "source_url": "https://www.cac.gov.cn/2026-04/13/c_1777815804150225.htm",
+      "published_at": "2026-04-13",
+      "fetched_at": "2026-11-11T00:00:00Z",
+      "content_hash": "pinned-no-fetch",
+      "effective_scope": ["gift_ack", "spending_display"],
+      "check": "no_inducement",
+      "action": "block_content",
+      "tests": ["不生成诱导打赏话术", "消费统计默认不公开"],
+      "reviewer": "release-pinned"
+    }
+  ]
+}

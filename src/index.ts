@@ -27,6 +27,10 @@ import { ConsolidationService } from './governance/consolidation.ts'
 import { ReleaseController } from './governance/release.ts'
 import { TrainingSamplePipeline } from './training/samples.ts'
 import { TrainingScheduler } from './training/scheduler.ts'
+import { DouyinAssistedAdapter } from './platform/adapter.ts'
+import { loadPolicyPack } from './platform/policy-pack.ts'
+import { LiveSession } from './live/session.ts'
+import { TrainingEntry } from './live/training-entry.ts'
 import { MemoryStore } from './memory/l2-store.ts'
 import { PolicyService } from './governance/policy-decision.ts'
 import { EventDedup } from './perception/dedup.ts'
@@ -63,6 +67,11 @@ export interface DafeiyuPluginHandle {
   readonly training: {
     readonly samples: TrainingSamplePipeline
     readonly scheduler: TrainingScheduler
+  }
+  readonly live: {
+    readonly session: LiveSession
+    readonly trainingEntry: TrainingEntry
+    readonly platform: DouyinAssistedAdapter
   }
   readonly memory: MemoryStore
   readonly audience: {
@@ -274,6 +283,18 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
     governance: {
       releases: releaseController,
       consolidation: consolidationService,
+    },
+    live: {
+      // 平台规则包随安装版本固定；缺包时开播 fail-closed（§23.2）
+      session: new LiveSession(
+        new DouyinAssistedAdapter(),
+        existsSync(resolve(process.cwd(), 'policy-packs/douyin/rules.json'))
+          ? loadPolicyPack(resolve(process.cwd(), 'policy-packs/douyin/rules.json'))
+          : null,
+        config.platform.id,
+      ),
+      trainingEntry: new TrainingEntry(trainingScheduler),
+      platform: new DouyinAssistedAdapter(),
     },
     training: {
       samples: trainingSamples,
