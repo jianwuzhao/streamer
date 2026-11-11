@@ -1,0 +1,7 @@
+{
+  "type": "object",
+  "required": ["phrase"],
+  "properties": {
+    "phrase": { "type": "string", "maxLength": 80 }
+  }
+}

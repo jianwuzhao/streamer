@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "required": ["viewerNickname", "giftName"],
+  "properties": {
+    "viewerNickname": { "type": "string", "maxLength": 32 },
+    "giftName": { "type": "string", "maxLength": 32 },
+    "nameMention": { "type": "boolean" }
+  }
+}

@@ -1,0 +1,15 @@
+# 礼物答谢短语技能（示例表达技能）
+skillId: gift-ack-phrase
+version: 1.0.0
+kind: expression
+description: 为已验证的礼物事件生成简短答谢短语；使用本地固定模板，不为每份礼物调用模型（§10.2）。
+trigger: 礼物事件进入答谢队列
+permissions: []
+timeoutMs: 2000
+idempotent: true
+postconditions: []
+cooldownMs: 0
+handler: gift-ack-template
+inputSchema: input.schema.json
+outputSchema: output.schema.json
+fallback: 谢谢这份支持，先把日子过好，咱们接着种田。

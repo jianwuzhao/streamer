@@ -8,9 +8,35 @@ test('迁移幂等：重复执行不重复应用', () => {
   try {
     const second = migrate(t.db)
     assert.deepEqual(second.applied, [])
-    assert.deepEqual([...second.alreadyApplied].sort(), [1])
+    assert.deepEqual([...second.alreadyApplied].sort(), [1, 2, 3, 4, 5])
     const rows = all<{ version: number }>(t.db, 'SELECT version FROM schema_migrations ORDER BY version')
-    assert.equal(rows.length, 1)
+    assert.equal(rows.length, 5)
+  } finally {
+    t.cleanup()
+  }
+})
+
+test('阶段 B 新表存在（记忆/画像/技能/反馈礼物）', () => {
+  const t = makeTmpDb()
+  try {
+    const tables = all<{ name: string }>(
+      t.db,
+      "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+    ).map((r) => r.name)
+    for (const expected of [
+      'memory_candidates',
+      'viewer_profiles',
+      'profile_fields',
+      'privacy_requests',
+      'deletion_tombstones',
+      'skill_versions',
+      'skill_runs',
+      'feedback',
+      'gift_ledger',
+      'gift_ack',
+    ]) {
+      assert.ok(tables.includes(expected), `缺少表 ${expected}`)
+    }
   } finally {
     t.cleanup()
   }

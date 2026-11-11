@@ -193,9 +193,14 @@ export interface LearningRuntime {
   /** 阶段 B */
   updateProfile(eventId: string): Promise<{ revision: number }>
   /** 阶段 B */
-  proposeCognition(input: { claim: string; namespace: string; evidenceRefs: readonly string[] }): Promise<{
-    ref: string
-  }>
+  proposeCognition(input: {
+    claim: string
+    namespace: string
+    scene: string
+    subject?: string
+    layer?: 'L2' | 'L4'
+    evidenceRefs: readonly string[]
+  }): Promise<{ ref: string; status: string; challenged: readonly string[] }>
   /** 阶段 C */
   retrieve(query: ScopedQuery): Promise<ContextBundle>
   /** 阶段 D */
