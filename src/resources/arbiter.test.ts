@@ -1,18 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ResourceArbiter, taskRank } from './arbiter.ts'
-import type { ResourceProbe, ResourceSample } from './probe.ts'
-
-class FakeProbe implements ResourceProbe {
-  readonly id = 'fake'
-  private readonly fixed: ResourceSample | null
-  constructor(fixed: ResourceSample | null) {
-    this.fixed = fixed
-  }
-  async sample(): Promise<ResourceSample | null> {
-    return this.fixed
-  }
-}
+import type { ResourceSample } from './probe.ts'
+import { FakeProbeHandle as FakeProbe } from '../testing/fake-probe.ts'
 
 const vram = (freeMb: number): ResourceSample => ({
   timestampMs: 1,

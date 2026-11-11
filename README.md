@@ -11,13 +11,14 @@
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 0.4.0 | 2026-11-11 | 阶段 D（训练）：训练样本管道（用途过滤/脱敏/去重簇/heldout 隔离/30-70 回放配比）、训练窗口调度器（样本/资源/政策三门、champion 不动、断点续跑）、Python worker（分时状态机/检查点/授权协议/QLoRA 依赖守卫/GGUF 导出守卫）；TS 123 例 + Python 11 例 |
 | 0.3.0 | 2026-11-11 | 阶段 C（检索优化）：BM25/向量/图谱三路召回、RRF 融合与重排、实时复检、token 预算截断、索引 generation 迁移与墓碑即时过滤、向量路降级、评测与消融（Recall@5/nDCG@5/延迟分位）；`runtime.retrieve` 实装；累计 115 项测试 |
 | 0.2.0 | 2026-11-11 | 阶段 B（完整数据层）：L2/L4 记忆生命周期与矛盾处理、全量观众画像（伪名化身份/字段版本链/删除墓碑）、技能库（manifest/受控执行/示例技能包）、反馈状态机、礼物幂等账本与合并答谢；累计 103 项测试 |
 | 0.1.0 | 2026-11-11 | 阶段 A（基础与资源）：插件骨架、统一配置、SQLite 存储基座、感知/黑板、本地优先路由、模型适配器、资源仲裁、政策授权骨架；70 项测试 |
 
-## 当前状态（阶段 A、B、C 已完成）
+## 当前状态（阶段 A–D 已完成）
 
-按方案 §20.1 的 A–G 七阶段逐步交付。**当前完成阶段 A（基础与资源）、B（完整数据层）与 C（检索优化）**：
+按方案 §20.1 的 A–G 七阶段逐步交付。**当前完成阶段 A（基础与资源）、B（完整数据层）、C（检索优化）与 D（训练）**：
 
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
@@ -37,13 +38,14 @@
 | 三路检索（§8） | ✅ | BM25（中文 bigram）+ 向量（目标机 Qwen3-Embedding-0.6B via Ollama；测试桩语义映射）+ 图谱（逐跳作用域校验/2 跳/50 节点/高出度截断）；RRF 融合、证据质量与多样性重排、实时复检（challenged/过期/撤销不注入）、记忆 top-3 + 技能 top-2 + token 预算截断；索引 outbox 幂等消费、generation 迁移（building→active 原子切换）、墓碑即时过滤、向量路损坏降级词法并显式标记；评测 harness（Recall@5/nDCG@5/p50/p95）与三路消融 |
 | LearningRuntime | ✅ A+B+C 范围 | `ingest`/`answer`/`updateProfile`/`proposeCognition`/`retrieve` 实装；D/E 接口显式 `NotImplementedError` |
 
-**未完成（后续阶段）**：D 训练（Python worker：QLoRA 分时窗口/检查点/GGUF 导出）→ E 发布/固化 → F 产品入口（Web UI、抖音规则包）→ G 整体验收。
+**未完成（后续阶段）**：E 自动发布与固化（联合版本/灰度/回滚/learned_stable）→ F 产品入口（Web UI、抖音规则包、一键开播）→ G 整体验收。
 
 ## 开发
 
 ```bash
 pnpm install
-pnpm test        # 115 个单元/契约测试（node:test，零额外依赖）
+pnpm test        # 123 个单元/契约测试（node:test）
+pnpm test:worker # Python worker 11 例（unittest，纯标准库）
 pnpm typecheck   # tsc --noEmit（strict + exactOptionalPropertyTypes）
 pnpm build       # tsdown → lib/index.js（ESM，宿主插件规范）
 ```
@@ -70,9 +72,10 @@ src/
   feedback/                # 反馈归因与纠错状态机
   gifts/                   # 幂等账本（连击/退款）、合并答谢
   retrieval/               # BM25、embedding、向量库、图谱、索引器、三路融合、评测
+  training/                # 样本管道、训练窗口调度器、Python worker 启动器
   testing/                 # 测试公共设施
 skill-packages/            # 技能包目录（示例：gift-ack-phrase）
-training-worker/           # 阶段 D：Python 训练进程（占位）
+training-worker/           # Python 训练进程：分时状态机/检查点/QLoRA（dry-run 零依赖）
 docs/                      # §25 文档集（随阶段补齐）
 evals/                     # 评测数据集与结果（harness 在 src/retrieval/eval.ts）
 policy-packs/ installer/   # 后续阶段
@@ -89,6 +92,9 @@ policy-packs/ installer/   # 后续阶段
 - 画像按伪名化身份键隔离；观众纠错覆盖推测并留审计；删除墓碑优先于任何读取；传播状态对未建成系统如实标注
 - 技能执行前实时检查撤销状态；版本不可原地覆盖；权限扩张无法自动晋级；失败走技能 fallback 不编造成功；同请求同技能幂等
 - 礼物按事件键幂等入账，连击按平台累计数计算增量，退款为抵消记录不删历史；答谢合并窗口内合并、危险昵称不点名
+- 训练样本先用途过滤再脱敏（vw_* 伪名/手机号/长数字不入参数）；heldout 冻结集不参与梯度；批量按簇/场次限量、30/70 回放配比
+- 训练窗口三门（样本 ≥32、free_vram ≥ peak+reserve fail-safe、政策 train 授权 payloadHash 绑定）；challenger 专用 adapter，champion 全程不动；断点续跑承载数据游标+步数
+- Python worker 授权不通过即退出（码 2）；QLoRA 依赖缺失明确报错，不以 dry-run 冒充真实训练；NF4 权重不得直接转 GGUF
 - 启动恢复：遗留 pending 写操作转 `reconcile_required`，不盲写
 
 ## 环境变量

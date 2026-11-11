@@ -1,27 +1,46 @@
-# training-worker（阶段 D 占位）
+# training-worker（阶段 D 已实现）
 
-独立 Python 训练进程，按方案 §3（8GB 分时部署）与 §9（在线/离线训练）在阶段 D 实现。当前仓库不包含任何训练代码。
+独立 Python 训练进程（方案 §3 / §9）。**dry-run 模式零依赖（仅标准库）**，在任何机器验证状态机/检查点/授权协议；真实 QLoRA 需目标机安装固定依赖（`pyproject.toml`）。
 
-## 计划结构（阶段 D）
+## 结构
 
 ```text
 training-worker/
-├── pyproject.toml          # 固定版本训练库（transformers/peft/trl/bitsandbytes）
-├── worker.py               # 入口：显式携带身份与授权，不依赖进程本地上下文继承
-├── states.py               # 分时状态机：LIVE_GPU→PREPARE_CPU→DRAIN_GPU→TRAIN_SLICE→CHECKPOINT→RELEASE_GPU→WARMUP_CHAMPION
-├── qlora_slice.py          # 在线 QLoRA 窗口（micro batch 1、每窗口 ≤4 optimizer steps、墙钟 ≤60s）
-├── offline.py              # 离线训练、历史回放、消融
-├── export_gguf.py          # adapter 合并→GGUF 转换→量化（NF4 权重不得直接当 GGUF 发布）
-└── checkpoints/            # 参数、optimizer、数据游标、RNG 状态
+├── worker.py          # 入口：stdin 收 job JSON（含 train 授权）→ stdout 按行 state/receipt
+├── states.py          # 分时状态机：prepare_cpu→drain_gpu→train_slice→checkpoint→release_gpu→warmup_champion
+├── qlora_slice.py     # 真实 QLoRA 窗口（依赖缺失明确报错，不以 dry-run 冒充真实训练 §9.1）
+├── checkpoint.py      # 检查点清单（参数/优化器引用/数据游标/RNG），恢复唯一依据
+├── export_gguf.py     # GGUF 导出守卫（NF4 权重不得直接转换 §9.5）
+├── test_worker.py     # unittest（11 例，纯标准库）
+└── pyproject.toml     # 目标机固定依赖清单（torch/transformers/peft/trl/bitsandbytes/accelerate/gguf）
 ```
+
+## 协议
+
+```jsonc
+// stdin（TrainingJobSpec）
+{ "run_id": "...", "mode": "dry_run|qlora", "base_profile": "main-4b",
+  "max_steps": 4, "wall_budget_s": 60, "samples": [{"text": "..."}],
+  "replay_fraction": 0.7, "checkpoint_dir": "...", "resume_from": null,
+  "decision": { "action": "train", "result": "allow", "expiresAt": "...", ... } }
+// stdout：{"type":"state","state":"prepare_cpu"} … {"type":"receipt","steps":4,"params_changed":true,"checkpoint_id":"ckpt_...","state":"completed"}
+```
+
+退出码：0 成功｜2 授权不通过｜3 依赖缺失/训练失败｜4 任务非法。
 
 ## 与插件主进程的契约
 
-- 由资源仲裁器（`src/resources/arbiter.ts`）的准入结果决定窗口：`free_vram ≥ measured_training_peak + reserve`
-- 训练请求必须携带 PolicyService 签发的 `train` 授权（payloadHash 绑定训练配置）
-- 训练只更新 challenger，绝不原地修改正在服务的 champion 权重（§9.1）
-- 进程退出前确认显存释放；仅 `pause` 不足以释放（§9.2）
+- TS 侧 `TrainingScheduler`（`src/training/scheduler.ts`）：机会评估（样本门 ≥32、资源门 `free_vram ≥ peak+reserve` fail-safe、政策门 payloadHash 绑定）→ 批量构建（30/70 回放配比、簇/场次上限、heldout 隔离）→ 状态机落库（training_runs/checkpoints）
+- challenger 专用 adapter，champion 全程不动（§9.1）；断点续跑从最近 checkpoint（数据游标+步数）
+- 真实梯度更新（qlora 模式）仅目标机执行；本仓库测试为 dry-run（协议/检查点/恢复全验证）
 
-## 验收（目标机实机）
+## 运行与测试
 
-直播期间非零 optimizer step、参数变化可追踪、检查点可恢复、GPU 推理预热后恢复正常服务（方案 §20.2）。
+```bash
+python3 -m unittest discover -s training-worker -p 'test_*.py' -v   # 11 例
+pnpm test:worker                                                     # 同上（npm script）
+```
+
+## 目标机验收（§20.2-D）
+
+直播期间非零 optimizer step、参数变化可追踪、检查点可恢复、GPU 推理预热后恢复正常服务；量化产物重测五项（质量/工具契约/显存/延迟/安全）后才可进入发布门。

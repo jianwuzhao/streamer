@@ -1,0 +1,21 @@
+[project]
+name = "dafeiyu-training-worker"
+version = "0.4.0"
+description = "大肥鱼自学习直播——训练 worker（QLoRA 分时窗口/检查点/GGUF 导出；目标机依赖）"
+requires-python = ">=3.11"
+
+# 目标机（RTX 4060 Ti 8GB / CUDA）固定版本清单——安装器按 compatibility-lock.json 锁定，
+# 不假设“最新版”可用（方案 §2.1）。dry-run 模式零依赖（仅标准库）。
+dependencies = [
+  "torch==2.7.1",
+  "transformers==4.53.2",
+  "peft==0.16.0",
+  "trl==0.20.0",
+  "bitsandbytes==0.46.1",
+  "accelerate==1.9.0",
+  "sentencepiece==0.2.0",
+  "gguf==0.10.0",
+]
+
+[tool.uv]
+package = false

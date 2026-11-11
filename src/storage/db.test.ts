@@ -8,9 +8,9 @@ test('迁移幂等：重复执行不重复应用', () => {
   try {
     const second = migrate(t.db)
     assert.deepEqual(second.applied, [])
-    assert.deepEqual([...second.alreadyApplied].sort(), [1, 2, 3, 4, 5, 6])
+    assert.deepEqual([...second.alreadyApplied].sort(), [1, 2, 3, 4, 5, 6, 7])
     const rows = all<{ version: number }>(t.db, 'SELECT version FROM schema_migrations ORDER BY version')
-    assert.equal(rows.length, 6)
+    assert.equal(rows.length, 7)
   } finally {
     t.cleanup()
   }

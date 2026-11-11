@@ -357,4 +357,55 @@ CREATE TABLE IF NOT EXISTS index_outbox (
 );
 `,
   },
+  {
+    version: 7,
+    name: '007_training',
+    sql: `
+CREATE TABLE IF NOT EXISTS training_samples (
+  sample_id     TEXT PRIMARY KEY,
+  source_kind   TEXT NOT NULL CHECK (source_kind IN ('human_correction','verified_local_reply','allowed_third_party','skill_trajectory','counterexample')),
+  purpose_ok    INTEGER NOT NULL,
+  redacted_text TEXT NOT NULL,
+  cluster_id    TEXT NOT NULL,
+  session_id    TEXT NOT NULL DEFAULT '',
+  origin        TEXT NOT NULL DEFAULT '',
+  status        TEXT NOT NULL CHECK (status IN ('validated','rejected','revoked')),
+  split         TEXT NOT NULL CHECK (split IN ('train','heldout')),
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_training_samples_status ON training_samples(status, split, created_at);
+CREATE INDEX IF NOT EXISTS idx_training_samples_cluster ON training_samples(cluster_id);
+
+CREATE TABLE IF NOT EXISTS datasets (
+  dataset_id TEXT PRIMARY KEY,
+  kind       TEXT NOT NULL CHECK (kind IN ('online_batch','offline_snapshot')),
+  sample_ids TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS training_runs (
+  run_id             TEXT PRIMARY KEY,
+  base_profile       TEXT NOT NULL,
+  challenger_adapter TEXT NOT NULL,
+  champion_release_id TEXT NOT NULL,
+  decision_id        TEXT,
+  status             TEXT NOT NULL CHECK (status IN ('pending','prepare_cpu','drain_gpu','train_slice','checkpoint','release_gpu','warmup_champion','completed','failed','cancelled')),
+  optimizer_steps    INTEGER NOT NULL DEFAULT 0,
+  window_budget_ms   INTEGER,
+  error              TEXT,
+  started_at         TEXT,
+  finished_at        TEXT
+);
+
+CREATE TABLE IF NOT EXISTS checkpoints (
+  checkpoint_id TEXT PRIMARY KEY,
+  run_id        TEXT NOT NULL,
+  path          TEXT NOT NULL,
+  manifest      TEXT NOT NULL,
+  steps         INTEGER NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_run ON checkpoints(run_id, created_at);
+`,
+  },
 ]
