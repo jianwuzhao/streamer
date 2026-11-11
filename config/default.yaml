@@ -1,0 +1,177 @@
+# 大肥鱼自学习直播统一配置（方案 §18 配置草案的工程落地初值）
+#
+# 语义约定（方案 §18）：
+# - `null` 的绝对预算与 `configure_before_acceptance` 的端点是部署前必填项；
+#   缺失时对应付费调用或训练窗口在运行时被禁用并产生明确错误，不默认无限额度。
+# - 所有参数为待实机校准的初值（RTX 4060 Ti 8GB / 32GB RAM 目标机）。
+
+mode: shadow
+killSwitch: false
+productPreset: rtx4060ti_8g_32g
+
+integration:
+  semanticProvider: dsh_rsi
+  retrievalProvider: neural_cloud
+  skillProvider: dsh_rsi
+  continualProvider: dsh_continual_harness
+  layerMap: governed_semantic_mapping
+  singleWriter: true
+  singleContextInjector: true
+  disableProviderAutonomousWrites: true
+
+orchestration:
+  backgroundConcurrency: 1
+  subagentMaxDepth: 1
+  subagentMaxCountPerJob: 1
+  subagentMaxModelSteps: 2
+  sharedModelBudget: true
+  backgroundMaxOutputTokens: 1024
+  refinementTarget: staging_only
+  replaySideEffects: false
+
+platform:
+  id: douyin
+  operationMode: assisted
+  requireVerifiedAllowedMode: true
+  requirePlatformLiveReceipt: true
+  aiLabelGuard: true
+  onPolicyUnavailable: block_new_public_live
+
+feedback:
+  enabled: true
+  requireTargetAttribution: true
+  rewardSourceDedup: true
+  rawGiftAmountTrainingWeight: 0
+
+gifts:
+  enabled: true
+  verifiedEventsOnlyForAcknowledgement: true
+  viewerMergeWindowSeconds: 30
+  globalAckMinIntervalSeconds: 10
+  maxAckSpeechSeconds: 6
+  publicSpendingStats: false
+  settlementReconciliation: true
+
+scope:
+  characterId: dafeiyu
+  workspace: dafeiyu-live
+  mutableLayers: [L2, L4]
+  protectedNamespace: persona_core
+  stableNamespace: learned_stable
+
+models:
+  routing: local_first
+  local:
+    engine: ollama
+    baseModel: Qwen/Qwen3-4B-Instruct-2507
+    artifact: pinned_approved_artifact
+    contextTokens: 4096
+    maxOutputTokens: 128
+    concurrency: 1
+    cpuFallbackEnabled: true
+  cloud:
+    enabled: true
+    provider: configure_before_acceptance
+    model: configure_before_acceptance
+    credentialRef: cloud_model_key
+    maxAttemptsPerRequest: 1
+    dailyBudgetCny: null
+  totalDeadlineMs: 12000
+  localAttemptMs: 5000
+  outputReserveMs: 1500
+  streamBeforeValidation: false
+
+memory:
+  l2Enabled: true
+  l2DefaultTtlDays: 7
+  l2ReviewAfterDays: 2
+  l4DefaultTtlDays: 14
+  conflictDetection: true
+  allowPersonaCoreWrite: false
+
+profiles:
+  enabled: true
+  coverage: all_observable_and_permitted
+  scope: platform_room
+  defaultCloudPermission: local_only
+  defaultTrainingPermission: denied
+  rawEventRetentionDays: 7
+  inactiveProfileRetentionDays: 90
+  selfServiceAccessCorrectionDeletion: true
+  personalizationOptOut: true
+
+retrieval:
+  lexicalEnabled: true
+  vectorEnabled: true
+  graphEnabled: true
+  embeddingModel: Qwen/Qwen3-Embedding-0.6B
+  embeddingDevice: cpu
+  fusion: rrf
+  candidatesPerRoute: 20
+  graphMaxHops: 2
+  graphMaxExpandedNodes: 50
+  memoryTopK: 3
+  skillTopK: 2
+  combinedInjectedTokenLimit: 800
+  latencyBudgetMs: 250
+  strictScopeFilter: true
+
+skills:
+  enabled: true
+  requirePublishedManifest: true
+  maxStepsPerRequest: 2
+  autoPublishWithinGrantedPermissions: true
+  allowUnreviewedPrivilegeExpansion: false
+
+training:
+  enabled: true
+  offlineEnabled: true
+  onlineEnabled: true
+  onlineMode: gpu_time_slicing_with_cpu_serving
+  baseProfile: validated_main_or_small_profile
+  method: qlora_sft
+  minInitialReviewedSamples: 300
+  minNewEligibleSamples: 32
+  opportunityIntervalMinutes: 10
+  maxSliceWallSeconds: 60
+  maxOptimizerStepsPerSlice: 4
+  sequenceLength: 256
+  microBatchSize: 1
+  gradientAccumulationSteps: 8
+  replayFraction: 0.7
+  requirePurposePermission: true
+  dailyTrainingMinutesBudget: null
+  trainingWindowCloudBudgetCny: null
+
+approval:
+  autoPolicyEnabled: true
+  failClosed: true
+  bindPayloadHash: true
+  requireHumanForPolicyOrPermissionExpansion: true
+
+release:
+  autoPublish: true
+  autoPromote: true
+  autoRollback: true
+  atomicRequestBoundarySwitch: true
+  canaryBlockFractions: [0.05, 0.2, 0.5, 1.0]
+  minSessionsPerStage: 2
+  maxModelPromotionsPerDay: 1
+  requireQuantizedArtifactEvaluation: true
+
+consolidation:
+  enabled: true
+  automatic: true
+  sourceLayers: [L2, L4]
+  targetLayers: [L1, L3]
+  targetNamespace: learned_stable
+  minIndependentSessions: 3
+  minEvidenceClusters: 5
+  observationDays: 7
+  reviewEveryDays: 30
+  forbidProfileContent: true
+  forbidPersonaCoreWrite: true
+
+coldStart:
+  suggestedObservationDays: 14
+  evidenceGatedModePromotion: true

@@ -1,0 +1,5 @@
+# dsh-dafeiyu-evolve bundle patch：当前仅注册 Host 半（插件主进程逻辑）。
+# 客户端 UI 半（Web 面板、四主操作按钮）在阶段 F 产品入口时接入。
+- insert:
+    - id: dsh-dafeiyu-evolve
+      name: 'dsh-dafeiyu-evolve'
