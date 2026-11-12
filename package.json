@@ -40,7 +40,8 @@
       "patch": "./cordis.patch.yml"
     },
     "client": {
-      "platform": "web"
+      "platform": "web",
+      "inject": []
     },
     "compatibility": {
       "dshReleases": {
