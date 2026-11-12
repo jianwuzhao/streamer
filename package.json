@@ -48,5 +48,11 @@
         "0.2.2-rc.1": "compatible"
       }
     }
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
   }
 }
