@@ -11,6 +11,7 @@
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 0.7.0 | 2026-11-12 | 阶段 G（整体验收就绪）：首次配置自检（Node/Python/配置/数据目录/Ollama/GPU 逐项可修复动作，缺失能力如实标注）、诊断报告导出（聚合计数、无观众标识/正文/凭据）、全链路集成测试与故障注入（重复事件/政策阻断/重复连击/回滚 epoch 阻断/训练窗口禁用如实报告）、宿主接入适配层（define → createPlugin）、docs/quick-start；TS 139 例 |
 | 0.6.0 | 2026-11-11 | 阶段 F（产品入口核心）：直播会话状态机（未配置→…→已结束；平台未确认绝不显示直播中；幂等开播；紧急停止≠暂停学习）、开播自检（单一可操作原因、AI 标识不可关闭、缺规则包 fail-closed）、抖音政策包（四来源钉住）、PlatformAdapter 契约（辅助模式默认、能力如实申报）、一键训练入口（暂停学习/训练完成≠发布）；TS 137 例 |
 | 0.5.0 | 2026-11-11 | 阶段 E（自动发布与固化）：统一验证器（七道门→结构化报告，inconclusive 不放行）、联合发布控制器（candidate→staged→canary→active 状态链、灰度 5→20→50→100 每阶段≥2 场次、每日一次晋级、epoch 回滚）、自动固化（条件门→learned_stable L1/L3、去重键、反例撤回、注入过滤、30 天复核）；runtime 四接口实装；TS 132 例 |
 | 0.4.0 | 2026-11-11 | 阶段 D（训练）：训练样本管道（用途过滤/脱敏/去重簇/heldout 隔离/30-70 回放配比）、训练窗口调度器（样本/资源/政策三门、champion 不动、断点续跑）、Python worker（分时状态机/检查点/授权协议/QLoRA 依赖守卫/GGUF 导出守卫）；TS 123 例 + Python 11 例 |
@@ -18,9 +19,9 @@
 | 0.2.0 | 2026-11-11 | 阶段 B（完整数据层）：L2/L4 记忆生命周期与矛盾处理、全量观众画像（伪名化身份/字段版本链/删除墓碑）、技能库（manifest/受控执行/示例技能包）、反馈状态机、礼物幂等账本与合并答谢；累计 103 项测试 |
 | 0.1.0 | 2026-11-11 | 阶段 A（基础与资源）：插件骨架、统一配置、SQLite 存储基座、感知/黑板、本地优先路由、模型适配器、资源仲裁、政策授权骨架；70 项测试 |
 
-## 当前状态（阶段 A–F 已完成）
+## 当前状态（阶段 A–G 代码交付完成）
 
-按方案 §20.1 的 A–G 七阶段逐步交付。**当前完成阶段 A–F**（F 为产品入口核心：状态机/政策包/适配契约已就绪，**Web UI 客户端半随宿主接入在 G 阶段安装时启用**）：
+按方案 §20.1 的 A–G 七阶段：**七阶段代码全部交付**（G 含自检/诊断/集成测试/宿主适配层与文档；实机项——真实推理/QLoRA/两小时试运行/新用户实测——按方案在目标机与宿主安装环节验收）：
 
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
@@ -40,13 +41,13 @@
 | 三路检索（§8） | ✅ | BM25（中文 bigram）+ 向量（目标机 Qwen3-Embedding-0.6B via Ollama；测试桩语义映射）+ 图谱（逐跳作用域校验/2 跳/50 节点/高出度截断）；RRF 融合、证据质量与多样性重排、实时复检（challenged/过期/撤销不注入）、记忆 top-3 + 技能 top-2 + token 预算截断；索引 outbox 幂等消费、generation 迁移（building→active 原子切换）、墓碑即时过滤、向量路损坏降级词法并显式标记；评测 harness（Recall@5/nDCG@5/p50/p95）与三路消融 |
 | LearningRuntime | ✅ A+B+C 范围 | `ingest`/`answer`/`updateProfile`/`proposeCognition`/`retrieve` 实装；D/E 接口显式 `NotImplementedError` |
 
-**未完成（后续阶段）**：G 整体验收（Web UI 客户端半接入宿主、安装器与首次配置向导、continual-harness/live-studio 实适配、故障注入与长稳、诊断导出）。
+**待实机/宿主环节完成**：宿主内 install_bundle 安装与 Web UI 客户端半启用、continual-harness/live-studio 实适配、目标机 QLoRA 实跑、连续两小时真实集成试运行与新用户实测（§20.2/§25）。
 
 ## 开发
 
 ```bash
 pnpm install
-pnpm test        # 137 个单元/契约测试（node:test）
+pnpm test        # 139 个单元/契约/集成测试（node:test）
 pnpm test:worker # Python worker 11 例（unittest，纯标准库）
 pnpm typecheck   # tsc --noEmit（strict + exactOptionalPropertyTypes）
 pnpm build       # tsdown → lib/index.js（ESM，宿主插件规范）
@@ -76,8 +77,11 @@ src/
   retrieval/               # BM25、embedding、向量库、图谱、索引器、三路融合、评测
   training/                # 样本管道、训练窗口调度器、Python worker 启动器（另见 training-worker/）
   platform/                # PlatformAdapter 契约（辅助模式）、抖音政策包加载校验
+  installer/               # 首次配置自检、诊断报告导出
+  integration/             # 全链路集成测试与故障注入
   live/                    # 直播会话状态机、一键训练入口（四主操作核心）
   testing/                 # 测试公共设施
+  host-adapter.ts          # 宿主 define 接入层（cordis 行的 node 半）
 skill-packages/            # 技能包目录（示例：gift-ack-phrase）
 training-worker/           # Python 训练进程：分时状态机/检查点/QLoRA（dry-run 零依赖）
 docs/                      # §25 文档集（随阶段补齐）

@@ -18,7 +18,7 @@ import { ProfileStore } from './audience/profile-store.ts'
 import { FeedbackStore } from './feedback/feedback-store.ts'
 import { GiftAckService } from './gifts/ack.ts'
 import { GiftLedger } from './gifts/ledger.ts'
-import { OllamaEmbeddingProvider } from './retrieval/embedding.ts'
+import { HashingEmbeddingProvider, OllamaEmbeddingProvider } from './retrieval/embedding.ts'
 import { GraphStore } from './retrieval/graph.ts'
 import { RetrievalIndexer } from './retrieval/indexer.ts'
 import { RetrievalService } from './retrieval/retrieval.ts'
@@ -56,6 +56,7 @@ export interface DafeiyuPluginContext {
 export interface DafeiyuPluginHandle {
   readonly config: DafeiyuConfigType
   readonly featureGates: FeatureGates
+  readonly db: DB
   readonly runtime: LearningRuntime
   readonly blackboard: BlackboardStore
   readonly arbiter: ResourceArbiter
@@ -221,10 +222,14 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   seedSkillPackages(skillRegistry, skillPackagesDir(), (message) => log(ctx, message))
 
   // 6. 阶段 C 检索：向量（目标机 Qwen3-Embedding）+ 图谱 + 三路融合
-  const embeddingProvider = new OllamaEmbeddingProvider({
-    baseURL: process.env.DAFEIFYU_OLLAMA_URL ?? 'http://127.0.0.1:11434',
-    model: config.retrieval.embeddingModel,
-  })
+  // DAFEIYU_EMBEDDING=stub 仅用于本机测试（哈希伪向量不得用于语义验收 §8.1）
+  const embeddingProvider: import('./retrieval/embedding.ts').EmbeddingProvider =
+    process.env.DAFEIFYU_EMBEDDING === 'stub'
+      ? new HashingEmbeddingProvider()
+      : new OllamaEmbeddingProvider({
+          baseURL: process.env.DAFEIFYU_OLLAMA_URL ?? 'http://127.0.0.1:11434',
+          model: config.retrieval.embeddingModel,
+        })
   const vectorStore = new VectorStore(db)
   const graphStore = new GraphStore(db)
   const retrievalIndexer = new RetrievalIndexer(db, vectorStore, graphStore, embeddingProvider)
@@ -249,6 +254,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   return {
     config,
     featureGates,
+    db,
     runtime,
     blackboard,
     arbiter,
