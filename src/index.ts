@@ -5,7 +5,8 @@
  * `pnpm build` / `pnpm test` 可执行；宿主事件接线（agent/pre-step waterfall、
  * session/event 等）与 Web UI 半在后续阶段接入 cordis.patch.yml。
  */
-import { resolve } from 'node:path'
+import { resolve, dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { readdirSync } from 'node:fs'
 import { BlackboardStore } from './blackboard/store.ts'
@@ -104,9 +105,14 @@ const log = (ctx: DafeiyuPluginContext, message: string): void => {
   ctx.log?.(message)
 }
 
+/** 包根目录（lib/index.js 或 src/index.ts 均回溯到包根）。 */
+export function packageDir(): string {
+  return dirname(dirname(fileURLToPath(import.meta.url)))
+}
+
 export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandle {
-  // 1. 配置与能力开关（null 预算 ⇒ 付费能力禁用）
-  const config = loadConfig(ctx.configPath)
+  // 1. 配置与能力开关（null 预算 ⇒ 付费能力禁用；默认包内 config/default.yaml）
+  const config = loadConfig(ctx.configPath ?? join(packageDir(), 'config/default.yaml'))
   const featureGates = getFeatureGates(config)
   if (!featureGates.cloudCallsEnabled) {
     log(ctx, `第三方调用禁用：${featureGates.cloudDisabledReasons.join('; ')}`)
@@ -115,8 +121,8 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
     log(ctx, 'killSwitch=true：训练/发布/固化/个性化更新保持停用（§14）')
   }
 
-  // 2. 存储与恢复
-  const dataDir = ctx.dataDir ?? process.env.DAFEIFYU_DATA_DIR ?? resolve(process.cwd(), 'data')
+  // 2. 存储与恢复（包内自定位：宿主安装后 cwd 不再是仓库目录）
+  const dataDir = ctx.dataDir ?? process.env.DAFEIFYU_DATA_DIR ?? join(packageDir(), 'data')
   const db = openDatabase(resolve(dataDir, 'dafeiyu.db'))
   const migration = migrate(db)
   if (migration.applied.length > 0) log(ctx, `已应用迁移：${migration.applied.join(', ')}`)
@@ -294,8 +300,8 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
       // 平台规则包随安装版本固定；缺包时开播 fail-closed（§23.2）
       session: new LiveSession(
         new DouyinAssistedAdapter(),
-        existsSync(resolve(process.cwd(), 'policy-packs/douyin/rules.json'))
-          ? loadPolicyPack(resolve(process.cwd(), 'policy-packs/douyin/rules.json'))
+        existsSync(join(packageDir(), 'policy-packs/douyin/rules.json'))
+          ? loadPolicyPack(join(packageDir(), 'policy-packs/douyin/rules.json'))
           : null,
         config.platform.id,
       ),
@@ -314,7 +320,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
 }
 
 function skillPackagesDir(): string {
-  return process.env.DAFEIFYU_SKILL_PACKAGES ?? resolve(process.cwd(), 'skill-packages')
+  return process.env.DAFEIFYU_SKILL_PACKAGES ?? join(packageDir(), 'skill-packages')
 }
 
 /**
@@ -386,3 +392,29 @@ function sqliteCostTracker(db: DB) {
 
 // cordis 风格 activate 别名（宿主接入阶段直接使用）
 export const activate = createPlugin
+
+// ---------------------------------------------------------------------------
+// 宿主 loader 入口（DSH 插件规范：name / inject / apply）
+// ---------------------------------------------------------------------------
+
+export const name = 'dsh-dafeiyu-evolve'
+export const inject: readonly string[] = []
+
+/** 宿主 apply：行 config.enabled=false 时跳过装配；ctx dispose 时释放资源。 */
+export function apply(
+  ctx: {
+    logger?: { info(message: string, ...args: unknown[]): void; warn(message: string, ...args: unknown[]): void }
+    on?(event: 'dispose', listener: () => void): unknown
+  },
+  config: { enabled?: boolean } = {},
+): DafeiyuPluginHandle | null {
+  if (config.enabled === false) {
+    ctx.logger?.info('[dafeiyu] 行配置 disabled，跳过装配')
+    return null
+  }
+  const handle = createPlugin({
+    log: (message, ...args) => ctx.logger?.info(`[dafeiyu] ${message}`, ...args),
+  })
+  ctx.on?.('dispose', () => handle.dispose())
+  return handle
+}

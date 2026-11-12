@@ -5,6 +5,16 @@
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "config",
+    "policy-packs",
+    "skill-packages",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md"
+  ],
   "engines": {
     "node": ">=22.13.0"
   },
