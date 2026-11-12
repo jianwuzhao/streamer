@@ -28,6 +28,7 @@ import { ConsolidationService } from './governance/consolidation.ts'
 import { ReleaseController } from './governance/release.ts'
 import { TrainingSamplePipeline } from './training/samples.ts'
 import { TrainingScheduler } from './training/scheduler.ts'
+import { createRequestHandler } from './host-api.ts'
 import { DouyinAssistedAdapter } from './platform/adapter.ts'
 import { loadPolicyPack } from './platform/policy-pack.ts'
 import { LiveSession } from './live/session.ts'
@@ -404,7 +405,7 @@ export const inject: readonly string[] = []
 export function apply(
   ctx: {
     logger?: { info(message: string, ...args: unknown[]): void; warn(message: string, ...args: unknown[]): void }
-    on?(event: 'dispose', listener: () => void): unknown
+    on?(event: never, listener: never): unknown
   },
   config: { enabled?: boolean } = {},
 ): DafeiyuPluginHandle | null {
@@ -415,6 +416,16 @@ export function apply(
   const handle = createPlugin({
     log: (message, ...args) => ctx.logger?.info(`[dafeiyu] ${message}`, ...args),
   })
-  ctx.on?.('dispose', () => handle.dispose())
+  ctx.on?.('dispose' as never, (() => handle.dispose()) as never)
+  // Web 面板同源后端：/api/dafeiyu/*（connection/request 瀑布，未匹配路径放行）
+  const handler = createRequestHandler(handle)
+  ctx.on?.('connection/request' as never, (async (req: unknown, res: unknown, next: () => Promise<void>) => {
+    await handler(
+      req as Parameters<typeof handler>[0],
+      res as Parameters<typeof handler>[1],
+      next,
+    )
+  }) as unknown as () => Promise<void> as never)
+  ctx.logger?.info('[dafeiyu] 共享 API 就绪：/api/dafeiyu/*')
   return handle
 }

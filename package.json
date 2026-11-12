@@ -13,7 +13,8 @@
     "locale",
     "icon.svg",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "client"
   ],
   "engines": {
     "node": ">=22.13.0"
@@ -37,6 +38,9 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
     },
     "compatibility": {
       "dshReleases": {
