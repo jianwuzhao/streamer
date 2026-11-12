@@ -7,7 +7,13 @@ import { LiveSession } from './session.ts'
 
 const PACK_PATH = resolve(process.cwd(), 'policy-packs/douyin/rules.json')
 
-const okPreflight = { aiLabelVisible: true, stableReleaseAvailable: true, resourceOk: true }
+const okPreflight = {
+  aiLabelVisible: true,
+  stableReleaseAvailable: true,
+  resourceOk: true,
+  personaConfigured: true,
+  platformConfigured: true,
+}
 
 test('规则包：加载/字段校验/哈希通过；缺失或平台不符 ⇒ 开播前单一原因', () => {
   const pack = loadPolicyPack(PACK_PATH)
@@ -56,4 +62,30 @@ test('政策包缺规则：开播被阻断（fail-closed）', async () => {
   assert.equal(status, 'recoverable_fault')
   const check = session.preflight(okPreflight)
   assert.ok(check.reason?.includes('政策包缺失'))
+})
+
+test('预览门：形象未配置拒绝进入并给单一原因；就绪进入本地预览、退出回已停止', () => {
+  const session = new LiveSession(new DouyinAssistedAdapter(), loadPolicyPack(PACK_PATH), 'douyin')
+  const denied = session.enterPreview({ ready: false, reason: '主播形象未配置：在「主播形象」中选择形象与声音并确认使用授权' })
+  assert.equal(denied.ok, false)
+  assert.equal(denied.status, 'unconfigured')
+  assert.ok(denied.reason?.includes('主播形象未配置'))
+  const entered = session.enterPreview({ ready: true })
+  assert.equal(entered.ok, true)
+  assert.equal(entered.status, 'local_preview')
+  assert.equal(session.previewActive, true)
+  assert.equal(session.exitPreview(), 'stopped')
+  assert.equal(session.previewActive, false)
+})
+
+test('开播自检：形象/接入未配置在政策包检查之前给出单一可操作原因', async () => {
+  const session = new LiveSession(new DouyinAssistedAdapter(), loadPolicyPack(PACK_PATH), 'douyin')
+  const personaCheck = session.preflight({ ...okPreflight, personaConfigured: false })
+  assert.equal(personaCheck.pass, false)
+  assert.ok(personaCheck.reason?.includes('主播形象未配置'))
+  const platformCheck = session.preflight({ ...okPreflight, platformConfigured: false })
+  assert.equal(platformCheck.pass, false)
+  assert.ok(platformCheck.reason?.includes('直播接入未配置'))
+  const status = await session.start('task-5', { ...okPreflight, personaConfigured: false })
+  assert.equal(status, 'recoverable_fault')
 })

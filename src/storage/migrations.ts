@@ -471,4 +471,25 @@ CREATE TABLE IF NOT EXISTS learned_stable (
 CREATE INDEX IF NOT EXISTS idx_learned_stable_active ON learned_stable(id);
 `,
   },
+  {
+    version: 9,
+    name: '009_operator_settings_reply_log',
+    sql: `
+CREATE TABLE IF NOT EXISTS operator_settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reply_log (
+  reply_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id    TEXT NOT NULL UNIQUE,
+  session_id    TEXT NOT NULL,
+  question_text TEXT NOT NULL,
+  reply_text    TEXT NOT NULL,
+  route         TEXT NOT NULL CHECK (route IN ('local_gpu','local_cpu','cloud','fallback')),
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_reply_log_created ON reply_log(created_at DESC);
+`,
+  },
 ]

@@ -93,8 +93,35 @@ export class DafeiyuRuntime implements LearningRuntime {
     }
   }
 
-  answer(request: LiveRequest, ctx?: RouteContext): Promise<AnswerReceipt> {
-    return this.deps.router.route(request, ctx ?? { recentReplies: [] })
+  async answer(request: LiveRequest, ctx?: RouteContext): Promise<AnswerReceipt> {
+    const receipt = await this.deps.router.route(request, ctx ?? { recentReplies: [] })
+    this.logReply(request, receipt)
+    return receipt
+  }
+
+  /**
+   * reply_log：播出的问答留痕（「最近回复」与反馈归因目标 §10.1）。
+   * request_id 幂等（重试不重复记录）；仅保留最近 500 条；留痕失败不阻断播出。
+   */
+  private logReply(request: LiveRequest, receipt: AnswerReceipt): void {
+    try {
+      run(
+        this.deps.db,
+        `INSERT INTO reply_log (request_id, session_id, question_text, reply_text, route)
+         VALUES (?, ?, ?, ?, ?) ON CONFLICT(request_id) DO NOTHING`,
+        request.requestId,
+        request.sessionId,
+        request.text,
+        receipt.text,
+        receipt.route,
+      )
+      run(
+        this.deps.db,
+        `DELETE FROM reply_log WHERE reply_id NOT IN (SELECT reply_id FROM reply_log ORDER BY reply_id DESC LIMIT 500)`,
+      )
+    } catch {
+      // 留痕失败不阻断播出（usage 表仍另有路由留痕）
+    }
   }
 
   /**

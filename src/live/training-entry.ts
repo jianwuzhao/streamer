@@ -30,10 +30,16 @@ export interface TrainingEntryResult {
 export class TrainingEntry {
   private paused = false
   private inFlight: Promise<TrainingEntryResult> | null = null
+  private last: TrainingEntryResult | null = null
   private readonly scheduler: TrainingScheduler
 
   constructor(scheduler: TrainingScheduler) {
     this.scheduler = scheduler
+  }
+
+  /** 最近一次训练结果（面板进度展示；进程内态，历史窗口见 training_runs 表）。 */
+  get lastResult(): TrainingEntryResult | null {
+    return this.last
   }
 
   /** 暂停学习（≠紧急停止播出）：停新学习写入/训练/发布。 */
@@ -52,12 +58,19 @@ export class TrainingEntry {
   /** 训练一次（幂等：进行中复用同一任务）。 */
   trainOnce(opts: { mode?: 'dry_run' | 'qlora' } = {}): Promise<TrainingEntryResult> {
     if (this.paused) {
-      return Promise.resolve({ status: 'learning_paused', detail: '学习已暂停：恢复学习后再训练' })
+      const pausedResult: TrainingEntryResult = { status: 'learning_paused', detail: '学习已暂停：恢复学习后再训练' }
+      this.last = pausedResult
+      return Promise.resolve(pausedResult)
     }
     if (this.inFlight !== null) return this.inFlight
-    this.inFlight = this.run(opts).finally(() => {
-      this.inFlight = null
-    })
+    this.inFlight = this.run(opts)
+      .then((result) => {
+        this.last = result
+        return result
+      })
+      .finally(() => {
+        this.inFlight = null
+      })
     return this.inFlight
   }
 

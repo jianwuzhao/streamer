@@ -33,6 +33,7 @@ import { DouyinAssistedAdapter } from './platform/adapter.ts'
 import { loadPolicyPack } from './platform/policy-pack.ts'
 import { LiveSession } from './live/session.ts'
 import { TrainingEntry } from './live/training-entry.ts'
+import { SettingsStore, type CloudSettingsType } from './settings/store.ts'
 import { MemoryStore } from './memory/l2-store.ts'
 import { PolicyService } from './governance/policy-decision.ts'
 import { EventDedup } from './perception/dedup.ts'
@@ -58,6 +59,11 @@ export interface DafeiyuPluginContext {
 export interface DafeiyuPluginHandle {
   readonly config: DafeiyuConfigType
   readonly featureGates: FeatureGates
+  readonly settings: SettingsStore
+  /** 数据目录（自检/诊断展示用） */
+  readonly dataDir: string
+  /** 实际加载的配置文件路径（未指定时为包内默认） */
+  readonly configPath: string
   readonly db: DB
   readonly runtime: LearningRuntime
   readonly blackboard: BlackboardStore
@@ -112,15 +118,9 @@ export function packageDir(): string {
 }
 
 export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandle {
-  // 1. 配置与能力开关（null 预算 ⇒ 付费能力禁用；默认包内 config/default.yaml）
-  const config = loadConfig(ctx.configPath ?? join(packageDir(), 'config/default.yaml'))
-  const featureGates = getFeatureGates(config)
-  if (!featureGates.cloudCallsEnabled) {
-    log(ctx, `第三方调用禁用：${featureGates.cloudDisabledReasons.join('; ')}`)
-  }
-  if (config.killSwitch) {
-    log(ctx, 'killSwitch=true：训练/发布/固化/个性化更新保持停用（§14）')
-  }
+  // 1. 基础配置（默认包内 config/default.yaml；null 预算 ⇒ 付费能力禁用）
+  const configPath = ctx.configPath ?? join(packageDir(), 'config/default.yaml')
+  const baseConfig = loadConfig(configPath)
 
   // 2. 存储与恢复（包内自定位：宿主安装后 cwd 不再是仓库目录）
   const dataDir = ctx.dataDir ?? process.env.DAFEIFYU_DATA_DIR ?? join(packageDir(), 'data')
@@ -129,6 +129,17 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   if (migration.applied.length > 0) log(ctx, `已应用迁移：${migration.applied.join(', ')}`)
   const recovered = recoverPendingOperations(db)
   if (recovered > 0) log(ctx, `启动恢复：${recovered} 个未完成写入操作转入对账（reconcile_required）`)
+
+  // 2.5 操作员设置（§24.1 向导输入的持久化）：云端覆盖重启生效；密钥仍走环境变量
+  const settings = new SettingsStore(db)
+  const config = applyCloudOverrides(baseConfig, settings.getCloud())
+  const featureGates = getFeatureGates(config)
+  if (!featureGates.cloudCallsEnabled) {
+    log(ctx, `第三方调用禁用：${featureGates.cloudDisabledReasons.join('; ')}`)
+  }
+  if (config.killSwitch) {
+    log(ctx, 'killSwitch=true：训练/发布/固化/个性化更新保持停用（§14）')
+  }
 
   // 3. 模型适配器（本地优先：GPU → CPU 回退 → 第三方一次）
   const localBase = process.env.DAFEIFYU_OLLAMA_URL ?? 'http://127.0.0.1:11434'
@@ -261,6 +272,9 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   return {
     config,
     featureGates,
+    settings,
+    dataDir,
+    configPath,
     db,
     runtime,
     blackboard,
@@ -371,6 +385,28 @@ function seedSkillPackages(registry: SkillRegistry, dir: string, onIssue: (messa
         onIssue(`技能包 ${pkgDir} 注册失败: ${(err as Error).message}`)
       }
     }
+  }
+}
+
+/**
+ * 云端设置覆盖（§24.1 向导第 4 步）：settings/cloud 的 provider 非空才覆盖
+ * config.yaml；预算未填保持原值（null 仍禁用付费调用）。重启插件后生效；
+ * API key 永不落库，仍由 DAFEIFYU_CLOUD_API_KEY 环境变量提供。
+ */
+function applyCloudOverrides(base: DafeiyuConfigType, cloud: CloudSettingsType): DafeiyuConfigType {
+  if (cloud.provider.trim() === '') return base
+  return {
+    ...base,
+    models: {
+      ...base.models,
+      cloud: {
+        ...base.models.cloud,
+        enabled: cloud.enabled,
+        provider: cloud.provider,
+        model: cloud.model.trim() === '' ? base.models.cloud.model : cloud.model,
+        dailyBudgetCny: cloud.dailyBudgetCny ?? base.models.cloud.dailyBudgetCny,
+      },
+    },
   }
 }
 

@@ -1,9 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <!-- 大肥鱼 · 原创简笔图标 -->
-  <rect x="2" y="2" width="60" height="60" rx="14" fill="#0f5e57"/>
-  <ellipse cx="30" cy="34" rx="20" ry="12" fill="#ffd166"/>
-  <path d="M46 28 L58 22 L54 34 L58 46 L46 40 Z" fill="#ffd166"/>
-  <circle cx="20" cy="30" r="3" fill="#17303c"/>
-  <path d="M14 40 Q26 48 38 40" stroke="#17303c" stroke-width="2.5" fill="none" stroke-linecap="round"/>
-  <circle cx="44" cy="14" r="5" fill="#4ecdc4" opacity="0.85"/>
+  <!-- 大肥鱼 · DSH 品牌语言：近黑底板 + 白色剪影 + DeepSeek 蓝（rgb(65,118,230)）气泡 -->
+  <rect x="2" y="2" width="60" height="60" rx="13" fill="#0f1115"/>
+  <rect x="2.5" y="2.5" width="59" height="59" rx="12.5" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="1"/>
+  <g fill="#ffffff">
+    <ellipse cx="28" cy="37" rx="18" ry="12"/>
+    <path d="M41 29 L57 22 L52 37 L57 52 L41 45 Z"/>
+  </g>
+  <circle cx="18.5" cy="33" r="2.8" fill="#0f1115"/>
+  <path d="M14 42 Q25 48 36 44" stroke="#0f1115" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <circle cx="46" cy="14" r="4.2" fill="#4176e6"/>
+  <circle cx="54" cy="8.5" r="2" fill="#4176e6" opacity=".55"/>
 </svg>

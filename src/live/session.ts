@@ -46,11 +46,22 @@ export interface PreflightInput {
   readonly aiLabelVisible: boolean
   readonly stableReleaseAvailable: boolean
   readonly resourceOk: boolean
+  /** 主播形象已配置（含使用授权确认）——§24.1 向导输入之一 */
+  readonly personaConfigured: boolean
+  /** 直播接入已配置（操作员已声明官方客户端登录）——§24.1 向导输入之一 */
+  readonly platformConfigured: boolean
 }
 
 export interface PreflightResult {
   readonly pass: boolean
   /** 单一可操作原因（§23.2 开播前失败动作） */
+  readonly reason?: string
+}
+
+export interface PreviewGateResult {
+  readonly ok: boolean
+  readonly status: LiveStatus
+  /** 未通过时的单一可操作原因 */
   readonly reason?: string
 }
 
@@ -77,8 +88,14 @@ export class LiveSession {
     return LIVE_DISPLAY[this.status]
   }
 
-  /** 开播前自检（规则包/账号模式/AI 标识/稳定版本/资源）→ 单一可操作原因。 */
+  /** 开播前自检（形象/接入/规则包/账号模式/AI 标识/稳定版本/资源）→ 单一可操作原因。 */
   preflight(input: PreflightInput): PreflightResult {
+    if (!input.personaConfigured) {
+      return { pass: false, reason: '主播形象未配置：在「主播形象」中选择形象与声音并确认使用授权' }
+    }
+    if (!input.platformConfigured) {
+      return { pass: false, reason: '直播接入未配置：在「直播接入」确认已在官方客户端登录直播账号' }
+    }
     const pack = checkPackValidity(this.pack, this.platform)
     if (!pack.valid) return { pass: false, reason: pack.reason ?? '政策包无效' }
     if (!input.stableReleaseAvailable) return { pass: false, reason: '无稳定发布版本：先完成首次配置向导' }
@@ -131,6 +148,34 @@ export class LiveSession {
 
   get operatorConfirmation(): string | null {
     return this.lastOperatorConfirmation
+  }
+
+  /**
+   * 进入本地预览（§24.2）：形象就绪即可，不要求平台连接——
+   * 本地预览 ≠ 已开播，画布上常显 AI 标识；未就绪返回单一可操作原因。
+   */
+  enterPreview(personaReady: { ready: boolean; reason?: string }): PreviewGateResult {
+    if (!personaReady.ready) {
+      return { ok: false, status: this.status, reason: personaReady.reason ?? '主播形象未配置' }
+    }
+    if (this.isActive() && this.status !== 'local_preview') {
+      // 开播流程进行中（含直播中）：预览随流程展示，不回退状态
+      return { ok: true, status: this.status }
+    }
+    this.status = 'local_preview'
+    return { ok: true, status: this.status }
+  }
+
+  /** 退出本地预览（未开播的预览回到已停止；直播中不可用）。 */
+  exitPreview(): LiveStatus {
+    if (this.status === 'local_preview') {
+      this.status = 'stopped'
+    }
+    return this.status
+  }
+
+  get previewActive(): boolean {
+    return this.status === 'local_preview'
   }
 
   /** 结束直播：停止新增播出、保存账本、终止推流、确认状态。 */

@@ -1,30 +1,19 @@
 /**
  * 宿主共享 API（Web 面板后端）：经宿主 `connection/request` 瀑布承接
- * 已认证的同源请求（/api/dafeiyu/*），只暴露产品入口语义（四主操作 +
- * 紧急停止 + 状态查询），不透出内部服务句柄。
+ * 已认证的同源请求（/api/dafeiyu/*），只暴露产品入口语义，不透出内部服务句柄。
+ *
+ * 路由分派（按功能拆分，均 <400 行/文件）：
+ * - 本文件：GET status、POST 四主操作/紧急停止/设置写入/反馈/观众操作/训练
+ * - host-api-data.ts：面板数据 GET（settings/preview/selfcheck/diagnostics/
+ *   replies/feedback/gifts/summary/training/progress/costs）
+ * - host-api-audience.ts：观众与治理 GET（audience×2、governance×4）
+ * - host-api-shared.ts：类型与公共助手
  */
 import type { DafeiyuPluginHandle } from './index.ts'
-
-type ServerRequest = { method?: string; url?: string; on(eventName: string, cb: (chunk: Buffer) => void): void }
-type ServerResponse = {
-  statusCode?: number
-  setHeader(name: string, value: string): unknown
-  end(body?: string): unknown
-}
-
-function json(res: ServerResponse, code: number, payload: unknown): void {
-  res.setHeader('content-type', 'application/json; charset=utf-8')
-  res.statusCode = code
-  res.end(JSON.stringify(payload))
-}
-
-function readBody(req: ServerRequest): Promise<string> {
-  return new Promise((resolve) => {
-    let data = ''
-    req.on('data', (c) => (data += c))
-    req.on('end', () => resolve(data))
-  })
-}
+import { BUILTIN_VOICES, SettingsValidationError, type Readiness } from './settings/store.ts'
+import { json, readBody, todayCostCny, FEEDBACK_LABELS, type FeedbackLabelInput, type ServerRequest, type ServerResponse } from './host-api-shared.ts'
+import { handleDataGetRoute } from './host-api-data.ts'
+import { handleAudienceGetRoute } from './host-api-audience.ts'
 
 export interface DafeiyuStatus {
   liveStatus: string
@@ -36,10 +25,26 @@ export interface DafeiyuStatus {
   cloudEnabled: boolean
   mode: string
   killSwitch: boolean
+  /** 操作员设置就绪（§24.1 向导输入） */
+  personaReady: boolean
+  personaReadyReason: string | null
+  platformReady: boolean
+  platformReadyReason: string | null
+  previewActive: boolean
+  todayCostCny: number
+  /** 待处理问题数（负面反馈待核实队列） */
+  pendingIssues: number
+}
+
+function readyFlag(r: Readiness): { ready: boolean; reason: string | null } {
+  return r.ready ? { ready: true, reason: null } : { ready: false, reason: r.reason }
 }
 
 export function buildStatus(handle: DafeiyuPluginHandle): DafeiyuStatus {
   const verdict = handle.training.scheduler.evaluateOpportunity()
+  const readiness = handle.settings.readiness()
+  const persona = readyFlag(readiness.persona)
+  const platform = readyFlag(readiness.platform)
   return {
     liveStatus: handle.live.session.current,
     liveDisplay: handle.live.session.display(),
@@ -50,6 +55,13 @@ export function buildStatus(handle: DafeiyuPluginHandle): DafeiyuStatus {
     cloudEnabled: handle.featureGates.cloudCallsEnabled,
     mode: handle.config.mode,
     killSwitch: handle.config.killSwitch,
+    personaReady: persona.ready,
+    personaReadyReason: persona.reason,
+    platformReady: platform.ready,
+    platformReadyReason: platform.reason,
+    previewActive: handle.live.session.previewActive,
+    todayCostCny: todayCostCny(handle.db),
+    pendingIssues: handle.feedback.pendingQueue().length,
   }
 }
 
@@ -59,38 +71,203 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
     const url = req.url ?? ''
     if (!url.startsWith('/api/dafeiyu/')) return next()
     const path = url.replace(/\?.*$/, '').slice('/api/dafeiyu/'.length)
+    const query = new URLSearchParams(url.split('?')[1] ?? '')
     const method = (req.method ?? 'GET').toUpperCase()
 
     try {
       if (method === 'GET' && (path === 'status' || path === '')) {
         return json(res, 200, { ok: true, status: buildStatus(handle) })
       }
+
+      if (method === 'GET') {
+        if (await handleDataGetRoute(handle, path, res)) return
+        if (handleAudienceGetRoute(handle, path, query, res)) return
+      }
+
       if (method === 'POST') {
         const body = await readBody(req)
         const args = body === '' ? {} : (JSON.parse(body) as Record<string, unknown>)
         switch (path) {
           case 'live/start': {
+            // preflight 由操作员设置实况拼装（§24.1/§23.2）：
+            // - AI 标识恒可见（设置域 schema 为字面量 true，无法关闭）；
+            // - pinned 基线即稳定版本（首播无发布版本时成立）；
+            // - 推流由直播伴侣负责（辅助模式），本插件不自建推流。
+            const readiness = handle.settings.readiness()
+            const preflightInput = {
+              aiLabelVisible: true,
+              stableReleaseAvailable: true,
+              resourceOk: true,
+              personaConfigured: readiness.persona.ready,
+              platformConfigured: readiness.platform.ready,
+            }
+            const pre = handle.live.session.preflight(preflightInput)
             const status = await handle.live.session.start(
               typeof args.idempotencyKey === 'string' ? args.idempotencyKey : `ui-${Date.now()}`,
-              {
-                aiLabelVisible: args.aiLabelVisible !== false,
-                stableReleaseAvailable: true,
-                resourceOk: true,
-              },
+              preflightInput,
             )
-            return json(res, 200, { ok: true, status: buildStatus(handle), result: status })
+            return json(res, 200, {
+              ok: true,
+              status: buildStatus(handle),
+              result: { status, ...(pre.pass ? {} : { reason: pre.reason }) },
+            })
           }
           case 'live/stop': {
             const status = await handle.live.session.stop()
-            return json(res, 200, { ok: true, status: buildStatus(handle), result: status })
+            return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
           case 'live/emergency-stop': {
             const status = handle.live.session.emergencyStop()
-            return json(res, 200, { ok: true, status: buildStatus(handle), result: status })
+            return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
           case 'live/operator-confirm': {
             const status = handle.live.session.operatorConfirmedLive(new Date().toISOString())
-            return json(res, 200, { ok: true, status: buildStatus(handle), result: status })
+            return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
+          }
+          case 'preview/start': {
+            const gate = handle.live.session.enterPreview(handle.settings.personaReady())
+            if (!gate.ok) {
+              return json(res, 400, { ok: false, error: gate.reason, status: buildStatus(handle) })
+            }
+            return json(res, 200, { ok: true, status: buildStatus(handle), result: { status: gate.status } })
+          }
+          case 'preview/stop': {
+            const status = handle.live.session.exitPreview()
+            return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
+          }
+          case 'preview/voice-test': {
+            // 试听语句本地返回（不调模型）；客户端用浏览器语音朗读并如实标注
+            const persona = handle.settings.getPersona()
+            const voice =
+              BUILTIN_VOICES.find((v) => v.id === persona.voiceId) ??
+              ({ id: 'qing-wan', label: '清婉（女声）', lang: 'zh-CN', style: '温和亲切，日常闲聊' } as const)
+            return json(res, 200, {
+              ok: true,
+              result: {
+                phrase: persona.samplePhrase,
+                voice: { id: voice.id, label: voice.label, lang: voice.lang, style: voice.style },
+                note: '浏览器语音试听（系统 TTS），最终播出音色以直播伴侣音轨为准',
+              },
+            })
+          }
+          case 'settings/persona':
+          case 'settings/platform':
+          case 'settings/scene':
+          case 'settings/cloud':
+          case 'settings/data-usage':
+          case 'settings/gifts': {
+            const section = path.split('/')[1] as 'persona' | 'platform' | 'scene' | 'cloud' | 'data-usage' | 'gifts'
+            try {
+              const saved =
+                section === 'persona'
+                  ? handle.settings.savePersona(args)
+                  : section === 'platform'
+                    ? handle.settings.savePlatform(args)
+                    : section === 'scene'
+                      ? handle.settings.saveScene(args)
+                      : section === 'cloud'
+                        ? handle.settings.saveCloud(args)
+                        : section === 'data-usage'
+                          ? handle.settings.saveDataUsage(args)
+                          : handle.settings.saveGifts(args)
+              return json(res, 200, {
+                ok: true,
+                section,
+                value: saved,
+                readiness: handle.settings.readiness(),
+                ...(section === 'cloud' ? { note: '云端覆盖在重启插件后生效；API Key 仍走环境变量' } : {}),
+              })
+            } catch (err) {
+              if (err instanceof SettingsValidationError) {
+                return json(res, 400, { ok: false, error: err.message, issues: err.issues })
+              }
+              throw err
+            }
+          }
+          case 'feedback': {
+            const label = args.label
+            if (typeof label !== 'string' || !(FEEDBACK_LABELS as readonly string[]).includes(label)) {
+              return json(res, 400, { ok: false, error: `label 须为 ${FEEDBACK_LABELS.join('/')} 之一` })
+            }
+            const record = handle.feedback.record({
+              actorKind: 'operator',
+              ...(typeof args.targetReplyId === 'string' ? { targetReplyId: args.targetReplyId } : {}),
+              label: label as FeedbackLabelInput,
+              ...(typeof args.correction === 'string' && args.correction !== '' ? { correction: args.correction } : {}),
+            })
+            return json(res, 200, { ok: true, result: record })
+          }
+          case 'feedback/advance': {
+            // 操作员核实推进：received → verifying → resolved | insufficient_evidence
+            const next = args.next
+            const allowed = ['verifying', 'resolved', 'insufficient_evidence']
+            if (typeof args.feedbackId !== 'string' || typeof next !== 'string' || !allowed.includes(next)) {
+              return json(res, 400, { ok: false, error: `next 须为 ${allowed.join('/')} 之一且 feedbackId 必填` })
+            }
+            try {
+              const record = handle.feedback.advance(
+                args.feedbackId,
+                next as 'verifying' | 'resolved' | 'insufficient_evidence',
+                typeof args.note === 'string' ? args.note : undefined,
+              )
+              return json(res, 200, { ok: true, result: record })
+            } catch (err) {
+              return json(res, 400, { ok: false, error: (err as Error).message })
+            }
+          }
+          case 'audience/correction': {
+            // 观众纠错经操作员录入：viewer_stated 直接覆盖推测并保留审计链（§6.3）
+            if (
+              typeof args.viewerKey !== 'string' || args.viewerKey === '' ||
+              typeof args.fieldName !== 'string' || args.fieldName === '' ||
+              typeof args.value !== 'string' || args.value === ''
+            ) {
+              return json(res, 400, { ok: false, error: 'viewerKey/fieldName/value 均必填' })
+            }
+            const field = handle.audience.profiles.viewerCorrection({
+              viewerKey: args.viewerKey,
+              fieldName: args.fieldName,
+              value: args.value,
+            })
+            return json(res, 200, { ok: true, result: field })
+          }
+          case 'audience/personalization-off': {
+            if (typeof args.viewerKey !== 'string' || args.viewerKey === '') {
+              return json(res, 400, { ok: false, error: 'viewerKey 必填' })
+            }
+            const requestId = handle.audience.deletion.personalizationOff(args.viewerKey)
+            return json(res, 200, { ok: true, result: { requestId, detail: '已退出个性化：字段保留但不再用于个性化' } })
+          }
+          case 'audience/deletion-request': {
+            // 删除第一步：提交申请（received）——验证身份后才可执行
+            if (typeof args.viewerKey !== 'string' || args.viewerKey === '') {
+              return json(res, 400, { ok: false, error: 'viewerKey 必填' })
+            }
+            const requestId = handle.audience.deletion.submitRequest(args.viewerKey, 'deletion')
+            return json(res, 200, {
+              ok: true,
+              result: { requestId, status: 'received', detail: '申请已受理：验证该观众身份后执行删除（两步流）' },
+            })
+          }
+          case 'audience/deletion-execute': {
+            // 删除第二步：验证通过后落墓碑；未验证请求保持 received（不删他人画像）
+            if (
+              typeof args.requestId !== 'string' || args.requestId === '' ||
+              typeof args.viewerKey !== 'string' || args.viewerKey === ''
+            ) {
+              return json(res, 400, { ok: false, error: 'requestId/viewerKey 必填' })
+            }
+            const receipt = handle.audience.deletion.executeDeletion(args.requestId, {
+              verificationPassed: args.verificationPassed === true,
+              viewerKey: args.viewerKey,
+            })
+            if (receipt === null) {
+              return json(res, 400, {
+                ok: false,
+                error: '删除未执行：请求不存在/观众不匹配，或身份验证未通过（请求保持 received）',
+              })
+            }
+            return json(res, 200, { ok: true, result: receipt })
           }
           case 'training/train-once': {
             const result = await handle.live.trainingEntry.trainOnce({
