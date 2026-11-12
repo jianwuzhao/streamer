@@ -20,13 +20,19 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const style = document.createElement("style");
 		style.id = STYLE_ID;
 		style.textContent = `
-.dfy-panel { font-family: var(--dsw-font-family, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif); color: var(--dsw-alias-label-primary, #17303c); background: var(--dsw-alias-bg-base, #f6faf9); }
+.dfy-panel { font-family: var(--dsw-font-family, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif); color: var(--dsw-alias-label-primary, #17303c); height: 100%; box-sizing: border-box; overflow-y: auto; padding: 14px 16px; font-size: 13px; }
 .dfy-panel, .dfy-panel * { box-sizing: border-box; }
+/* 响应式卡片列（对齐宿主页面布局：铺满内容区、宽屏多列、窄屏单列堆叠） */
+.dfy-cols { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.dfy-col { flex: 1 1 320px; min-width: min(300px, 100%); }
+.dfy-col-wide { flex: 1 1 640px; min-width: min(480px, 100%); }
+.dfy-col .dfy-card, .dfy-col-wide .dfy-card, .dfy-cols > .dfy-card { margin-bottom: 0; }
+.dfy-full { flex: 1 1 100%; }
 .dfy-panel h2 { margin: 0; font-size: 17px; }
 .dfy-panel h3 { margin: 0; font-size: 13.5px; }
 .dfy-muted { color: var(--dsw-alias-label-tertiary, #5b6f6c); }
 .dfy-caption { color: var(--dsw-alias-label-caption, #8aa09b); }
-.dfy-card { background: var(--dsw-alias-bg-layer-1, #ffffff); border: 0.5px solid var(--dsw-alias-border-l1, #d8e2e0); border-radius: var(--dsw-radius-lg, 12px); padding: 12px 14px; margin-bottom: 12px; }
+.dfy-card { background: var(--dsw-alias-bg-layer-1, #ffffff); border: 0.5px solid var(--dsw-alias-border-l1, #d8e2e0); border-radius: var(--dsw-radius-lg, 12px); padding: 12px 14px; margin-bottom: 12px; width: 100%; }
 .dfy-stat { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; padding: 4px 0; border-bottom: 0.5px dashed var(--dsw-alias-border-l1, #d8e2e0); }
 .dfy-stat-label { color: var(--dsw-alias-label-tertiary, #5b6f6c); flex: 0 0 auto; }
 .dfy-stat-value { font-weight: 600; color: var(--dsw-alias-label-primary, #17303c); text-align: right; word-break: break-all; }
@@ -87,7 +93,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 	const Stat = ({ label, value }) => h("div", { className: "dfy-stat" },
 		h("span", { className: "dfy-stat-label" }, label), h("span", { className: "dfy-stat-value" }, value));
 
-	const Card = ({ title, children, extra }) => h("div", { className: "dfy-card" },
+	const Card = ({ title, children, extra, col }) => h("div", { className: "dfy-card" + (col === "wide" ? " dfy-col-wide" : col ? " dfy-col" : "") },
 		title ? h("div", { style: { display: "flex", alignItems: "center", marginBottom: 8 } },
 			h("h3", { style: { margin: 0, fontSize: 13.5, flex: 1 } }, title), extra || null) : null,
 		children);
@@ -160,27 +166,29 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const starting = s && ["self_check", "local_preview", "awaiting_platform", "stream_established"].includes(s.liveStatus);
 		const canTrain = s && s.trainingEligible && !s.learningPaused;
 		const needWizard = s && (!s.personaReady || !s.platformReady);
-		return h("div", null,
-			needWizard ? h("div", { className: "dfy-note-warn" },
+		return h("div", { className: "dfy-cols" },
+			needWizard ? h("div", { className: "dfy-note-warn dfy-full" },
 				h("div", { style: { fontWeight: 700, marginBottom: 4 } }, "首次配置未完成"),
 				h("div", { className: "dfy-muted", style: { marginBottom: 8 } }, !s.personaReady ? s.personaReadyReason : s.platformReadyReason),
 				h(Btn, { tone: "primary", disabled: busy, style: { flex: "0 0 auto", padding: "6px 14px" }, onClick: () => goTab("wizard") }, "去首次配置")) : null,
-			h(Card, { title: "当前状态", extra: h("span", null,
-				h(Badge, { tone: s && s.personaReady ? "ok" : "err", text: s && s.personaReady ? "形象就绪" : "形象未配置" }),
-				h(Badge, { tone: s && s.platformReady ? "ok" : "err", text: s && s.platformReady ? "接入就绪" : "接入未配置" })) },
-				h(Stat, { label: "直播状态", value: s ? s.liveDisplay : "—" }),
-				h(Stat, { label: "运行模式", value: s ? s.mode + (s.killSwitch ? "（killSwitch）" : "") : "—" }),
-				h(Stat, { label: "学习状态", value: s ? (s.learningPaused ? "已暂停" : "观察学习中") : "—" }),
-				h(Stat, { label: "当前版本", value: s && s.activeReleaseId ? s.activeReleaseId : "基线" }),
-				h(Stat, { label: "云端兜底", value: s ? (s.cloudEnabled ? "已启用" : "未配置（不产生付费调用）") : "—" }),
-				h(Stat, { label: "训练机会", value: s ? (s.trainingEligible ? "样本/资源/政策门通过" : s.trainingEligibleDetail) : "—" }),
-				h(Stat, { label: "当日费用", value: s ? s.todayCostCny.toFixed(2) + " 元（以服务商账单为准）" : "—" }),
-				h(Stat, { label: "待处理问题", value: s ? s.pendingIssues + " 条反馈待核实" : "—" })),
-			s && s.previewActive ? h(Card, { title: "本地预览进行中", extra: h(Btn, { tone: "ghost", style: { flex: "0 0 auto", padding: "4px 10px" }, onClick: () => goTab("preview") }, "打开预览") },
-				h(PreviewCanvas, { preview: { previewActive: true, persona: { name: "大肥鱼", aiLabelText: "AI 生成内容" }, scene: {} }, compact: true })) : null,
-			s && s.liveStatus === "awaiting_platform" ? h("div", { className: "dfy-note-warn" },
+			h("div", { className: "dfy-col" },
+				h(Card, { title: "当前状态", extra: h("span", null,
+					h(Badge, { tone: s && s.personaReady ? "ok" : "err", text: s && s.personaReady ? "形象就绪" : "形象未配置" }),
+					h(Badge, { tone: s && s.platformReady ? "ok" : "err", text: s && s.platformReady ? "接入就绪" : "接入未配置" })) },
+					h(Stat, { label: "直播状态", value: s ? s.liveDisplay : "—" }),
+					h(Stat, { label: "运行模式", value: s ? s.mode + (s.killSwitch ? "（killSwitch）" : "") : "—" }),
+					h(Stat, { label: "学习状态", value: s ? (s.learningPaused ? "已暂停" : "观察学习中") : "—" }),
+					h(Stat, { label: "当前版本", value: s && s.activeReleaseId ? s.activeReleaseId : "基线" }),
+					h(Stat, { label: "云端兜底", value: s ? (s.cloudEnabled ? "已启用" : "未配置（不产生付费调用）") : "—" }),
+					h(Stat, { label: "训练机会", value: s ? (s.trainingEligible ? "样本/资源/政策门通过" : s.trainingEligibleDetail) : "—" }),
+					h(Stat, { label: "当日费用", value: s ? s.todayCostCny.toFixed(2) + " 元（以服务商账单为准）" : "—" }),
+					h(Stat, { label: "待处理问题", value: s ? s.pendingIssues + " 条反馈待核实" : "—" }))),
+			s && s.previewActive ? h("div", { className: "dfy-col" },
+				h(Card, { title: "本地预览进行中", extra: h(Btn, { tone: "ghost", style: { flex: "0 0 auto", padding: "4px 10px" }, onClick: () => goTab("preview") }, "打开预览") },
+					h(PreviewCanvas, { preview: { previewActive: true, persona: { name: "大肥鱼", aiLabelText: "AI 生成内容" }, scene: {} }, compact: true }))) : null,
+			s && s.liveStatus === "awaiting_platform" ? h("div", { className: "dfy-note-warn dfy-full" },
 				"平台状态待确认：在直播伴侣完成开播后，点击「我已在官方客户端开播」同步状态。") : null,
-			h("div", { style: { display: "flex", flexWrap: "wrap", gap: 10 } },
+			h("div", { className: "dfy-full", style: { display: "flex", flexWrap: "wrap", gap: 10 } },
 				h(Btn, { tone: "primary", disabled: busy || !s || live, onClick: () => act("live/start", {}, "开始直播") }, starting ? "开播进行中…" : "开始直播"),
 				h(Btn, { disabled: busy || !s || (!live && !starting), onClick: () => act("live/stop", {}, "结束直播") }, "结束直播"),
 				s && s.liveStatus === "awaiting_platform" ? h(Btn, { disabled: busy, onClick: () => act("live/operator-confirm", {}, "我已在官方客户端开播") }, "我已在官方客户端开播") : null,
@@ -377,20 +385,22 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 		const active = preview && preview.previewActive;
 		const inFlow = status && ["local_preview", "awaiting_platform", "stream_established", "live_confirmed", "self_check"].includes(status.liveStatus);
-		return h("div", null,
-			h(Card, { title: "本地预览（浏览器渲染画布）" },
-				h(PreviewCanvas, { preview: preview }),
-				h("div", { style: { display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" } },
-					h(Btn, { tone: "primary", disabled: busy || active, onClick: async () => { await act("preview/start", {}, "进入本地预览"); load(); }, style: { flex: "0 0 130px" } }, active ? "预览中" : "进入本地预览"),
-					h(Btn, { disabled: busy || !inFlow || status.liveStatus === "live_confirmed", onClick: async () => { await act("preview/stop", {}, "退出预览"); load(); }, style: { flex: "0 0 110px" } }, "退出预览"),
-					h(Btn, { tone: "ghost", onClick: load, style: { flex: "0 0 70px" } }, "刷新")),
-				h("p", { className: "dfy-muted", style: { fontSize: 12, marginTop: 8 } },
-					"本地预览 ≠ 已开播：预览不推流；「" + (preview ? preview.liveDisplay : "—") + "」。确认形象、声音与 AI 标识正常后再开始直播。")),
-			preview && preview.liveStatus === "awaiting_platform" ? h(Card, { title: "平台状态待确认" },
-				h("p", { style: { fontSize: 12.5, margin: "0 0 8px" } }, "官方客户端（直播伴侣）完成开播后回来自行同步状态："),
-				h("div", { style: { display: "flex", gap: 10 } },
-					h("a", { href: preview.officialClientUrl, target: "_blank", rel: "noreferrer" }, h(Btn, { tone: "ghost", style: { flex: "0 0 150px" } }, "打开直播伴侣说明")),
-					h(Btn, { tone: "primary", disabled: busy, onClick: () => act("live/operator-confirm", {}, "我已在官方客户端开播") }, "我已在官方客户端开播"))) : null);
+		return h("div", { className: "dfy-cols" },
+			h("div", { className: "dfy-col-wide" },
+				h(Card, { title: "本地预览（浏览器渲染画布）" },
+					h(PreviewCanvas, { preview: preview }),
+					h("div", { style: { display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" } },
+						h(Btn, { tone: "primary", disabled: busy || active, onClick: async () => { await act("preview/start", {}, "进入本地预览"); load(); }, style: { flex: "0 0 130px" } }, active ? "预览中" : "进入本地预览"),
+						h(Btn, { disabled: busy || !inFlow || status.liveStatus === "live_confirmed", onClick: async () => { await act("preview/stop", {}, "退出预览"); load(); }, style: { flex: "0 0 110px" } }, "退出预览"),
+						h(Btn, { tone: "ghost", onClick: load, style: { flex: "0 0 70px" } }, "刷新")),
+					h("p", { className: "dfy-muted", style: { fontSize: 12, marginTop: 8 } },
+						"本地预览 ≠ 已开播：预览不推流；「" + (preview ? preview.liveDisplay : "—") + "」。确认形象、声音与 AI 标识正常后再开始直播。"))),
+			preview && preview.liveStatus === "awaiting_platform" ? h("div", { className: "dfy-col" },
+				h(Card, { title: "平台状态待确认" },
+					h("p", { style: { fontSize: 12.5, margin: "0 0 8px" } }, "官方客户端（直播伴侣）完成开播后回来自行同步状态："),
+					h("div", { style: { display: "flex", gap: 10, flexWrap: "wrap" } },
+						h("a", { href: preview.officialClientUrl, target: "_blank", rel: "noreferrer" }, h(Btn, { tone: "ghost", style: { flex: "0 0 150px" } }, "打开直播伴侣说明")),
+						h(Btn, { tone: "primary", disabled: busy, onClick: () => act("live/operator-confirm", {}, "我已在官方客户端开播") }, "我已在官方客户端开播")))) : null);
 	}
 
 	// ------------------------------------------------------------------ 训练与学习
@@ -459,8 +469,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			load();
 		};
 
-		return h("div", null,
-			h(Card, { title: "最近回复（反馈关联到当时的回复与版本 §10.1）", extra: h(Btn, { tone: "ghost", onClick: load, style: { flex: "0 0 60px", padding: "4px 10px" } }, "刷新") },
+		return h("div", { className: "dfy-cols" },
+			h(Card, { title: "最近回复（反馈关联到当时的回复与版本 §10.1）", col: "wide", extra: h(Btn, { tone: "ghost", onClick: load, style: { flex: "0 0 60px", padding: "4px 10px" } }, "刷新") },
 				note ? h("p", { className: "dfy-note-ok", style: { margin: "0 0 6px" } }, note) : null,
 				data && data.replies.length === 0 ? h("p", { className: "dfy-muted", style: { fontSize: 12.5 } }, "暂无播出留痕（有问答后此处可见最近 50 条）") : null,
 				(data ? data.replies : []).map((r) => h("div", { key: r.replyId, style: { padding: "8px 0", borderBottom: "0.5px dashed var(--dsw-alias-border-l1, #d8e2e0)", fontSize: 12.5 } },
@@ -472,7 +482,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 							key: lb, onClick: () => send(r, lb), className: "dfy-pill",
 						}, FB_LABEL[lb])),
 						r.feedback.length > 0 ? h("span", { className: "dfy-note-ok", style: { fontSize: 11 } }, r.feedback.map((f) => FB_LABEL[f.label] + "·" + FB_STATUS[f.status]).join("，")) : null)))),
-			h(Card, { title: "反馈处理状态" },
+			h(Card, { title: "反馈处理状态", col: true },
 				fbs && fbs.feedback.length === 0 ? h("p", { className: "dfy-muted", style: { fontSize: 12.5 } }, "暂无反馈") : null,
 				(fbs ? fbs.feedback : []).map((f) => h("div", { key: f.feedbackId, style: { display: "flex", gap: 8, fontSize: 12.5, padding: "4px 0", borderBottom: "0.5px dashed var(--dsw-alias-border-l1, #d8e2e0)", alignItems: "center" } },
 					h("span", { style: { flex: "0 0 84px" } }, FB_LABEL[f.label] || f.label),
@@ -481,7 +491,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					f.status === "verifying" ? h("button", { className: "dfy-pill", onClick: () => advance(f.feedbackId, "resolved", "已修复") }, "已修复") : null,
 					f.status === "verifying" ? h("button", { className: "dfy-pill", onClick: () => advance(f.feedbackId, "insufficient_evidence", "证据不足") }, "证据不足") : null,
 					h("span", { style: { fontWeight: 700, color: f.status === "resolved" ? "var(--dsw-alias-state-success-primary, #1c7a54)" : undefined, flex: "0 0 60px", textAlign: "right" } }, FB_STATUS[f.status] || f.status)))),
-			gifts ? h(Card, { title: "礼物账本（标价不等于实际收入）" },
+			gifts ? h(Card, { title: "礼物账本（标价不等于实际收入）", col: true },
 				h(Stat, { label: "收到 / 待结算 / 已结算", value: gifts.totals.receivedQty + " / " + gifts.totals.pendingSettlementQty + " / " + gifts.totals.settledQty }),
 				h(Stat, { label: "退款（抵消记录）", value: String(gifts.totals.refundedQty) }),
 				h(Stat, { label: "标价合计（仅供参考）", value: gifts.totals.faceValueSum.toFixed(2) }),
@@ -514,14 +524,14 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			a.click();
 			URL.revokeObjectURL(a.href);
 		};
-		return h("div", null,
-			h(Card, { title: "首次配置自检（向导同款）", extra: h(Btn, { tone: "ghost", onClick: runCheck, style: { flex: "0 0 76px", padding: "4px 10px" } }, "运行") },
+		return h("div", { className: "dfy-cols" },
+			h(Card, { title: "首次配置自检（向导同款）", col: true, extra: h(Btn, { tone: "ghost", onClick: runCheck, style: { flex: "0 0 76px", padding: "4px 10px" } }, "运行") },
 				report ? report.items.map((it) => h("div", { key: it.id, style: { fontSize: 12.5, padding: "4px 0", borderBottom: "0.5px dashed var(--dsw-alias-border-l1, #d8e2e0)" } },
 					h("span", { style: { color: it.ok ? "var(--dsw-alias-state-success-primary, #1c7a54)" : "var(--dsw-alias-state-error-primary, #c0392b)", fontWeight: 700, marginRight: 8 } }, it.ok ? "✓" : "✗"),
 					h("b", null, it.label),
 					h("span", { className: "dfy-muted" }, " — " + it.detail + (it.fixAction ? "（修复：" + it.fixAction + "）" : "")))) : h("p", { className: "dfy-muted", style: { fontSize: 12.5 } }, "点击「运行」执行环境自检。"),
 				note ? h("p", { className: "dfy-muted", style: { fontSize: 12, marginTop: 6 } }, note) : null),
-			h(Card, { title: "诊断报告导出（脱敏）" },
+			h(Card, { title: "诊断报告导出（脱敏）", col: true },
 				h("p", { className: "dfy-muted", style: { fontSize: 12.5 } }, "导出前先看将包含的内容：" + (diag ? diag.disclosure.join("；") : "报告仅含聚合计数与状态分布，不含观众标识、正文、凭据")),
 				h("div", { style: { display: "flex", gap: 10 } },
 					h(Btn, { onClick: loadDiag, style: { flex: "0 0 110px" } }, "生成预览"),
@@ -574,8 +584,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 		const d = detail;
 		const pendingDeletion = d ? d.requests.find((r) => r.kind === "deletion" && r.status === "received") : null;
-		return h("div", null,
-			h(Card, { title: "观众（伪名化身份，管理入口）", extra: h(Btn, { tone: "ghost", onClick: load, style: { flex: "0 0 60px", padding: "4px 10px" } }, "刷新") },
+		return h("div", { className: "dfy-cols" },
+			h(Card, { title: "观众（伪名化身份，管理入口）", col: true, extra: h(Btn, { tone: "ghost", onClick: load, style: { flex: "0 0 60px", padding: "4px 10px" } }, "刷新") },
 				note ? h("p", { className: "dfy-muted", style: { fontSize: 12, margin: "0 0 6px" } }, note) : null,
 				overview === null ? h("p", { className: "dfy-muted", style: { fontSize: 12.5 } }, "加载中…") : null,
 				overview && overview.viewers.length === 0 ? h("p", { className: "dfy-muted", style: { fontSize: 12.5 } }, "暂无观众画像（授权事件到达后建立）") : null,
@@ -592,7 +602,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 						h("span", { style: { flex: 1 } }, (r.viewerKey || "").slice(0, 14) + "…"),
 						h("span", { style: { flex: "0 0 64px", textAlign: "right" } }, PRIVACY_STATUS[r.status] || r.status)))) : null,
 				overview ? h("p", { className: "dfy-caption", style: { fontSize: 11, marginTop: 8 } }, overview.notes.join("；")) : null),
-			d ? h(Card, { title: "画像详情 · " + (d.summary.nickname || d.summary.viewerKey.slice(0, 16)), extra: h(Badge, { tone: d.summary.deleted ? "err" : "ok", text: d.summary.deleted ? "已删除" : "在册" }) },
+			d ? h(Card, { title: "画像详情 · " + (d.summary.nickname || d.summary.viewerKey.slice(0, 16)), col: "wide", extra: h(Badge, { tone: d.summary.deleted ? "err" : "ok", text: d.summary.deleted ? "已删除" : "在册" }) },
 				h(Stat, { label: "伪名键", value: d.summary.viewerKey.slice(0, 24) + "…" }),
 				h(Stat, { label: "首次/最近互动", value: (d.summary.firstSeenAt || "—").slice(0, 16).replace("T", " ") + " / " + (d.summary.lastSeenAt || "—").slice(0, 16).replace("T", " ") }),
 				h(Stat, { label: "互动聚合（事件表可重放）", value: Object.keys(d.interactions).length === 0 ? "无" : Object.entries(d.interactions).map(([k, n]) => k + "×" + n).join("，") }),
@@ -625,15 +635,15 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			if (s.ok && m.ok && r.ok && a.ok) setData({ skills: s.skills, memories: m.memories, memoryNotes: m.notes, active: r.activeReleaseId, releases: r.releases, audits: a.audits, decisions: a.decisions, auditNotes: a.notes });
 		}, []);
 		useEffect(() => { load() }, [load]);
-		return h("div", null,
-			h(Card, { title: "技能库（版本不可原地覆盖；权限扩张拒晋级）", extra: h(Btn, { tone: "ghost", onClick: load, style: { flex: "0 0 60px", padding: "4px 10px" } }, "刷新") },
+		return h("div", { className: "dfy-cols" },
+			h(Card, { title: "技能库（版本不可原地覆盖；权限扩张拒晋级）", col: "wide", extra: h(Btn, { tone: "ghost", onClick: load, style: { flex: "0 0 60px", padding: "4px 10px" } }, "刷新") },
 				data === null ? h("p", { className: "dfy-muted", style: { fontSize: 12.5 } }, "加载中…") : null,
 				data && data.skills.length === 0 ? h("p", { className: "dfy-muted", style: { fontSize: 12.5 } }, "无已注册技能") : null,
 				(data ? data.skills : []).map((s) => h("div", { key: s.skillId + "@" + s.version, style: { display: "flex", gap: 8, fontSize: 12.5, padding: "5px 0", borderBottom: "0.5px dashed var(--dsw-alias-border-l1, #d8e2e0)", alignItems: "center" } },
 					h("span", { style: { flex: 1 }, title: s.description || "" }, h("b", null, s.skillId), h("span", { className: "dfy-muted" }, " v" + s.version + (s.kind ? " · " + s.kind : ""))),
 					h("span", { className: "dfy-muted", style: { flex: "0 0 76px", textAlign: "right" } }, "权限 " + s.permissions),
 					h(Badge, { tone: s.status === "active" ? "ok" : "idle", text: SKILL_STATUS_CN[s.status] || s.status })))),
-			h(Card, { title: "记忆候选（L2/L4 生命周期）" },
+			h(Card, { title: "记忆候选（L2/L4 生命周期）", col: "wide" },
 				data && data.memories.length === 0 ? h("p", { className: "dfy-muted", style: { fontSize: 12.5 } }, "暂无记忆候选") : null,
 				(data ? data.memories : []).slice(0, 20).map((m) => h("div", { key: m.id + "@" + m.revision, style: { fontSize: 12.5, padding: "5px 0", borderBottom: "0.5px dashed var(--dsw-alias-border-l1, #d8e2e0)" } },
 					h("div", null, h("b", null, "[" + m.layer + "]"), " " + (m.claim.length > 46 ? m.claim.slice(0, 46) + "…" : m.claim)),
@@ -641,7 +651,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 						"证据 " + m.supportingEvidence.length + " 支持 / " + m.counterEvidence.length + " 反例 · 场景 " + m.scene + " · 复核 " + m.reviewAfter.slice(0, 10)),
 					h("div", { style: { marginTop: 2 } }, h(Badge, { tone: m.status === "active" ? "ok" : m.status === "challenged" ? "err" : "idle", text: MEMORY_STATUS_CN[m.status] || m.status })))),
 				data ? h("p", { className: "dfy-caption", style: { fontSize: 11, marginTop: 6 } }, data.memoryNotes.join("；")) : null),
-			h(Card, { title: "发布链（灰度 5→20→50→100，每日一次晋级）", extra: status && status.activeReleaseId ? h(Badge, { tone: "ok", text: "active：" + status.activeReleaseId }) : h(Badge, { tone: "idle", text: "基线（无发布版本）" }) },
+			h(Card, { title: "发布链（灰度 5→20→50→100，每日一次晋级）", col: true, extra: status && status.activeReleaseId ? h(Badge, { tone: "ok", text: "active：" + status.activeReleaseId }) : h(Badge, { tone: "idle", text: "基线（无发布版本）" }) },
 				data && data.releases.length === 0 ? h("p", { className: "dfy-muted", style: { fontSize: 12.5 } }, "暂无发布记录（基线运行）" ) : null,
 				(data ? data.releases : []).map((r) => h("div", { key: r.release_id, style: { display: "flex", gap: 8, fontSize: 12.5, padding: "4px 0", alignItems: "center" } },
 					h("span", { style: { flex: 1 } }, r.release_id),
@@ -649,7 +659,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					h(Badge, { tone: r.release_id === (data && data.active) ? "ok" : r.status === "rolled_back" ? "err" : "idle", text: RELEASE_STATUS_CN[r.status] || r.status }))),
 				h("div", { style: { display: "flex", gap: 10, marginTop: 8 } },
 					h(Btn, { disabled: busy || !status || !status.activeReleaseId, onClick: () => act("release/rollback", {}, "恢复稳定版本"), style: { flex: "0 0 130px" } }, "恢复稳定版本"))),
-			h(Card, { title: "审计与决策（最近）" },
+			h(Card, { title: "审计与决策（最近）", col: true },
 				data && data.decisions.length > 0 ? h("div", { style: { marginBottom: 6 } },
 					h("div", { style: { fontWeight: 700, fontSize: 12, margin: "4px 0" } }, "政策决策"),
 					data.decisions.map((d) => h("div", { key: d.decision_id, style: { display: "flex", gap: 8, fontSize: 12, padding: "2px 0", className: "dfy-muted" } },
@@ -712,7 +722,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const starting = status && ["self_check", "local_preview", "awaiting_platform", "stream_established"].includes(status.liveStatus);
 		const headTone = live ? "ok" : starting ? "warn" : "idle";
 
-		return h("div", { className: "dfy-panel", style: { padding: 18, maxWidth: 620, margin: "0 auto", minHeight: "100%" } },
+		return h("div", { className: "dfy-panel" },
 			h("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 6 } },
 				h(FishIcon, { size: 30 }),
 				h("h2", { style: { margin: 0, fontSize: 17, flex: 1 } }, "大肥鱼直播"),
