@@ -4,14 +4,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { migrate, openDatabase } from '../storage/db.ts'
-import {
-  BUILTIN_AVATARS,
-  BUILTIN_VOICES,
-  BUILTIN_PROFILES,
-  resolveProfile,
-  SettingsStore,
-  SettingsValidationError,
-} from './store.ts'
+import { BUILTIN_AVATARS, BUILTIN_VOICES, BUILTIN_PROFILES, resolveProfile } from './catalogs.ts'
+import { SettingsStore, SettingsValidationError } from './store.ts'
 
 function makeStore() {
   const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-settings-'))
@@ -27,7 +21,6 @@ test('settings：默认值齐备（schema default），未保存即可读', () =
     assert.equal(persona.profileId, 'dsh-pet')
     assert.equal(persona.personaName, '大肥鱼')
     assert.equal(persona.avatarId, 'fish-deskpet')
-    assert.equal(persona.voiceInteractionEnabled, true)
     assert.equal(persona.voiceId, 'qing-wan')
     assert.equal(persona.usageRightConfirmed, false)
     assert.equal(persona.aiLabelVisible, true)

@@ -10,16 +10,17 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createEnvelope } from '../perception/envelope.ts'
+import { HashingEmbeddingProvider } from '../testing/embedding-stubs.ts'
 import { NotImplementedError } from '../types.ts'
 
 test('全链路：事件→画像→礼物→记忆→检索→回答→训练→发布→回滚（含故障注入）', async () => {
   const { createPlugin } = await import('../index.ts')
   const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-it-'))
-  process.env.DAFEIFYU_EMBEDDING = 'stub' // 测试开关：哈希伪向量（不入语义验收）
   const plugin = createPlugin({
     configPath: resolve(process.cwd(), 'config/default.yaml'),
     dataDir,
     log: () => {},
+    embeddingProvider: new HashingEmbeddingProvider(), // 测试注入桩（不入语义验收）
   })
   try {
     // ── 1. 事件：弹幕（去重）+ 礼物（连击增量）────────────────────────
@@ -120,7 +121,6 @@ test('全链路：事件→画像→礼物→记忆→检索→回答→训练�
     assert.ok(diag.schemaMigrations.length >= 8)
   } finally {
     plugin.dispose()
-    delete process.env.DAFEIFYU_EMBEDDING
     rmSync(dataDir, { recursive: true, force: true })
   }
 })

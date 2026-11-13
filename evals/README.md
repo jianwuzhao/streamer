@@ -1,7 +1,7 @@
 # 检索评测（方案 §8.4）
 
 评测 harness：`src/retrieval/eval.ts`（Recall@K / nDCG@K / 延迟 p50/p95 + 三路消融）。
-测试夹具：`src/retrieval/eval-fixture.ts`（中文口语/别名/短弹幕最小标注集）。
+测试夹具：`src/testing/eval-fixture.ts`（中文口语/别名/短弹幕最小标注集；随测试桩一并置于 src/testing/，不进生产路径）。
 
 - 调参集/保留集拆分、覆盖反例/过期知识/跨观众隔离的完整标注集在目标机
   部署时用真实语义模型（Qwen3-Embedding-0.6B）建立；本地测试桩仅验证

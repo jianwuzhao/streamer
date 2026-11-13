@@ -10,8 +10,8 @@
  * - host-api-shared.ts：类型与公共助手
  */
 import type { DafeiyuPluginHandle } from './index.ts'
-import { BUILTIN_VOICES, SettingsValidationError, type Readiness } from './settings/store.ts'
-import { SimulationError } from './live/simulation.ts'
+import { BUILTIN_VOICES } from './settings/catalogs.ts'
+import { SettingsValidationError, type Readiness } from './settings/store.ts'
 import { json, readBody, todayCostCny, FEEDBACK_LABELS, type FeedbackLabelInput, type ServerRequest, type ServerResponse } from './host-api-shared.ts'
 import { handleDataGetRoute } from './host-api-data.ts'
 import { handleAudienceGetRoute } from './host-api-audience.ts'
@@ -35,10 +35,6 @@ export interface DafeiyuStatus {
   todayCostCny: number
   /** 待处理问题数（负面反馈待核实队列） */
   pendingIssues: number
-  /** 模拟开播概览（首播演练，不接触平台） */
-  simulationRunNo: number
-  simulationStatus: string
-  simulationFirstCompleted: boolean
 }
 
 function readyFlag(r: Readiness): { ready: boolean; reason: string | null } {
@@ -50,7 +46,6 @@ export function buildStatus(handle: DafeiyuPluginHandle): DafeiyuStatus {
   const readiness = handle.settings.readiness()
   const persona = readyFlag(readiness.persona)
   const platform = readyFlag(readiness.platform)
-  const simulation = handle.simulation.state()
   return {
     liveStatus: handle.live.session.current,
     liveDisplay: handle.live.session.display(),
@@ -68,9 +63,6 @@ export function buildStatus(handle: DafeiyuPluginHandle): DafeiyuStatus {
     previewActive: handle.live.session.previewActive,
     todayCostCny: todayCostCny(handle.db),
     pendingIssues: handle.feedback.pendingQueue().length,
-    simulationRunNo: simulation.runNo,
-    simulationStatus: simulation.status,
-    simulationFirstCompleted: simulation.firstCompleted,
   }
 }
 
@@ -98,14 +90,18 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
         const args = body === '' ? {} : (JSON.parse(body) as Record<string, unknown>)
         switch (path) {
           case 'live/start': {
-            // preflight 由操作员设置实况拼装（§24.1/§23.2）：
+            // preflight 由操作员设置与实况状态拼装（§24.1/§23.2）：
             // - AI 标识恒可见（设置域 schema 为字面量 true，无法关闭）；
-            // - pinned 基线即稳定版本（首播无发布版本时成立）；
-            // - 推流由直播伴侣负责（辅助模式），本插件不自建推流。
+            // - 稳定版本 = 已发布 active 版本，或首播前钉住的本地基线（二者取一即成立）；
+            // - 推流由直播伴侣负责（辅助模式），本插件不自建推流；资源不足不阻断
+            //   开播——本地推理不可达时按路由规则降级固定模板，训练准入的资源
+            //   fail-safe 在 TrainingScheduler 侧，不在此处拦截。
             const readiness = handle.settings.readiness()
             const preflightInput = {
               aiLabelVisible: true,
-              stableReleaseAvailable: true,
+              stableReleaseAvailable:
+                handle.governance.releases.activeReleaseId() !== null ||
+                handle.config.models.local.artifact === 'pinned_approved_artifact',
               resourceOk: true,
               personaConfigured: readiness.persona.ready,
               platformConfigured: readiness.platform.ready,
@@ -155,8 +151,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
               result: {
                 phrase: persona.samplePhrase,
                 voice: { id: voice.id, label: voice.label, lang: voice.lang, style: voice.style },
-                voiceInteractionEnabled: persona.voiceInteractionEnabled,
-                note: '浏览器语音试听（系统 TTS）；语音互动开关控制麦克风识别与朗读，录音不上传；最终播出音色以直播伴侣音轨为准',
+                note: '浏览器语音试听（系统 TTS）；最终播出音色以直播伴侣音轨为准',
               },
             })
           }
@@ -298,40 +293,6 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
             if (active === null) return json(res, 400, { ok: false, error: '无 active 版本可回滚' })
             const result = await handle.runtime.rollback(active)
             return json(res, 200, { ok: true, status: buildStatus(handle), result })
-          }
-          case 'simulation/start':
-          case 'simulation/stop':
-          case 'simulation/event':
-          case 'simulation/voice':
-          case 'simulation/run-script': {
-            // 模拟开播：本机沙箱演练，不连接平台、不推流、不切换生产播出状态。
-            try {
-              if (path === 'simulation/start') {
-                await handle.simulation.start()
-                return json(res, 200, { ok: true, simulation: handle.simulation.state() })
-              }
-              if (path === 'simulation/stop') {
-                await handle.simulation.stop()
-                return json(res, 200, { ok: true, simulation: handle.simulation.state() })
-              }
-              if (path === 'simulation/run-script') {
-                const result = await handle.simulation.runScript()
-                return json(res, 200, { ok: true, simulation: handle.simulation.state(), result })
-              }
-              if (typeof args.text !== 'string') {
-                return json(res, 400, { ok: false, error: 'text 必填（模拟语音转写 / 弹幕文本）' })
-              }
-              const kind = path === 'simulation/voice' ? 'voice' : args.kind === 'gift' ? 'gift' : 'danmaku'
-              const result = await handle.simulation.emit(
-                kind,
-                args.text,
-                typeof args.actor === 'string' && args.actor.trim() !== '' ? args.actor : undefined,
-              )
-              return json(res, 200, { ok: true, simulation: handle.simulation.state(), result })
-            } catch (err) {
-              if (err instanceof SimulationError) return json(res, 400, { ok: false, error: err.message })
-              throw err
-            }
           }
           default:
             return json(res, 404, { ok: false, error: `未知路径: ${path}` })

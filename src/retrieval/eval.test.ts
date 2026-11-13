@@ -65,7 +65,7 @@ test('OllamaEmbeddingProvider：/api/embed 调用与响应解析', async () => {
 // 保留集与消融（§8.4）：融合须优于单路
 
 test('消融评测：三路融合 Recall@5 不低于任一单路', async () => {
-  const { makeFixtureEval } = await import('./eval-fixture.ts')
+  const { makeFixtureEval } = await import('../testing/eval-fixture.ts')
   const f = await makeFixtureEval()
   try {
     const dataset: readonly EvalQueryCase[] = [

@@ -6,12 +6,12 @@ import { resolve } from 'node:path'
 import { loadConfig } from '../config.ts'
 import { MemoryStore } from '../memory/l2-store.ts'
 import { SKILL_LIFECYCLE, SkillRegistry } from '../skills/registry.ts'
-import { makeTmpDb } from '../testing/helpers.ts'
-import { StubSemanticEmbeddingProvider } from './embedding.ts'
-import { GraphStore } from './graph.ts'
-import { RetrievalIndexer } from './indexer.ts'
-import { RetrievalService } from './retrieval.ts'
-import { VectorStore } from './vector-store.ts'
+import { makeTmpDb } from './helpers.ts'
+import { StubSemanticEmbeddingProvider } from './embedding-stubs.ts'
+import { GraphStore } from '../retrieval/graph.ts'
+import { RetrievalIndexer } from '../retrieval/indexer.ts'
+import { RetrievalService } from '../retrieval/retrieval.ts'
+import { VectorStore } from '../retrieval/vector-store.ts'
 
 export async function makeFixtureEval(): Promise<{
   t: ReturnType<typeof makeTmpDb>

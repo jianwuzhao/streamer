@@ -5,11 +5,8 @@
  * `pnpm build` / `pnpm test` 可执行；宿主事件接线（agent/pre-step waterfall、
  * session/event 等）与 Web UI 半在后续阶段接入 cordis.patch.yml。
  */
-import { resolve, dirname, join } from 'node:path'
-import { randomUUID } from 'node:crypto'
-import { fileURLToPath } from 'node:url'
+import { resolve, join } from 'node:path'
 import { existsSync } from 'node:fs'
-import { readdirSync } from 'node:fs'
 import { BlackboardStore } from './blackboard/store.ts'
 import { getFeatureGates, loadConfig, type DafeiyuConfigType, type FeatureGates } from './config.ts'
 import { OpenAICompatCloudAdapter } from './adapters/cloud.ts'
@@ -20,7 +17,7 @@ import { ProfileStore } from './audience/profile-store.ts'
 import { FeedbackStore } from './feedback/feedback-store.ts'
 import { GiftAckService } from './gifts/ack.ts'
 import { GiftLedger } from './gifts/ledger.ts'
-import { HashingEmbeddingProvider, OllamaEmbeddingProvider } from './retrieval/embedding.ts'
+import { OllamaEmbeddingProvider } from './retrieval/embedding.ts'
 import { GraphStore } from './retrieval/graph.ts'
 import { RetrievalIndexer } from './retrieval/indexer.ts'
 import { RetrievalService } from './retrieval/retrieval.ts'
@@ -33,9 +30,8 @@ import { createRequestHandler } from './host-api.ts'
 import { DouyinAssistedAdapter } from './platform/adapter.ts'
 import { loadPolicyPack } from './platform/policy-pack.ts'
 import { LiveSession } from './live/session.ts'
-import { SimulationService } from './live/simulation.ts'
 import { TrainingEntry } from './live/training-entry.ts'
-import { SettingsStore, type CloudSettingsType } from './settings/store.ts'
+import { SettingsStore } from './settings/store.ts'
 import { MemoryStore } from './memory/l2-store.ts'
 import { PolicyService } from './governance/policy-decision.ts'
 import { EventDedup } from './perception/dedup.ts'
@@ -48,14 +44,26 @@ import { DafeiyuRuntime, SqliteUsageRecorder } from './runtime.ts'
 import { migrate, openDatabase, type DB } from './storage/db.ts'
 import { recoverPendingOperations } from './storage/outbox.ts'
 import { SkillExecutor } from './skills/executor.ts'
-import { loadSkillPackage } from './skills/package-loader.ts'
-import { SkillRegistry, SKILL_LIFECYCLE } from './skills/registry.ts'
+import { SkillRegistry } from './skills/registry.ts'
+import {
+  applyCloudOverrides,
+  packageDir,
+  registerBuiltinHandlers,
+  seedSkillPackages,
+  skillPackagesDir,
+  sqliteCostTracker,
+} from './index-wiring.ts'
 import type { LearningRuntime } from './types.ts'
 
 export interface DafeiyuPluginContext {
   configPath?: string
   dataDir?: string
   log?: (message: string, ...args: unknown[]) => void
+  /**
+   * 向量 embedding 提供方覆盖（依赖注入）：仅测试装配使用（传入
+   * src/testing/embedding-stubs.ts 的桩）；生产缺省为 Ollama 真实语义模型。
+   */
+  embeddingProvider?: import('./retrieval/embedding.ts').EmbeddingProvider
 }
 
 export interface DafeiyuPluginHandle {
@@ -84,8 +92,6 @@ export interface DafeiyuPluginHandle {
     readonly trainingEntry: TrainingEntry
     readonly platform: DouyinAssistedAdapter
   }
-  /** 第一次模拟开播（本机沙箱演练，不接触平台；详见 src/live/simulation.ts） */
-  readonly simulation: SimulationService
   readonly memory: MemoryStore
   readonly audience: {
     readonly identity: ViewerIdentity
@@ -116,10 +122,8 @@ const log = (ctx: DafeiyuPluginContext, message: string): void => {
   ctx.log?.(message)
 }
 
-/** 包根目录（lib/index.js 或 src/index.ts 均回溯到包根）。 */
-export function packageDir(): string {
-  return dirname(dirname(fileURLToPath(import.meta.url)))
-}
+/** 包根目录（lib/index.js 或 src/index.ts 均回溯到包根）；实现在 index-wiring.ts。 */
+export { packageDir }
 
 export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandle {
   // 1. 基础配置（默认包内 config/default.yaml；null 预算 ⇒ 付费能力禁用）
@@ -127,7 +131,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   const baseConfig = loadConfig(configPath)
 
   // 2. 存储与恢复（包内自定位：宿主安装后 cwd 不再是仓库目录）
-  const dataDir = ctx.dataDir ?? process.env.DAFEIFYU_DATA_DIR ?? join(packageDir(), 'data')
+  const dataDir = ctx.dataDir ?? process.env.DAFEIYU_DATA_DIR ?? join(packageDir(), 'data')
   const db = openDatabase(resolve(dataDir, 'dafeiyu.db'))
   const migration = migrate(db)
   if (migration.applied.length > 0) log(ctx, `已应用迁移：${migration.applied.join(', ')}`)
@@ -146,7 +150,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   }
 
   // 3. 模型适配器（本地优先：GPU → CPU 回退 → 第三方一次）
-  const localBase = process.env.DAFEIFYU_OLLAMA_URL ?? 'http://127.0.0.1:11434'
+  const localBase = process.env.DAFEIYU_OLLAMA_URL ?? 'http://127.0.0.1:11434'
   const localGpu = new OllamaAdapter({
     baseURL: localBase,
     model: config.models.local.baseModel,
@@ -155,7 +159,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   })
   const localCpu = config.models.local.cpuFallbackEnabled
     ? new OllamaAdapter({
-        baseURL: process.env.DAFEIFYU_OLLAMA_CPU_URL ?? localBase,
+        baseURL: process.env.DAFEIYU_OLLAMA_CPU_URL ?? localBase,
         model: config.models.local.baseModel,
         route: 'local_cpu',
         maxOutputTokens: config.models.local.maxOutputTokens,
@@ -164,9 +168,9 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
 
   const providerConfigured = config.models.cloud.provider !== 'configure_before_acceptance'
   const cloud = new OpenAICompatCloudAdapter({
-    baseURL: process.env.DAFEIFYU_CLOUD_BASE_URL ?? 'http://127.0.0.1:9/v1',
+    baseURL: process.env.DAFEIYU_CLOUD_BASE_URL ?? 'http://127.0.0.1:9/v1',
     model: config.models.cloud.model === 'configure_before_acceptance' ? 'unset' : config.models.cloud.model,
-    apiKey: process.env.DAFEIFYU_CLOUD_API_KEY ?? '',
+    apiKey: process.env.DAFEIYU_CLOUD_API_KEY ?? '',
     enabled: config.models.cloud.enabled,
     providerConfigured,
     dailyBudgetCny: config.models.cloud.dailyBudgetCny,
@@ -192,7 +196,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   const policy = new PolicyService(db, { policyVersion: `phase-a/${config.productPreset}` })
 
   const probe: ResourceProbe =
-    (process.env.DAFEIFYU_PROBE ?? 'auto') === 'ram-only' ? new UnknownGpuProbe() : new NvidiaSmiProbe()
+    (process.env.DAFEIYU_PROBE ?? 'auto') === 'ram-only' ? new UnknownGpuProbe() : new NvidiaSmiProbe()
   const arbiter = new ResourceArbiter(probe).start()
 
   // 5. 阶段 B 数据层：记忆、画像、技能、反馈、礼物
@@ -243,15 +247,15 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   registerBuiltinHandlers(skillExecutor, qualityGate)
   seedSkillPackages(skillRegistry, skillPackagesDir(), (message) => log(ctx, message))
 
-  // 6. 阶段 C 检索：向量（目标机 Qwen3-Embedding）+ 图谱 + 三路融合
-  // DAFEIYU_EMBEDDING=stub 仅用于本机测试（哈希伪向量不得用于语义验收 §8.1）
+  // 6. 阶段 C 检索：向量（目标机 Qwen3-Embedding）+ 图谱 + 三路融合。
+  // 生产路径恒为真实语义模型（Ollama /api/embed）；测试经 ctx.embeddingProvider
+  // 显式注入桩（src/testing/embedding-stubs.ts；§8.1 不以哈希向量替代语义模型）。
   const embeddingProvider: import('./retrieval/embedding.ts').EmbeddingProvider =
-    process.env.DAFEIFYU_EMBEDDING === 'stub'
-      ? new HashingEmbeddingProvider()
-      : new OllamaEmbeddingProvider({
-          baseURL: process.env.DAFEIFYU_OLLAMA_URL ?? 'http://127.0.0.1:11434',
-          model: config.retrieval.embeddingModel,
-        })
+    ctx.embeddingProvider ??
+    new OllamaEmbeddingProvider({
+      baseURL: process.env.DAFEIYU_OLLAMA_URL ?? 'http://127.0.0.1:11434',
+      model: config.retrieval.embeddingModel,
+    })
   const vectorStore = new VectorStore(db)
   const graphStore = new GraphStore(db)
   const retrievalIndexer = new RetrievalIndexer(db, vectorStore, graphStore, embeddingProvider)
@@ -273,35 +277,8 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
     consolidation: consolidationService,
   })
 
-  // 6.5 第一次模拟开播：与生产链路隔离的本地演练服务。
-  // answer 直接走 RequestRouter（不经 DafeiyuRuntime.logReply），演练问答不进 reply_log；
-  // 感知事件以 replay=1 记录，不触发生产投影/账本/画像/训练/发布动作。
-  const simulation = new SimulationService({
-    db,
-    settings,
-    ingest: async (env) => runtime.ingest(env),
-    answer: async (text, kind) => {
-      const requestId = `sim-${randomUUID()}`
-      const receipt = await router.route(
-        {
-          requestId,
-          sessionId: `sim-${config.productPreset}`,
-          roomId: 'simulation-local',
-          text,
-          type: kind === 'gift' ? 'gift_comment' : kind === 'system' ? 'system' : 'danmaku',
-          purposeTags: ['simulation'],
-          occurredAt: new Date().toISOString(),
-        },
-        { recentReplies: [] },
-      )
-      return {
-        text: receipt.text,
-        route: receipt.route,
-        ...(receipt.reasonCode !== undefined ? { reasonCode: receipt.reasonCode } : {}),
-        latencyMs: receipt.latencyMs,
-      }
-    },
-  })
+  // 6.5 第一次模拟开播服务已随演练子系统移除（v0.13.0）：
+  // 现实链路 = 首次配置向导 → 本地预览（LiveSession）→ 真实开播。
 
   return {
     config,
@@ -361,103 +338,9 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
       samples: trainingSamples,
       scheduler: trainingScheduler,
     },
-    simulation,
     dispose() {
       arbiter.stop()
       db.close()
-    },
-  }
-}
-
-function skillPackagesDir(): string {
-  return process.env.DAFEIFYU_SKILL_PACKAGES ?? join(packageDir(), 'skill-packages')
-}
-
-/**
- * 内置表达技能处理器：礼物答谢模板（本地拼装，不调用模型，§10.2）。
- */
-function registerBuiltinHandlers(executor: SkillExecutor, qualityGate: QualityGate): void {
-  executor.registerHandler('gift-ack-template', async (args) => {
-    const input = args as { viewerNickname?: string; giftName: string; nameMention?: boolean }
-    const mention =
-      input.nameMention !== false &&
-      input.viewerNickname !== undefined &&
-      qualityGate.checkRequestText(input.viewerNickname).pass
-        ? `感谢「${input.viewerNickname}」`
-        : '谢谢这位朋友'
-    const phrase = `${mention}送出的${input.giftName}，先把日子过好，咱们接着种田。`
-    return {
-      output: { phrase },
-      toolReceipts: [{ tool: 'local-template', ok: true }],
-    }
-  })
-}
-
-/**
- * 播种技能包目录：表达/只读技能（无权限扩张）测试通过后自动发布
- * （draft→…→active 逐级推进，§7.2）；权限超出的技能停在 draft。
- */
-function seedSkillPackages(registry: SkillRegistry, dir: string, onIssue: (message: string) => void): void {
-  if (!existsSync(dir)) return
-  for (const skillDir of readdirSync(dir, { withFileTypes: true })) {
-    if (!skillDir.isDirectory()) continue
-    const versionsRoot = resolve(dir, skillDir.name)
-    for (const versionDir of readdirSync(versionsRoot, { withFileTypes: true })) {
-      if (!versionDir.isDirectory()) continue
-      const pkgDir = resolve(versionsRoot, versionDir.name)
-      try {
-        const pkg = loadSkillPackage(pkgDir)
-        const registered = registry.register(pkg.manifest, { packagePath: pkgDir })
-        if (registered.manifest.permissions.length === 0 && registered.manifest.kind !== 'action') {
-          let idx = SKILL_LIFECYCLE.indexOf(registered.status as (typeof SKILL_LIFECYCLE)[number])
-          idx = idx < 0 ? SKILL_LIFECYCLE.length - 1 : idx
-          for (let i = idx + 1; i < SKILL_LIFECYCLE.length; i++) {
-            registry.setStatus(registered.skillId, registered.version, SKILL_LIFECYCLE[i] as (typeof SKILL_LIFECYCLE)[number])
-          }
-        }
-      } catch (err) {
-        // 坏包跳过并留日志（不阻断启动）
-        onIssue(`技能包 ${pkgDir} 注册失败: ${(err as Error).message}`)
-      }
-    }
-  }
-}
-
-/**
- * 云端设置覆盖（§24.1 向导第 4 步）：settings/cloud 的 provider 非空才覆盖
- * config.yaml；预算未填保持原值（null 仍禁用付费调用）。重启插件后生效；
- * API key 永不落库，仍由 DAFEIFYU_CLOUD_API_KEY 环境变量提供。
- */
-function applyCloudOverrides(base: DafeiyuConfigType, cloud: CloudSettingsType): DafeiyuConfigType {
-  if (cloud.provider.trim() === '') return base
-  return {
-    ...base,
-    models: {
-      ...base.models,
-      cloud: {
-        ...base.models.cloud,
-        enabled: cloud.enabled,
-        provider: cloud.provider,
-        model: cloud.model.trim() === '' ? base.models.cloud.model : cloud.model,
-        dailyBudgetCny: cloud.dailyBudgetCny ?? base.models.cloud.dailyBudgetCny,
-      },
-    },
-  }
-}
-
-/** 云端成本记账：usage 表当日合计（阶段 A 简化实现；对账以服务商账单为准 §19）。 */
-function sqliteCostTracker(db: DB) {
-  return {
-    getSpentTodayCny(): number {
-      const todayStart = new Date()
-      todayStart.setHours(0, 0, 0, 0)
-      const row = db
-        .prepare('SELECT COALESCE(SUM(cost_cny), 0) AS total FROM usage WHERE created_at >= ?')
-        .get(todayStart.toISOString()) as { total: number } | undefined
-      return row?.total ?? 0
-    },
-    add(costCny: number): void {
-      db.prepare(`INSERT INTO audit (action, summary) VALUES ('cloud_cost', ?)`).run(`+${costCny} CNY`)
     },
   }
 }

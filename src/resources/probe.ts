@@ -60,12 +60,9 @@ export class UnknownGpuProbe implements ResourceProbe {
   readonly id = 'unknown'
 
   async sample(): Promise<ResourceSample | null> {
-    if (process.env.DAFEIFYU_PROBE_RAM_ONLY === '1') {
-      return {
-        timestampMs: Date.now(),
-        usedRamMb: Math.round((totalmem() - freemem()) / 1024 / 1024),
-      }
+    return {
+      timestampMs: Date.now(),
+      usedRamMb: Math.round((totalmem() - freemem()) / 1024 / 1024),
     }
-    return null
   }
 }

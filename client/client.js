@@ -124,8 +124,6 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-root button:focus-visible,.dfy-root a:focus-visible,.dfy-root input:focus-visible,.dfy-root select:focus-visible{outline:2px solid var(--dsw-focus-ring-color,rgba(15,94,87,.6));outline-offset:2px}
 @media (max-width:760px){.dfy-wizard{grid-template-columns:1fr}.dfy-body{padding:12px}.dfy-head,.dfy-tabs,.dfy-foot{padding-left:12px;padding-right:12px}.dfy-kpis{grid-template-columns:repeat(auto-fit,minmax(104px,1fr))}}
 /* 大肥鱼桌宠：桌面小组件窗口（非 16:9 画布）+ 悬浮感 + 气泡 + 摆尾/呼吸动画 */
-.dfy-pet-stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,320px);gap:16px;align-items:start}
-@media (max-width:760px){.dfy-pet-stage{grid-template-columns:1fr}}
 .dfy-pet-wrap{display:flex;justify-content:center;align-items:center;padding:18px;border-radius:16px;background:radial-gradient(circle at 50% 28%,var(--dsw-alias-interactive-bg-hover,rgba(15,94,87,.10)),transparent 72%)}
 .dfy-pet-window{position:relative;width:min(360px,100%);border-radius:18px;overflow:hidden;border:.5px solid var(--dsw-alias-border-l2,#d8e2e0);box-shadow:0 14px 32px rgba(8,19,26,.24),0 2px 6px rgba(8,19,26,.12);background:var(--dsw-alias-bg-layer-1,#fff);animation:dfy-pet-float 4s ease-in-out infinite}
 .dfy-pet-title{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:12px;font-weight:700;color:var(--dsw-alias-label-primary,#17303c);border-bottom:.5px solid var(--dsw-alias-border-l1,#e3ebe9);background:var(--dsw-alias-bg-layer-1,#fff)}
@@ -149,8 +147,6 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-pet-bubble::after{content:"";position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);border:6px solid transparent;border-top-color:var(--dsw-alias-bg-layer-1,#fff);border-bottom:0}
 .dfy-pet-bubble-on{border-color:var(--dsw-alias-state-warn-primary,#ffd166);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-warn-primary,#ffd166) 55%,transparent),0 4px 12px rgba(0,0,0,.22)}
 .dfy-pet-status{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 12px;font-size:11px;color:var(--dsw-alias-label-secondary,#45606b);background:var(--dsw-alias-bg-layer-2,#eef2f1)}
-.dfy-pet-info{display:grid;gap:10px;align-content:start;min-width:0}
-.dfy-pet-chip-tag{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;background:color-mix(in srgb,var(--dsw-alias-state-business-primary,#0f5e57) 12%,transparent);color:var(--dsw-alias-state-business-primary,#0f5e57)}
 @keyframes dfy-pet-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 @keyframes dfy-pet-tail{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}
 @keyframes dfy-pet-bubble{0%{transform:translateY(0);opacity:0}20%{opacity:.7}100%{transform:translateY(-120px);opacity:0}}
@@ -321,7 +317,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					h("div", { className: "dfy-pet-fish" },
 						h("span", { className: "dfy-pet-sway" }, h(FishIcon, { size: 116, theme: theme })))),
 				h("div", { className: "dfy-pet-status" },
-					h("span", null, "模拟开播 · 未推流 · AI 标识常显"),
+					h("span", null, "本地预览 · 未推流 · AI 标识常显"),
 					h("span", null, speaking ? "● 正在说话" : "○ 待机中"))));
 	}
 
@@ -519,11 +515,10 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const [voice, setVoice] = useState(p.voiceId);
 		const [phrase, setPhrase] = useState(p.samplePhrase);
 		const [right, setRight] = useState(p.usageRightConfirmed);
-		const [voiceInteractionEnabled, setVoiceInteractionEnabled] = useState(!!p.voiceInteractionEnabled);
 		const [listenNote, setListenNote] = useState("");
 
 		const selected = profiles.find((x) => x.id === profileId) || settings.profile || null;
-		const payload = () => ({ profileId: profileId, personaName: selected ? selected.name : p.personaName, voiceId: voice, samplePhrase: phrase, usageRightConfirmed: right, voiceInteractionEnabled: voiceInteractionEnabled });
+		const payload = () => ({ profileId: profileId, personaName: selected ? selected.name : p.personaName, voiceId: voice, samplePhrase: phrase, usageRightConfirmed: right });
 
 		const listen = async () => {
 			setListenNote("准备试听…");
@@ -551,9 +546,6 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 						key: v.id, type: "button", className: "dfy-chip" + (voice === v.id ? " dfy-chip-on" : ""),
 						onClick: () => setVoice(v.id),
 					}, h("b", null, v.label), h("span", { className: "dfy-muted" }, v.style))))),
-			h("label", { className: "dfy-check" },
-				h("input", { type: "checkbox", checked: voiceInteractionEnabled, onChange: (e) => setVoiceInteractionEnabled(e.target.checked) }),
-				h("span", null, "启用语音互动（浏览器语音识别 + 语音合成；本机处理，录音不上传）")),
 			h(Field, { label: "试听语句" },
 				h("div", { style: { display: "grid", gap: 8, gridTemplateColumns: "minmax(0,1fr) auto" } },
 					h("input", { className: "dfy-input", value: phrase, maxLength: 80, onChange: (e) => setPhrase(e.target.value) }),
@@ -583,7 +575,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				h(Field, { label: "服务商" }, h("input", { className: "dfy-input", value: provider, placeholder: "留空 = 不覆盖配置文件", onChange: (e) => setProvider(e.target.value) })),
 				h(Field, { label: "模型名" }, h("input", { className: "dfy-input", value: model, placeholder: "如 deepseek-chat", onChange: (e) => setModel(e.target.value) })),
 				h(Field, { label: "每日费用上限（元）" }, h("input", { className: "dfy-input", value: budget, placeholder: "未设置 ⇒ 付费禁用", onChange: (e) => setBudget(e.target.value) }))),
-			h("p", { className: "dfy-caption", style: { margin: 0, color: "var(--dsw-alias-state-error-primary,#c0392b)" } }, "API Key 不在界面保存：以环境变量 DAFEIFYU_CLOUD_API_KEY 提供；覆盖在重启插件后生效。"),
+			h("p", { className: "dfy-caption", style: { margin: 0, color: "var(--dsw-alias-state-error-primary,#c0392b)" } }, "API Key 不在界面保存：以环境变量 DAFEIYU_CLOUD_API_KEY 提供；覆盖在重启插件后生效。"),
 			h("div", { className: "dfy-actions" },
 				h(Btn, { tone: "primary", onClick: () => save("cloud", { enabled: enabled, provider: provider, model: model, dailyBudgetCny: budget === "" ? null : Number(budget) }) }, "保存")));
 	}
@@ -928,274 +920,12 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					h(Row, { label: "账本 / 反馈 / 样本", value: diag.report.counts.gift_ledger + " / " + diag.report.counts.feedback + " / " + diag.report.counts.training_samples })) : null));
 	}
 
-	// ------------------------------------------------------------------ 模拟开播（大肥鱼桌宠 + 语音互动）
-
-	const SIM_KIND = { danmaku: "弹幕", voice: "语音", gift: "礼物", system: "系统" };
-	const SIM_ROUTE = { local_gpu: "本地 GPU", local_cpu: "本地 CPU", cloud: "云端兜底", fallback: "兜底" };
-	const SIM_STATUS = { idle: "未开始", running: "演练中", ended: "已结束" };
-	const SIM_DEFAULT_PERSONA = { name: "大肥鱼", avatarId: "fish-deskpet", aiLabelText: "AI 生成内容", voiceId: "", voiceInteractionEnabled: false, theme: null };
-
-	/** 从音色目录里取 voiceId 对应的 lang，取不到回退 zh-CN。 */
-	function simVoiceLang(sim, voiceId) {
-		const voices = sim && sim.catalogs && Array.isArray(sim.catalogs.voices) ? sim.catalogs.voices : [];
-		const v = voices.find((x) => x && x.id === voiceId);
-		return (v && v.lang) || "zh-CN";
-	}
-
-	function SimTab({ status, act, busy }) {
-		const [sim, setSim] = useState(null);
-		const [localBusy, setLocalBusy] = useState(false);
-		const [note, setNote] = useState("");
-		const [subtitle, setSubtitle] = useState("大家好，我是大肥鱼～");
-		const [speaking, setSpeaking] = useState(false);
-		const [listening, setListening] = useState(false);
-		const [text, setText] = useState("");
-		const recognitionRef = useRef(null);
-		const ttsRef = useRef(null);
-
-		const applySim = (r) => { if (r && r.simulation) setSim(r.simulation); };
-
-		const load = useCallback(async () => {
-			try {
-				const r = await api("simulation");
-				if (r.ok) setSim(r.simulation);
-				else setNote("加载失败：" + (r.error || "未知错误"));
-			} catch (e) { setNote("加载失败：" + e.message); }
-		}, []);
-		useEffect(() => { load(); }, [load]);
-
-		// 卸载时清理语音识别与朗读，避免重复实例 / 后台继续说话
-		useEffect(() => () => {
-			try { if (recognitionRef.current) recognitionRef.current.abort(); } catch (_) { /* 忽略 */ }
-			recognitionRef.current = null;
-			try { if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) { /* 忽略 */ }
-		}, []);
-
-		const runPost = async (path, body, label) => {
-			setLocalBusy(true); setNote(label + "…");
-			try {
-				const r = await api(path, body || {});
-				if (!r.ok) { setNote(label + " 失败：" + (r.error || "未知错误")); return null; }
-				applySim(r);
-				setNote(label + " 完成（未推流 · 不接触抖音平台）");
-				return r;
-			} catch (e) { setNote(label + " 请求失败：" + e.message); return null; }
-			finally { setLocalBusy(false); }
-		};
-
-		/** 把 result 的字幕贴到桌宠气泡，并用浏览器 TTS 朗读（大肥鱼更憨的 rate/pitch）。 */
-		const presentResult = (result) => {
-			if (!result) return;
-			const reply = result.replyText || "";
-			if (reply) setSubtitle(reply);
-			const tts = result.ttsText || reply;
-			if (!tts) return;
-			if (typeof window === "undefined" || typeof window.speechSynthesis === "undefined" || typeof window.SpeechSynthesisUtterance === "undefined") {
-				setNote("当前浏览器不支持语音合成（TTS）；字幕已显示，可手动查看回复。");
-				return;
-			}
-			try {
-				window.speechSynthesis.cancel();
-				const u = new window.SpeechSynthesisUtterance(tts);
-				u.lang = simVoiceLang(sim, sim && sim.persona ? sim.persona.voiceId : "");
-				u.rate = 0.92; u.pitch = 1.35; u.volume = 1;
-				u.onstart = () => setSpeaking(true);
-				u.onend = () => setSpeaking(false);
-				u.onerror = () => setSpeaking(false);
-				ttsRef.current = u;
-				window.speechSynthesis.speak(u);
-			} catch (_) { setNote("语音合成启动失败；字幕已显示。"); setSpeaking(false); }
-		};
-
-		const stopSpeaking = () => {
-			try { if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) { /* 忽略 */ }
-			setSpeaking(false);
-		};
-
-		/** 提交一条模拟事件（语音 / 弹幕 / 礼物），刷新并朗读回复。 */
-		const submitEvent = async (path, body, label) => {
-			const r = await runPost(path, body, label);
-			if (r) presentResult(r.result);
-		};
-
-		const runScript = async () => {
-			const r = await runPost("simulation/run-script", {}, "一键演练首播脚本");
-			if (!r) return;
-			// 取脚本里最后一条带回复的步骤作为字幕，朗读其一（不连读造成噪音）
-			const steps = r.result && Array.isArray(r.result.steps) ? r.result.steps : [];
-			const last = steps.slice().reverse().find((s) => s && s.replyText);
-			if (last) presentResult({ replyText: last.replyText, ttsText: last.replyText });
-			if (r.result && r.result.report) {
-				setNote("首播脚本已跑完（未推流 · 不接触抖音平台）；演练报告已生成。");
-			}
-		};
-
-		// 语音识别：单击开始 / 再单击停止；onresult 转写后按语音事件提交
-		const toggleListening = () => {
-			if (listening) {
-				try { if (recognitionRef.current) recognitionRef.current.stop(); } catch (_) { /* 忽略 */ }
-				setListening(false);
-				return;
-			}
-			const SR = (typeof window !== "undefined") && (window.SpeechRecognition || window.webkitSpeechRecognition);
-			if (!SR) {
-				setNote("当前浏览器不支持语音识别；请在下方「转写文本兜底」输入框手动输入文本。");
-				return;
-			}
-			try {
-				if (recognitionRef.current) { try { recognitionRef.current.abort(); } catch (_) { /* 忽略 */ } }
-				const rec = new SR();
-				rec.lang = "zh-CN";
-				rec.continuous = false;
-				rec.interimResults = false;
-				rec.maxAlternatives = 1;
-				rec.onresult = (e) => {
-					let transcript = "";
-					try { transcript = (e.results && e.results[0] && e.results[0][0] && e.results[0][0].transcript) || ""; } catch (_) { /* 忽略 */ }
-					setListening(false);
-					recognitionRef.current = null;
-					if (transcript.trim()) {
-						submitEvent("simulation/voice", { text: transcript.trim(), actor: "语音观众" }, "语音识别转写");
-					} else setNote("未识别到语音内容，可在下方输入转写文本兜底。");
-				};
-				rec.onerror = (e) => {
-					setListening(false);
-					recognitionRef.current = null;
-					setNote("语音识别不可用（" + ((e && e.error) || "未知原因") + "）；请在下方「转写文本兜底」输入框手动输入文本。");
-				};
-				rec.onend = () => { setListening(false); recognitionRef.current = null; };
-				recognitionRef.current = rec;
-				rec.start();
-				setListening(true);
-				setNote("正在聆听…（本机浏览器识别，录音不上传）");
-			} catch (e) {
-				setListening(false);
-				setNote("无法启动语音识别：" + e.message + "；请在下方输入转写文本兜底。");
-			}
-		};
-
-		const submitText = (kind) => {
-			const t = text.trim();
-			if (!t) { setNote("请输入模拟语音转写 / 弹幕文本后再发送。"); return; }
-			if (kind === "voice") submitEvent("simulation/voice", { text: t, actor: "语音观众（文本兜底）" }, "按语音发送");
-			else submitEvent("simulation/event", { kind: "danmaku", text: t, actor: "弹幕观众（文本兜底）" }, "按弹幕发送");
-			setText("");
-		};
-
-		const onTextKeyDown = (e) => { if (e.key === "Enter") { e.preventDefault(); submitText("voice"); } };
-
-		const s = sim || {};
-		const persona = s.persona || SIM_DEFAULT_PERSONA;
-		const events = Array.isArray(s.events) ? s.events : [];
-		const report = s.report || null;
-		const st = s.status || "idle";
-		const runNo = typeof s.runNo === "number" ? s.runNo : 0;
-		const voiceEnabled = !!persona.voiceInteractionEnabled;
-		const disabled = busy || localBusy;
-		const canStart = st !== "running";
-		const canStop = st === "running";
-
-		const statusBadgeTone = st === "running" ? "ok" : st === "ended" ? "idle" : "warn";
-
-		// 1) 桌宠舞台卡（占满整行）：桌宠窗口 + 旁边信息列
-		const stageCard = h("section", { className: "dfy-card", style: { gridColumn: "1/-1" } },
-			h("div", { className: "dfy-card-h" },
-				h("h3", null, "大肥鱼桌宠 · 第一次模拟开播"),
-				h(Badge, { tone: "err", text: "模拟 · 未推流" }),
-				h(Badge, { tone: "idle", text: "不接触抖音平台" })),
-			h("div", { className: "dfy-pet-stage" },
-				h(DeskPet, { persona: persona, speaking: speaking, subtitle: subtitle }),
-				h("div", { className: "dfy-pet-info" },
-					h("div", { className: "dfy-actions" },
-						h(Badge, { tone: statusBadgeTone, dot: st === "running", text: "当前场次：" + (SIM_STATUS[st] || st) }),
-						h(Badge, { tone: "idle", text: "第 " + runNo + " 场" }),
-						s.firstCompleted ? h(Badge, { tone: "ok", text: "已完成首次演练" }) : h(Badge, { tone: "warn", text: "尚未完成首次演练" })),
-					h(Row, { label: "角色档案", value: s.profile ? s.profile.name + (s.profile.enName ? " / " + s.profile.enName : "") : (persona.name || "大肥鱼") }),
-					s.profile && s.profile.tagline ? h(Row, { label: "#人设", value: s.profile.tagline }) : null,
-					h(Row, { label: "AI 标识", value: (persona.aiLabelText || "AI 生成内容") + "（常显）" }),
-					h(Row, { label: "语音互动", value: voiceEnabled ? "已启用（只读，开关在向导）" : "未启用（在向导开启）" }),
-					h(Row, { label: "场次状态", value: SIM_STATUS[st] || st }),
-					h("div", { className: "dfy-actions" },
-						h(Btn, { tone: "primary", disabled: disabled || !canStart, onClick: () => runPost("simulation/start", {}, "开始模拟开播") },
-							runNo >= 1 ? "再开一场（第一次模拟开播）" : "第一次模拟开播"),
-						h(Btn, { tone: "danger", disabled: disabled || !canStop, onClick: () => runPost("simulation/stop", {}, "结束演练") }, "结束演练"),
-						h(Btn, { disabled: disabled, onClick: runScript }, "一键演练首播脚本"),
-						h(Btn, { tone: "ghost", disabled: localBusy, onClick: load }, "刷新")),
-					h("p", { className: "dfy-caption", style: { margin: 0 } },
-						"模拟开播仅在本机演练：不推流、不接触抖音平台、不产生付费调用；完成后可查看演练报告。"))));
-
-		// 2) 语音互动卡
-		const voiceCard = h(Card, { title: "语音互动（浏览器语音识别 + 语音合成）",
-			extra: h(Badge, { tone: voiceEnabled ? "ok" : "idle", text: voiceEnabled ? "已启用" : "未启用" }) },
-			!voiceEnabled ? h("div", { className: "dfy-note dfy-note-warn" },
-				"在「首次配置 → 角色档案」中开启「语音互动」后才可使用麦克风；下方文本兜底输入仍可用。") : null,
-			h("div", { className: "dfy-actions" },
-				h(Btn, { tone: listening ? "danger" : "primary", disabled: !voiceEnabled || (disabled && !listening), onClick: toggleListening,
-					title: voiceEnabled ? "使用浏览器本机语音识别" : "请先在向导中开启语音互动" },
-					listening ? "■ 停止识别" : "🎤 开始说话"),
-				h(Btn, { disabled: !speaking, onClick: stopSpeaking }, "停止朗读"),
-				h(Badge, { tone: "idle", text: speaking ? "正在朗读" : listening ? "正在聆听" : "待机" })),
-			h(Field, { label: "模拟语音转写 / 弹幕文本（转写文本兜底）" },
-				h("input", { className: "dfy-input", value: text, maxLength: 200,
-					placeholder: "输入观众说的话，按语音或弹幕发送；Enter 默认按语音发送",
-					onChange: (e) => setText(e.target.value), onKeyDown: onTextKeyDown })),
-			h("div", { className: "dfy-actions" },
-				h(Btn, { tone: "primary", disabled: disabled, onClick: () => submitText("voice") }, "按语音发送"),
-				h(Btn, { disabled: disabled, onClick: () => submitText("danmaku") }, "按弹幕发送")),
-			h("p", { className: "dfy-caption", style: { margin: 0 } },
-				"语音识别与朗读都在本机浏览器完成，不上传录音；语音文本按模拟事件留痕，不进入真实直播间。"));
-
-		// 3) 事件流卡
-		const eventCard = h(Card, { title: "事件流（最近 50 条 · 按时间升序）",
-			extra: h(Btn, { tone: "ghost", onClick: load }, "刷新") },
-			events.length === 0 ? h("p", { className: "dfy-muted", style: { margin: 0 } },
-				"点击「一键演练首播脚本」完成第一次模拟开播，或先「第一次模拟开播」再发送弹幕 / 语音。") : null,
-			h("div", { className: "dfy-list" },
-				events.map((ev) => h("div", { key: ev.id, className: "dfy-item" },
-					h("div", { className: "dfy-item-h" },
-						h(Badge, { tone: ev.kind === "voice" ? "ok" : ev.kind === "gift" ? "warn" : "idle", text: SIM_KIND[ev.kind] || ev.kind }),
-						h("span", { className: "dfy-item-t" }, ev.actor || "—"),
-						ev.route ? h(Badge, { tone: "idle", text: SIM_ROUTE[ev.route] || ev.route }) : null),
-					h("div", { className: "dfy-item-sub" }, "问：" + (ev.text || "（无文本）")),
-					ev.replyText ? h("div", { className: "dfy-item-sub" }, "答：" + ev.replyText) : null))));
-
-		// 4) 演练报告卡
-		const rc = (report && report.routeCounts) || {};
-		const reportCard = h(Card, { title: "演练报告",
-			extra: report ? h(Badge, { tone: report.isFirst ? "ok" : "idle", text: report.isFirst ? "首场报告" : "第 " + report.runNo + " 场报告" }) : h(Badge, { tone: "idle", text: "暂无报告" }) },
-			!report ? h("p", { className: "dfy-muted", style: { margin: 0 } },
-				"尚无演练报告。点击「一键演练首播脚本」或「第一次模拟开播」并完成一次演练后生成。") : null,
-			report ? h("div", { className: "dfy-kpis" },
-				h(Kpi, { label: "场次号", value: String(report.runNo) }),
-				h(Kpi, { label: "首场标记", value: report.isFirst ? "是" : "否" }),
-				h(Kpi, { label: "事件数", value: String(report.eventCount) }),
-				h(Kpi, { label: "语音数", value: String(report.voiceCount) }),
-				h(Kpi, { label: "本地 GPU", value: String(rc.local_gpu || 0) }),
-				h(Kpi, { label: "本地 CPU", value: String(rc.local_cpu || 0) }),
-				h(Kpi, { label: "云端 / 兜底", value: (rc.cloud || 0) + " / " + (rc.fallback || 0) })) : null,
-			report ? h("div", { className: "dfy-list" },
-				h(Row, { label: "AI 标识", value: report.aiLabelText || "AI 生成内容" }),
-				report.profileName ? h(Row, { label: "角色档案", value: report.profileName }) : null,
-				h(Row, { label: "形象", value: report.avatarLabel || "大肥鱼桌宠" }),
-				h("div", { className: "dfy-item-sub" },
-					h("strong", null, "报告声明"),
-					(Array.isArray(report.notes) ? report.notes : ["未接触抖音平台、未推流", "未产生付费调用", "不计入生产画像 / 发布 / 训练", "AI 标识常显"]).map((n, i) => h("div", { key: i, className: "dfy-caption" }, "· " + n)))) : null);
-
-		return h("div", { className: "dfy-grid" },
-			stageCard,
-			voiceCard,
-			eventCard,
-			reportCard,
-			h("div", { className: "dfy-spanall" }, h(Toast, { note: note })));
-	}
-
 	// ------------------------------------------------------------------ 面板外壳
 
 	const TABS = [
 		{ id: "home", label: "首页", render: (ctx) => h(HomeTab, ctx) },
 		{ id: "wizard", label: "首次配置", render: (ctx) => h(WizardTab, { onSaved: ctx.refresh }) },
 		{ id: "preview", label: "直播预览", render: (ctx) => h(PreviewTab, ctx) },
-		{ id: "sim", label: "模拟开播", render: (ctx) => h(SimTab, ctx) },
 		{ id: "training", label: "训练与学习", render: (ctx) => h(TrainingTab, ctx) },
 		{ id: "interact", label: "互动与账本", render: () => h(InteractTab) },
 		{ id: "audience", label: "观众", render: () => h(AudienceTab) },

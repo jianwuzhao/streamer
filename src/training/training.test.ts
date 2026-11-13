@@ -193,7 +193,7 @@ test('调度器：样本不足 / 显存不足（探测不可用 fail-safe）', a
 
 test('调度器：完整 dry-run 窗口（资源门+政策授权+真实 worker）→ champion 不变、检查点落库、断点续跑', async () => {
   const env = makeSchedulerEnv()
-  process.env.DAFEIFYU_DATA_DIR = env.t.dir
+  process.env.DAFEIYU_DATA_DIR = env.t.dir
   try {
     for (let i = 0; i < 6; i++) {
       env.samples.ingest({ sourceKind: 'verified_local_reply', purposeAllowed: true, text: `训练样本 ${i} 内容互不相同 ${i * 3}`, sessionId: `s-${i}` })
@@ -227,7 +227,7 @@ test('调度器：完整 dry-run 窗口（资源门+政策授权+真实 worker�
     assert.equal(second.receipt?.state, 'completed')
     assert.ok((second.receipt?.steps ?? 0) > (first.receipt?.steps ?? 0), `${JSON.stringify(second.receipt)} 应大于 ${JSON.stringify(first.receipt)}`)
   } finally {
-    delete process.env.DAFEIFYU_DATA_DIR
+    delete process.env.DAFEIYU_DATA_DIR
     env.t.cleanup()
   }
 })

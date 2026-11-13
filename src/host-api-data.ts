@@ -6,7 +6,8 @@
 import type { DafeiyuPluginHandle } from './index.ts'
 import { runSelfCheck } from './installer/selfcheck.ts'
 import { exportDiagnosticReport } from './installer/diagnostics.ts'
-import { BUILTIN_AVATARS, BUILTIN_VOICES, BUILTIN_PROFILES, type Readiness } from './settings/store.ts'
+import { BUILTIN_AVATARS, BUILTIN_VOICES, BUILTIN_PROFILES } from './settings/catalogs.ts'
+import { type Readiness } from './settings/store.ts'
 import { all, get } from './storage/db.ts'
 import { json, todayCostCny, type ServerResponse } from './host-api-shared.ts'
 
@@ -37,7 +38,7 @@ function buildSettingsPayload(handle: DafeiyuPluginHandle): SettingsPayload {
     catalogs: { avatars: BUILTIN_AVATARS, voices: BUILTIN_VOICES, profiles: BUILTIN_PROFILES },
     notes: [
       '平台登录、实名与人脸认证在官方客户端完成，本插件只保存操作员声明时间戳，不保存任何凭据',
-      '云端 API Key 不落库（环境变量 DAFEIFYU_CLOUD_API_KEY）；云端设置覆盖在重启插件后生效',
+      '云端 API Key 不落库（环境变量 DAFEIYU_CLOUD_API_KEY）；云端设置覆盖在重启插件后生效',
       'AI 标识不可关闭（§23.2）：任何设置写入都无法将其隐藏',
       '观众画像默认不用于参数训练；个性化退出始终可用（隐私下限不可放宽）',
     ],
@@ -92,16 +93,6 @@ export async function handleDataGetRoute(
     return true
   }
 
-  if (path === 'simulation') {
-    json(res, 200, { ok: true, simulation: handle.simulation.state() })
-    return true
-  }
-
-  if (path === 'simulation/report') {
-    json(res, 200, { ok: true, report: handle.simulation.report() })
-    return true
-  }
-
   if (path === 'preview') {
     const persona = handle.settings.getPersona()
     const profile = handle.settings.getPersonaProfile()
@@ -133,7 +124,7 @@ export async function handleDataGetRoute(
     const report = await runSelfCheck({
       ...(handle.configPath !== '' ? { configPath: handle.configPath } : {}),
       dataDir: handle.dataDir,
-      ...(process.env.DAFEIFYU_OLLAMA_URL !== undefined ? { ollamaUrl: process.env.DAFEIFYU_OLLAMA_URL } : {}),
+      ...(process.env.DAFEIYU_OLLAMA_URL !== undefined ? { ollamaUrl: process.env.DAFEIYU_OLLAMA_URL } : {}),
     })
     json(res, 200, { ok: true, report })
     return true

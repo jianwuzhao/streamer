@@ -116,7 +116,7 @@ export class TrainingScheduler {
       wall_budget_s: cfg.maxSliceWallSeconds,
       samples: sampleRows,
       replay_fraction: cfg.replayFraction,
-      checkpoint_dir: `${process.env.DAFEIFYU_DATA_DIR ?? 'data'}/checkpoints`,
+      checkpoint_dir: `${process.env.DAFEIYU_DATA_DIR ?? 'data'}/checkpoints`,
       resume_from: lastCheckpoint?.checkpoint_id ?? null,
     }
     const decision = this.deps.policy.issue({

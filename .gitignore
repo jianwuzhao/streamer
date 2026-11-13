@@ -31,3 +31,10 @@ credentials/
 *.log
 logs/
 node_modules.orig/
+
+# AI 会话技能目录（本机安装，不入库）
+.agents/
+
+# Python 字节码缓存
+__pycache__/
+*.pyc

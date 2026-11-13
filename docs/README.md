@@ -12,7 +12,5 @@
 | `troubleshooting.md` | 无权限、无声音、模型超时、显存不足、训练失败、断流恢复 | F/G |
 | `privacy-and-data.md` | 数据存放、用途、保留期、云端出域、训练授权、删除与备份 | B |
 | `operations.md` | 技术安装清单、适配契约、迁移、健康检查、日志与验收证据 | G |
-| `simulation-first-run.md` | **第一次模拟开播本机演练报告**：桌宠形象/语音互动、脚本事件与回复、隔离复核、Web 面板等价操作、已知边界 | J（已执行） |
 
 配套设计稿：[大肥鱼直播插件用户使用说明（设计稿）](../大肥鱼直播插件_用户使用说明_设计稿.md)
-演练脚本：[scripts/simulate-first-run.ts](../scripts/simulate-first-run.ts)
