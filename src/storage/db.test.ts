@@ -8,9 +8,9 @@ test('迁移幂等：重复执行不重复应用', () => {
   try {
     const second = migrate(t.db)
     assert.deepEqual(second.applied, [])
-    assert.deepEqual([...second.alreadyApplied].sort(), [1, 2, 3, 4, 5, 6, 7, 8, 9])
+    assert.deepEqual([...second.alreadyApplied].sort((a, b) => a - b), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     const rows = all<{ version: number }>(t.db, 'SELECT version FROM schema_migrations ORDER BY version')
-    assert.equal(rows.length, 9)
+    assert.equal(rows.length, 10)
   } finally {
     t.cleanup()
   }
@@ -23,7 +23,7 @@ test('阶段 H 新表存在（操作员设置/回复留痕）', () => {
       t.db,
       "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
     ).map((r) => r.name)
-    for (const expected of ['operator_settings', 'reply_log']) {
+    for (const expected of ['operator_settings', 'reply_log', 'simulation_runs', 'simulation_events']) {
       assert.ok(tables.includes(expected), `缺表: ${expected}`)
     }
   } finally {

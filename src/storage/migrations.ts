@@ -492,4 +492,31 @@ CREATE TABLE IF NOT EXISTS reply_log (
 CREATE INDEX IF NOT EXISTS idx_reply_log_created ON reply_log(created_at DESC);
 `,
   },
+  {
+    version: 10,
+    name: '010_simulation_runs_events',
+    // 模拟开播（首播演练）留痕：与生产播出链路隔离。
+    // 场次与事件独立成表，不写 reply_log / gift_ledger / 画像 / 训练样本；
+    // 感知事件以 source=simulation / replay=1 记录，便于审计但不触发生产动作。
+    sql: `
+CREATE TABLE IF NOT EXISTS simulation_runs (
+  run_no     INTEGER PRIMARY KEY AUTOINCREMENT,
+  status     TEXT NOT NULL CHECK (status IN ('running','ended')),
+  started_at TEXT NOT NULL,
+  ended_at   TEXT
+);
+CREATE TABLE IF NOT EXISTS simulation_events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_no      INTEGER NOT NULL,
+  kind        TEXT NOT NULL CHECK (kind IN ('danmaku','voice','gift','system')),
+  actor       TEXT NOT NULL,
+  text        TEXT NOT NULL,
+  reply_text  TEXT NOT NULL,
+  route       TEXT NOT NULL,
+  latency_ms  INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_simulation_events_run ON simulation_events(run_no, id DESC);
+`,
+  },
 ]

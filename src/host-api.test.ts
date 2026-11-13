@@ -366,3 +366,102 @@ test('host-api：观众画像管理（列表/详情/纠错/退出个性化/删�
     rmSync(dataDir, { recursive: true, force: true })
   }
 })
+
+test('host-api：模拟开播（首播演练）端点契约——不接触平台、不污染生产链路', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-sim-api-'))
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  try {
+    const handler = createRequestHandler(plugin)
+
+    // 初始：idle、桌宠为默认形象、无报告
+    const s0 = await call(handler, 'GET', '/api/dafeiyu/simulation')
+    assert.equal(s0.payload.ok, true)
+    assert.equal(s0.payload.simulation.status, 'idle')
+    assert.equal(s0.payload.simulation.runNo, 0)
+    assert.equal(s0.payload.simulation.firstCompleted, false)
+    assert.equal(s0.payload.simulation.persona.avatarId, 'fish-deskpet')
+    assert.equal(s0.payload.simulation.persona.voiceInteractionEnabled, true)
+    assert.equal(s0.payload.simulation.report, null)
+    const r0 = await call(handler, 'GET', '/api/dafeiyu/simulation/report')
+    assert.equal(r0.payload.report, null)
+
+    // 无场次投递事件 → 400（不写留痕）
+    const ev0 = await call(handler, 'POST', '/api/dafeiyu/simulation/event', { text: '在吗', kind: 'danmaku' })
+    assert.equal(ev0.code, 400)
+    assert.ok(ev0.payload.error.includes('模拟开播'))
+
+    // 开场
+    const st = await call(handler, 'POST', '/api/dafeiyu/simulation/start', {})
+    assert.equal(st.payload.ok, true)
+    assert.equal(st.payload.simulation.status, 'running')
+    assert.equal(st.payload.simulation.runNo, 1)
+    // 幂等：重复开场不新增场次
+    const st2 = await call(handler, 'POST', '/api/dafeiyu/simulation/start', {})
+    assert.equal(st2.payload.simulation.runNo, 1)
+
+    // 语音互动（转写文本）
+    const v = await call(handler, 'POST', '/api/dafeiyu/simulation/voice', { text: '你好呀，能听到我说话吗？', actor: '语音观众' })
+    assert.equal(v.payload.ok, true)
+    assert.equal(v.payload.result.kind, 'voice')
+    assert.ok(typeof v.payload.result.replyText === 'string' && v.payload.result.replyText.length > 0)
+    assert.equal(typeof v.payload.result.ttsText, 'string')
+    assert.equal(typeof v.payload.result.route, 'string')
+
+    // 弹幕 / 礼物 / 缺 text 校验
+    const d = await call(handler, 'POST', '/api/dafeiyu/simulation/event', { text: '大肥鱼今天种什么？', kind: 'danmaku' })
+    assert.equal(d.payload.result.kind, 'danmaku')
+    const g = await call(handler, 'POST', '/api/dafeiyu/simulation/event', { text: '送出一个小心心', kind: 'gift' })
+    assert.equal(g.payload.result.kind, 'gift')
+    const bad = await call(handler, 'POST', '/api/dafeiyu/simulation/voice', {})
+    assert.equal(bad.code, 400)
+
+    // 状态含模拟开播概览，但真实直播状态仍为「未配置」（未接触平台）
+    const status = await call(handler, 'GET', '/api/dafeiyu/status')
+    assert.equal(status.payload.status.liveStatus, 'unconfigured')
+    assert.equal(status.payload.status.simulationRunNo, 1)
+    assert.equal(status.payload.status.simulationStatus, 'running')
+    assert.equal(status.payload.status.simulationFirstCompleted, false)
+
+    // 收尾
+    const sp = await call(handler, 'POST', '/api/dafeiyu/simulation/stop', {})
+    assert.equal(sp.payload.simulation.status, 'ended')
+    assert.equal(sp.payload.simulation.firstCompleted, true)
+    const r1 = await call(handler, 'GET', '/api/dafeiyu/simulation/report')
+    assert.equal(r1.payload.report.isFirst, true)
+    assert.ok(r1.payload.report.notes.some((n: string) => n.includes('未推流')))
+
+    // 一键首播脚本（第二场，自动开场+收尾）
+    const script = await call(handler, 'POST', '/api/dafeiyu/simulation/run-script', {})
+    assert.equal(script.payload.ok, true)
+    assert.equal(script.payload.result.steps.length, 4)
+    assert.equal(script.payload.result.report.runNo, 2)
+    assert.equal(script.payload.result.report.isFirst, false)
+    assert.equal(script.payload.simulation.status, 'ended')
+    assert.ok(script.payload.simulation.events.some((e: { kind: string }) => e.kind === 'voice'))
+
+    // 全程未写生产回复/账本/画像/训练样本，感知事件均为 replay
+    const events = await call(handler, 'GET', '/api/dafeiyu/replies')
+    assert.deepEqual(events.payload.replies, [])
+  } finally {
+    plugin.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('host-api：语音试听返回语音互动开关与音色元数据', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-voice-api-'))
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  try {
+    const handler = createRequestHandler(plugin)
+    const vt = await call(handler, 'POST', '/api/dafeiyu/preview/voice-test', {})
+    assert.equal(vt.payload.ok, true)
+    assert.equal(vt.payload.result.voiceInteractionEnabled, true)
+    assert.equal(vt.payload.result.voice.lang, 'zh-CN')
+    await call(handler, 'POST', '/api/dafeiyu/settings/persona', { voiceInteractionEnabled: false })
+    const vt2 = await call(handler, 'POST', '/api/dafeiyu/preview/voice-test', {})
+    assert.equal(vt2.payload.result.voiceInteractionEnabled, false)
+  } finally {
+    plugin.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})

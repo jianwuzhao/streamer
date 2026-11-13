@@ -89,6 +89,16 @@ export async function handleDataGetRoute(
     return true
   }
 
+  if (path === 'simulation') {
+    json(res, 200, { ok: true, simulation: handle.simulation.state() })
+    return true
+  }
+
+  if (path === 'simulation/report') {
+    json(res, 200, { ok: true, report: handle.simulation.report() })
+    return true
+  }
+
   if (path === 'preview') {
     const persona = handle.settings.getPersona()
     const scene = handle.settings.getScene()

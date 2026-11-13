@@ -21,6 +21,8 @@ export interface AvatarOption {
   readonly label: string
   /** 预览画布主题色（背景/主色/点缀） */
   readonly theme: { readonly bg: string; readonly primary: string; readonly accent: string }
+  /** classic=传统横版直播画布；deskpet=桌面宠物小窗（气泡/悬浮/AI 角标常显） */
+  readonly style: 'classic' | 'deskpet'
 }
 
 export interface VoiceOption {
@@ -32,19 +34,34 @@ export interface VoiceOption {
 
 export const BUILTIN_AVATARS: readonly AvatarOption[] = [
   {
+    id: 'fish-deskpet',
+    label: '大肥鱼桌宠 · 青绿',
+    theme: { bg: '#0f3d38', primary: '#0f5e57', accent: '#ffd166' },
+    style: 'deskpet',
+  },
+  {
+    id: 'fish-deskpet-gold',
+    label: '大肥鱼桌宠 · 暖金',
+    theme: { bg: '#4a3410', primary: '#8a6d1f', accent: '#ffe3a3' },
+    style: 'deskpet',
+  },
+  {
     id: 'fish-classic',
     label: '大肥鱼 · 经典青绿',
     theme: { bg: '#0f3d38', primary: '#0f5e57', accent: '#ffd166' },
+    style: 'classic',
   },
   {
     id: 'fish-gold',
     label: '大肥鱼 · 暖金',
     theme: { bg: '#4a3410', primary: '#8a6d1f', accent: '#ffe3a3' },
+    style: 'classic',
   },
   {
     id: 'fish-night',
     label: '大肥鱼 · 夜航蓝',
     theme: { bg: '#101c33', primary: '#1d3557', accent: '#7ae7ff' },
+    style: 'classic',
   },
 ]
 
@@ -75,8 +92,15 @@ function httpUrl(message: string) {
 
 export const PersonaSettings = z.object({
   personaName: z.string().trim().min(1, '主播名称不能为空').max(24, '主播名称不超过 24 字').default('大肥鱼'),
-  avatarId: z.enum(avatarIds).default('fish-classic'),
+  /** 默认即「大肥鱼桌宠」（用户要求虚拟形象换成桌宠）；旧值 fish-* 仍合法可回退 */
+  avatarId: z.enum(avatarIds).default('fish-deskpet'),
   voiceId: z.enum(voiceIds).default('qing-wan'),
+  /**
+   * 语音互动开关：仅控制客户端是否启用浏览器语音识别 / 语音合成。
+   * 麦克风权限仍由浏览器逐次显式授予；录音不上传、不入库，只有转写文本
+   * 作为「模拟开播」事件留痕（§24.1 隐私下限不因此放宽）。
+   */
+  voiceInteractionEnabled: z.boolean().default(true),
   samplePhrase: z
     .string()
     .trim()

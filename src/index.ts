@@ -6,6 +6,7 @@
  * session/event 等）与 Web UI 半在后续阶段接入 cordis.patch.yml。
  */
 import { resolve, dirname, join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { readdirSync } from 'node:fs'
@@ -32,6 +33,7 @@ import { createRequestHandler } from './host-api.ts'
 import { DouyinAssistedAdapter } from './platform/adapter.ts'
 import { loadPolicyPack } from './platform/policy-pack.ts'
 import { LiveSession } from './live/session.ts'
+import { SimulationService } from './live/simulation.ts'
 import { TrainingEntry } from './live/training-entry.ts'
 import { SettingsStore, type CloudSettingsType } from './settings/store.ts'
 import { MemoryStore } from './memory/l2-store.ts'
@@ -82,6 +84,8 @@ export interface DafeiyuPluginHandle {
     readonly trainingEntry: TrainingEntry
     readonly platform: DouyinAssistedAdapter
   }
+  /** 第一次模拟开播（本机沙箱演练，不接触平台；详见 src/live/simulation.ts） */
+  readonly simulation: SimulationService
   readonly memory: MemoryStore
   readonly audience: {
     readonly identity: ViewerIdentity
@@ -269,6 +273,36 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
     consolidation: consolidationService,
   })
 
+  // 6.5 第一次模拟开播：与生产链路隔离的本地演练服务。
+  // answer 直接走 RequestRouter（不经 DafeiyuRuntime.logReply），演练问答不进 reply_log；
+  // 感知事件以 replay=1 记录，不触发生产投影/账本/画像/训练/发布动作。
+  const simulation = new SimulationService({
+    db,
+    settings,
+    ingest: async (env) => runtime.ingest(env),
+    answer: async (text, kind) => {
+      const requestId = `sim-${randomUUID()}`
+      const receipt = await router.route(
+        {
+          requestId,
+          sessionId: `sim-${config.productPreset}`,
+          roomId: 'simulation-local',
+          text,
+          type: kind === 'gift' ? 'gift_comment' : kind === 'system' ? 'system' : 'danmaku',
+          purposeTags: ['simulation'],
+          occurredAt: new Date().toISOString(),
+        },
+        { recentReplies: [] },
+      )
+      return {
+        text: receipt.text,
+        route: receipt.route,
+        ...(receipt.reasonCode !== undefined ? { reasonCode: receipt.reasonCode } : {}),
+        latencyMs: receipt.latencyMs,
+      }
+    },
+  })
+
   return {
     config,
     featureGates,
@@ -327,6 +361,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
       samples: trainingSamples,
       scheduler: trainingScheduler,
     },
+    simulation,
     dispose() {
       arbiter.stop()
       db.close()

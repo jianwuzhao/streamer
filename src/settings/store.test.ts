@@ -23,7 +23,8 @@ test('settings：默认值齐备（schema default），未保存即可读', () =
   try {
     const persona = store.getPersona()
     assert.equal(persona.personaName, '大肥鱼')
-    assert.equal(persona.avatarId, 'fish-classic')
+    assert.equal(persona.avatarId, 'fish-deskpet')
+    assert.equal(persona.voiceInteractionEnabled, true)
     assert.equal(persona.voiceId, 'qing-wan')
     assert.equal(persona.usageRightConfirmed, false)
     assert.equal(persona.aiLabelVisible, true)
@@ -130,6 +131,10 @@ test('settings：目录与迁移 009 生效（operator_settings 表存在）', (
   try {
     assert.ok(BUILTIN_AVATARS.length >= 3)
     assert.ok(BUILTIN_VOICES.length >= 4)
+    // 桌宠形象排在目录首位、默认选中，且带 style 标记
+    assert.equal(BUILTIN_AVATARS[0]?.id, 'fish-deskpet')
+    assert.equal(BUILTIN_AVATARS[0]?.style, 'deskpet')
+    assert.ok(BUILTIN_AVATARS.some((a) => a.style === 'deskpet' && a.label.includes('桌宠')))
     store.saveGifts({ nameMention: false })
     const row = db.prepare(`SELECT value FROM operator_settings WHERE key = 'gifts'`).get() as { value: string }
     assert.equal((JSON.parse(row.value) as { nameMention: boolean }).nameMention, false)
