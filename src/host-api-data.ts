@@ -6,7 +6,7 @@
 import type { DafeiyuPluginHandle } from './index.ts'
 import { runSelfCheck } from './installer/selfcheck.ts'
 import { exportDiagnosticReport } from './installer/diagnostics.ts'
-import { BUILTIN_AVATARS, BUILTIN_VOICES, type Readiness } from './settings/store.ts'
+import { BUILTIN_AVATARS, BUILTIN_VOICES, BUILTIN_PROFILES, type Readiness } from './settings/store.ts'
 import { all, get } from './storage/db.ts'
 import { json, todayCostCny, type ServerResponse } from './host-api-shared.ts'
 
@@ -17,21 +17,24 @@ interface SettingsPayload {
   cloud: unknown
   dataUsage: unknown
   gifts: unknown
+  /** 当前选中的角色档案（主播信息来源） */
+  profile: ReturnType<DafeiyuPluginHandle['settings']['getPersonaProfile']>
   readiness: { persona: Readiness; platform: Readiness }
-  catalogs: { avatars: typeof BUILTIN_AVATARS; voices: typeof BUILTIN_VOICES }
+  catalogs: { avatars: typeof BUILTIN_AVATARS; voices: typeof BUILTIN_VOICES; profiles: typeof BUILTIN_PROFILES }
   notes: readonly string[]
 }
 
 function buildSettingsPayload(handle: DafeiyuPluginHandle): SettingsPayload {
   return {
     persona: handle.settings.getPersona(),
+    profile: handle.settings.getPersonaProfile(),
     platform: handle.settings.getPlatform(),
     scene: handle.settings.getScene(),
     cloud: handle.settings.getCloud(),
     dataUsage: handle.settings.getDataUsage(),
     gifts: handle.settings.getGifts(),
     readiness: handle.settings.readiness(),
-    catalogs: { avatars: BUILTIN_AVATARS, voices: BUILTIN_VOICES },
+    catalogs: { avatars: BUILTIN_AVATARS, voices: BUILTIN_VOICES, profiles: BUILTIN_PROFILES },
     notes: [
       '平台登录、实名与人脸认证在官方客户端完成，本插件只保存操作员声明时间戳，不保存任何凭据',
       '云端 API Key 不落库（环境变量 DAFEIFYU_CLOUD_API_KEY）；云端设置覆盖在重启插件后生效',
@@ -101,6 +104,7 @@ export async function handleDataGetRoute(
 
   if (path === 'preview') {
     const persona = handle.settings.getPersona()
+    const profile = handle.settings.getPersonaProfile()
     const scene = handle.settings.getScene()
     const platform = handle.settings.getPlatform()
     json(res, 200, {
@@ -110,7 +114,14 @@ export async function handleDataGetRoute(
         liveDisplay: handle.live.session.display(),
         previewActive: handle.live.session.previewActive,
         // 本地预览 ≠ 已开播（§24.2）；画布常显 AI 标识
-        persona: { name: persona.personaName, avatarId: persona.avatarId, aiLabelText: persona.aiLabelText },
+        persona: {
+          name: profile.name,
+          enName: profile.enName,
+          profileId: profile.id,
+          tagline: profile.tagline,
+          avatarId: persona.avatarId,
+          aiLabelText: persona.aiLabelText,
+        },
         scene,
         officialClientUrl: platform.officialClientUrl,
       },

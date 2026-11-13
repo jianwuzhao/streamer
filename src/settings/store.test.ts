@@ -7,6 +7,8 @@ import { migrate, openDatabase } from '../storage/db.ts'
 import {
   BUILTIN_AVATARS,
   BUILTIN_VOICES,
+  BUILTIN_PROFILES,
+  resolveProfile,
   SettingsStore,
   SettingsValidationError,
 } from './store.ts'
@@ -22,6 +24,7 @@ test('settings：默认值齐备（schema default），未保存即可读', () =
   const { store, db, dataDir } = makeStore()
   try {
     const persona = store.getPersona()
+    assert.equal(persona.profileId, 'dsh-pet')
     assert.equal(persona.personaName, '大肥鱼')
     assert.equal(persona.avatarId, 'fish-deskpet')
     assert.equal(persona.voiceInteractionEnabled, true)
@@ -140,6 +143,50 @@ test('settings：目录与迁移 009 生效（operator_settings 表存在）', (
     assert.equal((JSON.parse(row.value) as { nameMention: boolean }).nameMention, false)
     const applied = db.prepare('SELECT version FROM schema_migrations WHERE version = 9').get()
     assert.ok(applied !== undefined)
+  } finally {
+    db.close()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('settings：角色档案目录（鹅次元角色 + dsh-pet 插件中档案）', () => {
+  // 5 个档案：4 个鹅次元官网角色 + 1 个本插件内的 dsh-pet 桌宠档案
+  assert.equal(BUILTIN_PROFILES.length, 5)
+  const eciyuan = BUILTIN_PROFILES.filter((p) => p.source === 'eciyuan')
+  assert.equal(eciyuan.length, 4)
+  assert.deepEqual(eciyuan.map((p) => p.name), ['夏夏', '沈露白', '谷雨', '贝拉'])
+  // 官网档案字段齐备（中文名/英文名/#标签/年龄/身高/星座/MBTI）
+  for (const p of BUILTIN_PROFILES) {
+    assert.ok(p.name.length > 0)
+    assert.ok(p.enName.length > 0)
+    assert.ok(p.tagline.length > 0)
+    assert.ok(p.age && p.height && p.zodiac && p.mbti)
+  }
+  const pet = BUILTIN_PROFILES.find((p) => p.id === 'dsh-pet')
+  assert.ok(pet !== undefined)
+  assert.equal(pet?.source, 'plugin')
+  assert.equal(pet?.style, 'deskpet')
+  assert.equal(pet?.name, '大肥鱼')
+  // 未知 id 回落 dsh-pet
+  assert.equal(resolveProfile('does-not-exist').id, 'dsh-pet')
+})
+
+test('settings：切换 role profile 后 getPersonaProfile 跟随选中档案且持久化', () => {
+  const { store, db, dataDir } = makeStore()
+  try {
+    assert.equal(store.getPersonaProfile().id, 'dsh-pet')
+    store.savePersona({ profileId: 'xiaxia' })
+    assert.equal(store.getPersona().profileId, 'xiaxia')
+    const profile = store.getPersonaProfile()
+    assert.equal(profile.id, 'xiaxia')
+    assert.equal(profile.name, '夏夏')
+    assert.equal(profile.enName, 'XIAXIA')
+    assert.equal(profile.tagline, '新传专业大二学生')
+    assert.equal(profile.source, 'eciyuan')
+    // 重启后仍保留
+    assert.equal(new SettingsStore(db).getPersonaProfile().id, 'xiaxia')
+    // 非法 profileId 被 schema 拒绝
+    assert.throws(() => store.savePersona({ profileId: 'unknown' as unknown as string }), SettingsValidationError)
   } finally {
     db.close()
     rmSync(dataDir, { recursive: true, force: true })

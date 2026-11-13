@@ -154,6 +154,30 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 @keyframes dfy-pet-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 @keyframes dfy-pet-tail{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}
 @keyframes dfy-pet-bubble{0%{transform:translateY(0);opacity:0}20%{opacity:.7}100%{transform:translateY(-120px);opacity:0}}
+/* 角色档案卡（参照 eciyuan.qq.com CHARACTERS）：中文名/英文名/#标签 + 年龄·身高·星座·MBTI */
+.dfy-profiles{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(210px,100%),1fr));align-items:start}
+.dfy-profile{position:relative;display:grid;gap:8px;min-width:0;padding:14px;border-radius:14px;border:.5px solid var(--dsw-alias-border-l2,#d8e2e0);background:var(--dsw-alias-bg-layer-1,#fff);cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .15s}
+.dfy-profile:hover{border-color:var(--dsw-alias-state-business-primary,#0f5e57);transform:translateY(-1px)}
+.dfy-profile:focus-visible{outline:2px solid var(--dsw-focus-ring-color,rgba(15,94,87,.6));outline-offset:2px}
+.dfy-profile-on{border:1.5px solid var(--dsw-alias-state-business-primary,#0f5e57);box-shadow:0 6px 18px color-mix(in srgb,var(--dsw-alias-state-business-primary,#0f5e57) 16%,transparent)}
+.dfy-profile-top{display:flex;align-items:flex-start;gap:8px;min-width:0}
+.dfy-profile-badge{flex:0 0 auto;width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:800;letter-spacing:.5px}
+.dfy-profile-name{min-width:0}
+.dfy-profile-zh{font-size:16px;font-weight:800;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dfy-profile-en{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--dsw-alias-label-tertiary,#5b6f6c)}
+.dfy-profile-src{margin-left:auto;flex:0 0 auto;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--dsw-alias-bg-layer-2,#eef2f1);color:var(--dsw-alias-label-secondary,#45606b)}
+.dfy-profile-src-plugin{background:color-mix(in srgb,var(--dsw-alias-state-business-primary,#0f5e57) 14%,transparent);color:var(--dsw-alias-state-business-primary,#0f5e57)}
+.dfy-profile-tag{font-size:11.5px;color:var(--dsw-alias-label-secondary,#45606b);overflow-wrap:anywhere}
+.dfy-profile-tag b{color:var(--dsw-alias-state-business-primary,#0f5e57);font-weight:800;margin-right:3px}
+.dfy-profile-info{display:grid;gap:4px;padding-top:8px;border-top:.5px dashed var(--dsw-alias-border-l1,#e3ebe9)}
+.dfy-profile-kv{display:flex;justify-content:space-between;gap:8px;font-size:11.5px}
+.dfy-profile-kv span:first-child{color:var(--dsw-alias-label-tertiary,#5b6f6c)}
+.dfy-profile-kv strong{font-weight:700;overflow-wrap:anywhere;text-align:right}
+.dfy-profile-bio{font-size:11px;color:var(--dsw-alias-label-tertiary,#5b6f6c);line-height:1.5;overflow-wrap:anywhere}
+.dfy-profile-hero{display:grid;gap:10px}
+.dfy-profile-hero .dfy-profile-zh{font-size:24px}
+.dfy-profile-hero .dfy-profile-en{font-size:12px;letter-spacing:3px}
+.dfy-profile-hero .dfy-profile-info{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
 @media (prefers-reduced-motion:reduce){.dfy-root *{animation:none!important;transition:none!important}}
 `;
 
@@ -199,6 +223,32 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		h("div", { className: "dfy-card-b" }, children));
 
 	const Field = ({ label, children }) => h("label", { className: "dfy-field" }, h("span", null, label), children);
+
+	/**
+	 * 角色档案卡（仿 eciyuan.qq.com CHARACTERS）：
+	 * 中文名 + 英文名 + #一句人设标签 + 年龄/身高/星座/MBTI 信息列表 + 来源徽章。
+	 * selected/onSelect 存在时作为可选卡（button 语义 + 键盘可达）；hero 为只读放大展示。
+	 */
+	const ProfileCard = ({ profile: p, selected, onSelect, hero }) => {
+		if (!p) return null;
+		const cls = "dfy-profile" + (selected ? " dfy-profile-on" : "") + (hero ? " dfy-profile-hero" : "");
+		const srcLabel = p.source === "plugin" ? "插件中" : "鹅次元";
+		const body = [
+			h("div", { className: "dfy-profile-top" },
+				h("span", { className: "dfy-profile-badge", style: { background: (p.theme && p.theme.primary) || "#0f5e57" }, "aria-hidden": true }, (p.name || "?").slice(0, 1)),
+				h("div", { className: "dfy-profile-name" },
+					h("div", { className: "dfy-profile-zh" }, p.name),
+					h("div", { className: "dfy-profile-en" }, p.enName)),
+				h("span", { className: "dfy-profile-src" + (p.source === "plugin" ? " dfy-profile-src-plugin" : "") }, srcLabel)),
+			h("div", { className: "dfy-profile-tag" }, h("b", null, "#"), p.tagline),
+			h("div", { className: "dfy-profile-info" },
+				[["年龄 / Age", "age"], ["身高 / Height", "height"], ["星座 / Zodiac", "zodiac"], ["性格 / MBTI", "mbti"]].map(([k, key]) =>
+					h("div", { key: key, className: "dfy-profile-kv" }, h("span", null, k), h("strong", null, p[key] || "—")))),
+			p.bio ? h("div", { className: "dfy-profile-bio" }, p.bio) : null,
+		];
+		if (onSelect) return h("button", { type: "button", className: cls, "aria-pressed": !!selected, onClick: onSelect }, body);
+		return h("div", { className: cls }, body);
+	};
 
 	const Loading = ({ text }) => h("span", { className: "dfy-loading", role: "status" }, h("i", { className: "dfy-spin", "aria-hidden": true }), text || "加载中…");
 
@@ -306,7 +356,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 	// ------------------------------------------------------------------ 首页
 
-	function HomeTab({ status, act, busy, goTab }) {
+	function HomeTab({ status, settings, act, busy, goTab }) {
 		const s = status;
 		const live = s && s.liveStatus === "live_confirmed";
 		const starting = s && ["self_check", "local_preview", "awaiting_platform", "stream_established"].includes(s.liveStatus);
@@ -352,6 +402,11 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				h(Row, { label: "运行模式", value: s ? s.mode + (s.killSwitch ? "（killSwitch）" : "") : "—" }),
 				h(Row, { label: "训练机会", value: s ? (s.trainingEligible ? "三门通过" : s.trainingEligibleDetail) : "—" }),
 				h(Row, { label: "云端配置", value: s ? (s.cloudEnabled ? "已启用（按日预算）" : "未配置：不产生付费调用") : "—" })),
+			settings && settings.profile ? h(Card, { title: "主播信息 · 角色档案",
+				extra: h(Badge, { tone: settings.profile.source === "plugin" ? "ok" : "idle", text: settings.profile.source === "plugin" ? "dsh-pet · 插件中" : "鹅次元角色" }) },
+				h(ProfileCard, { profile: settings.profile, hero: true }),
+				h("div", { className: "dfy-actions" },
+					h(Btn, { tone: "ghost", onClick: () => goTab("wizard") }, "更换角色档案"))) : null,
 			s && s.previewActive ? h(Card, { title: "本地预览进行中", extra: h(Btn, { tone: "ghost", onClick: () => goTab("preview") }, "打开预览") },
 				h(PreviewCanvas, { preview: { previewActive: true, persona: { name: "大肥鱼", aiLabelText: "AI 生成内容" }, scene: {} }, compact: true })) : null);
 	}
@@ -392,7 +447,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const steps = [
 			{ label: "数据与自检", hint: "环境逐项检查", state: selfcheck ? (selfcheck.allPassed ? "ok" : "warn") : null, body: h(SelfcheckStep, { report: selfcheck, run: runSelfcheck }) },
 			{ label: "直播接入", hint: "平台与官方客户端", state: platformOk ? "ok" : "err", body: h(PlatformStep, { settings: data, save: save }) },
-			{ label: "主播形象", hint: "形象 · 音色 · 授权", state: personaOk ? "ok" : "err", body: h(PersonaStep, { settings: data, save: save }) },
+			{ label: "角色档案", hint: "主播信息 · 音色 · 授权", state: personaOk ? "ok" : "err", body: h(PersonaStep, { settings: data, save: save }) },
 			{ label: "模型与云端", hint: "本地优先，云端选填", state: null, body: h(CloudStep, { settings: data, save: save }) },
 			{ label: "运行与数据用途", hint: "隐私下限确认", state: data.dataUsage.confirmed ? "ok" : "warn", body: h(DataUsageStep, { settings: data, save: save }) },
 		];
@@ -459,13 +514,16 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 	function PersonaStep({ settings, save }) {
 		const p = settings.persona;
-		const [name, setName] = useState(p.personaName);
-		const [avatar, setAvatar] = useState(p.avatarId);
+		const profiles = (settings.catalogs && settings.catalogs.profiles) || [];
+		const [profileId, setProfileId] = useState(p.profileId || (settings.profile && settings.profile.id) || "dsh-pet");
 		const [voice, setVoice] = useState(p.voiceId);
 		const [phrase, setPhrase] = useState(p.samplePhrase);
 		const [right, setRight] = useState(p.usageRightConfirmed);
 		const [voiceInteractionEnabled, setVoiceInteractionEnabled] = useState(!!p.voiceInteractionEnabled);
 		const [listenNote, setListenNote] = useState("");
+
+		const selected = profiles.find((x) => x.id === profileId) || settings.profile || null;
+		const payload = () => ({ profileId: profileId, personaName: selected ? selected.name : p.personaName, voiceId: voice, samplePhrase: phrase, usageRightConfirmed: right, voiceInteractionEnabled: voiceInteractionEnabled });
 
 		const listen = async () => {
 			setListenNote("准备试听…");
@@ -480,13 +538,13 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		};
 
 		return h("div", { style: { display: "grid", gap: 12 } },
-			h(Field, { label: "主播名称" }, h("input", { className: "dfy-input", value: name, maxLength: 24, onChange: (e) => setName(e.target.value) })),
-			h(Field, { label: "内置形象" },
-				h("div", { className: "dfy-choice" },
-					settings.catalogs.avatars.map((a) => h("button", {
-						key: a.id, type: "button", className: "dfy-chip" + (avatar === a.id ? " dfy-chip-on" : ""),
-						onClick: () => setAvatar(a.id),
-					}, h(FishIcon, { size: 24, theme: a.theme }), a.style === "deskpet" ? h("span", { className: "dfy-pet-chip-tag" }, "桌宠") : null, a.label)))),
+			h("p", { className: "dfy-muted", style: { margin: 0 } },
+				"主播信息以角色档案呈现（参照 eciyuan.qq.com 的 CHARACTERS 角色介绍）：中文名 / 英文名 / #人设标签 / 年龄·身高·星座·MBTI。选择档案后播出展示名同步为该角色中文名。"),
+			selected ? h(Card, { title: "当前角色档案", extra: h(Badge, { tone: selected.source === "plugin" ? "ok" : "idle", text: selected.source === "plugin" ? "dsh-pet · 插件中" : "鹅次元角色" }) },
+				h(ProfileCard, { profile: selected, hero: true })) : null,
+			h(Field, { label: "选择角色档案" },
+				h("div", { className: "dfy-profiles" },
+					profiles.map((x) => h(ProfileCard, { key: x.id, profile: x, selected: x.id === profileId, onSelect: () => setProfileId(x.id) })))),
 			h(Field, { label: "音色（最终播出音色以直播伴侣音轨为准）" },
 				h("div", { className: "dfy-choice" },
 					settings.catalogs.voices.map((v) => h("button", {
@@ -503,10 +561,10 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				listenNote ? h("span", { className: "dfy-caption" }, listenNote) : null),
 			h("label", { className: "dfy-check" },
 				h("input", { type: "checkbox", checked: right, onChange: (e) => setRight(e.target.checked) }),
-				h("span", null, "我确认对所选形象与声音具有使用授权（开播前必须勾选）")),
+				h("span", null, "我确认对所选角色形象与声音具有使用授权（开播前必须勾选）")),
 			h("p", { className: "dfy-caption", style: { margin: 0 } }, "AI 标识在画面上常显且不可关闭（法规要求）。当前文案：" + p.aiLabelText),
 			h("div", { className: "dfy-actions" },
-				h(Btn, { tone: "primary", onClick: () => save("persona", { personaName: name, avatarId: avatar, voiceId: voice, samplePhrase: phrase, usageRightConfirmed: right, voiceInteractionEnabled: voiceInteractionEnabled }) }, "保存")));
+				h(Btn, { tone: "primary", onClick: () => save("persona", payload()) }, "保存角色档案与播出设置")));
 	}
 
 	function CloudStep({ settings, save }) {
@@ -563,7 +621,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					h(PreviewCanvas, { preview: preview }),
 					h("div", { style: { display: "grid", gap: 10, alignContent: "start" } },
 						h(Row, { label: "当前状态", value: preview ? preview.liveDisplay : "—" }),
-						h(Row, { label: "形象", value: preview && preview.persona ? preview.persona.name : "—" }),
+						h(Row, { label: "角色档案", value: preview && preview.persona ? preview.persona.name + (preview.persona.enName ? " / " + preview.persona.enName : "") : "—" }),
+						preview && preview.persona && preview.persona.tagline ? h(Row, { label: "#人设", value: preview.persona.tagline }) : null,
 						h(Row, { label: "AI 标识", value: preview && preview.persona ? preview.persona.aiLabelText : "—" }),
 						h("div", { className: "dfy-actions" },
 							h(Btn, { tone: "primary", disabled: busy || active, onClick: async () => { await act("preview/start", {}, "进入本地预览"); load(); } }, active ? "预览中" : "进入本地预览"),
@@ -1051,7 +1110,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 						h(Badge, { tone: statusBadgeTone, dot: st === "running", text: "当前场次：" + (SIM_STATUS[st] || st) }),
 						h(Badge, { tone: "idle", text: "第 " + runNo + " 场" }),
 						s.firstCompleted ? h(Badge, { tone: "ok", text: "已完成首次演练" }) : h(Badge, { tone: "warn", text: "尚未完成首次演练" })),
-					h(Row, { label: "形象", value: persona.name || "大肥鱼" }),
+					h(Row, { label: "角色档案", value: s.profile ? s.profile.name + (s.profile.enName ? " / " + s.profile.enName : "") : (persona.name || "大肥鱼") }),
+					s.profile && s.profile.tagline ? h(Row, { label: "#人设", value: s.profile.tagline }) : null,
 					h(Row, { label: "AI 标识", value: (persona.aiLabelText || "AI 生成内容") + "（常显）" }),
 					h(Row, { label: "语音互动", value: voiceEnabled ? "已启用（只读，开关在向导）" : "未启用（在向导开启）" }),
 					h(Row, { label: "场次状态", value: SIM_STATUS[st] || st }),
@@ -1068,7 +1128,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const voiceCard = h(Card, { title: "语音互动（浏览器语音识别 + 语音合成）",
 			extra: h(Badge, { tone: voiceEnabled ? "ok" : "idle", text: voiceEnabled ? "已启用" : "未启用" }) },
 			!voiceEnabled ? h("div", { className: "dfy-note dfy-note-warn" },
-				"在「首次配置 → 主播形象」中开启「语音互动」后才可使用麦克风；下方文本兜底输入仍可用。") : null,
+				"在「首次配置 → 角色档案」中开启「语音互动」后才可使用麦克风；下方文本兜底输入仍可用。") : null,
 			h("div", { className: "dfy-actions" },
 				h(Btn, { tone: listening ? "danger" : "primary", disabled: !voiceEnabled || (disabled && !listening), onClick: toggleListening,
 					title: voiceEnabled ? "使用浏览器本机语音识别" : "请先在向导中开启语音互动" },
@@ -1115,6 +1175,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				h(Kpi, { label: "云端 / 兜底", value: (rc.cloud || 0) + " / " + (rc.fallback || 0) })) : null,
 			report ? h("div", { className: "dfy-list" },
 				h(Row, { label: "AI 标识", value: report.aiLabelText || "AI 生成内容" }),
+				report.profileName ? h(Row, { label: "角色档案", value: report.profileName }) : null,
 				h(Row, { label: "形象", value: report.avatarLabel || "大肥鱼桌宠" }),
 				h("div", { className: "dfy-item-sub" },
 					h("strong", null, "报告声明"),
@@ -1145,6 +1206,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 	function Panel() {
 		const [tab, setTab] = useState("home");
 		const [status, setStatus] = useState(null);
+		const [settings, setSettings] = useState(null);
 		const [note, setNote] = useState("");
 		const [busy, setBusy] = useState(false);
 
@@ -1153,6 +1215,10 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				const r = await api("status");
 				if (r.ok) setStatus(r.status);
 			} catch { /* 面板离线时保留上次状态 */ }
+			try {
+				const s = await api("settings");
+				if (s.ok) setSettings(s.settings);
+			} catch { /* 面板离线时保留上次设置 */ }
 		}, []);
 
 		useEffect(() => {
@@ -1172,7 +1238,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			setBusy(false);
 		};
 
-		const ctx = { status: status, act: act, busy: busy, refresh: refresh, goTab: setTab };
+		const ctx = { status: status, settings: settings, act: act, busy: busy, refresh: refresh, goTab: setTab };
 		const current = TABS.find((t) => t.id === tab) || TABS[0];
 		const live = status && status.liveStatus === "live_confirmed";
 		const starting = status && ["self_check", "local_preview", "awaiting_platform", "stream_established"].includes(status.liveStatus);

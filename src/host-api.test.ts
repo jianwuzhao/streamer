@@ -87,6 +87,9 @@ test('host-api：状态/四主操作/紧急停止路由；非本插件路径放�
     const pvGet = await call(handler, 'GET', '/api/dafeiyu/preview')
     assert.equal(pvGet.payload.preview.previewActive, true)
     assert.equal(pvGet.payload.preview.persona.name, '大肥鱼')
+    assert.equal(pvGet.payload.preview.persona.profileId, 'dsh-pet')
+    assert.equal(pvGet.payload.preview.persona.enName, 'DSH-PET')
+    assert.ok(pvGet.payload.preview.persona.tagline.length > 0)
     assert.equal(pvGet.payload.preview.persona.aiLabelText, 'AI 生成内容')
     assert.equal(typeof pvGet.payload.preview.officialClientUrl, 'string')
     const pvStop = await call(handler, 'POST', '/api/dafeiyu/preview/stop')
@@ -132,6 +135,11 @@ test('host-api：settings 读写/目录/AI 标识不可关闭（400 + issues）'
     assert.equal(got.payload.ok, true)
     assert.ok(got.payload.settings.catalogs.avatars.length >= 3)
     assert.ok(got.payload.settings.catalogs.voices.length >= 4)
+    // 角色档案（主播信息）目录：鹅次元角色 + dsh-pet 插件中档案
+    assert.equal(got.payload.settings.catalogs.profiles.length, 5)
+    assert.ok(got.payload.settings.catalogs.profiles.some((p: { id: string; source: string }) => p.id === 'dsh-pet' && p.source === 'plugin'))
+    assert.equal(got.payload.settings.profile.id, 'dsh-pet')
+    assert.equal(got.payload.settings.profile.name, '大肥鱼')
     assert.equal(got.payload.settings.persona.personaName, '大肥鱼')
     assert.ok(got.payload.settings.notes.length >= 3)
 
@@ -150,6 +158,18 @@ test('host-api：settings 读写/目录/AI 标识不可关闭（400 + issues）'
     assert.equal(voice.payload.ok, true)
     assert.ok(voice.payload.result.phrase.length > 0)
     assert.ok(voice.payload.result.note.includes('浏览器语音'))
+
+    // 切换角色档案后，settings.profile 跟随选中档案（主播信息来源）
+    const switched = await call(handler, 'POST', '/api/dafeiyu/settings/persona', { profileId: 'lubai' })
+    assert.equal(switched.payload.value.profileId, 'lubai')
+    const got2 = await call(handler, 'GET', '/api/dafeiyu/settings')
+    assert.equal(got2.payload.settings.profile.id, 'lubai')
+    assert.equal(got2.payload.settings.profile.name, '沈露白')
+    assert.equal(got2.payload.settings.profile.enName, 'LUBAI')
+    assert.equal(got2.payload.settings.profile.source, 'eciyuan')
+    // 非法档案 id → 400
+    const badProfile = await call(handler, 'POST', '/api/dafeiyu/settings/persona', { profileId: 'nope' })
+    assert.equal(badProfile.code, 400)
 
     // 场景校验失败 → 400
     const bad = await call(handler, 'POST', '/api/dafeiyu/settings/scene', { resolution: '4k' })

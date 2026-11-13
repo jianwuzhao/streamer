@@ -91,7 +91,7 @@ export class LiveSession {
   /** 开播前自检（形象/接入/规则包/账号模式/AI 标识/稳定版本/资源）→ 单一可操作原因。 */
   preflight(input: PreflightInput): PreflightResult {
     if (!input.personaConfigured) {
-      return { pass: false, reason: '主播形象未配置：在「主播形象」中选择形象与声音并确认使用授权' }
+      return { pass: false, reason: '主播形象未配置：在「角色档案」中选择角色并确认使用授权' }
     }
     if (!input.platformConfigured) {
       return { pass: false, reason: '直播接入未配置：在「直播接入」确认已在官方客户端登录直播账号' }

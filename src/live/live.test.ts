@@ -66,7 +66,7 @@ test('政策包缺规则：开播被阻断（fail-closed）', async () => {
 
 test('预览门：形象未配置拒绝进入并给单一原因；就绪进入本地预览、退出回已停止', () => {
   const session = new LiveSession(new DouyinAssistedAdapter(), loadPolicyPack(PACK_PATH), 'douyin')
-  const denied = session.enterPreview({ ready: false, reason: '主播形象未配置：在「主播形象」中选择形象与声音并确认使用授权' })
+  const denied = session.enterPreview({ ready: false, reason: '主播形象未配置：在「角色档案」中选择角色并确认使用授权' })
   assert.equal(denied.ok, false)
   assert.equal(denied.status, 'unconfigured')
   assert.ok(denied.reason?.includes('主播形象未配置'))

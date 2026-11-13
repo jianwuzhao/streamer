@@ -17,7 +17,7 @@
 import { randomUUID } from 'node:crypto'
 import { all, get, run, type DB } from '../storage/db.ts'
 import { createEnvelope } from '../perception/envelope.ts'
-import { BUILTIN_AVATARS, BUILTIN_VOICES, type SettingsStore } from '../settings/store.ts'
+import { BUILTIN_AVATARS, BUILTIN_VOICES, BUILTIN_PROFILES, type ProfileOption, type SettingsStore } from '../settings/store.ts'
 import { getFallbackReply } from '../adapters/fallback.ts'
 import type { AnswerRoute, DurableReceipt, LiveEnvelope, ReasonCode } from '../types.ts'
 
@@ -45,6 +45,8 @@ export interface SimulationReport {
   readonly routeCounts: Readonly<Partial<Record<AnswerRoute, number>>>
   readonly aiLabelText: string
   readonly avatarLabel: string
+  /** 演练所选角色档案中文名（主播信息） */
+  readonly profileName: string
   readonly notes: readonly string[]
 }
 
@@ -62,9 +64,12 @@ export interface SimulationState {
     readonly voiceInteractionEnabled: boolean
     readonly theme: { readonly bg: string; readonly primary: string; readonly accent: string }
   }
+  /** 当前角色档案（仿 eciyuan.qq.com CHARACTERS 的主播信息） */
+  readonly profile: ProfileOption
   readonly catalogs: {
     readonly avatars: typeof BUILTIN_AVATARS
     readonly voices: typeof BUILTIN_VOICES
+    readonly profiles: typeof BUILTIN_PROFILES
   }
   readonly events: readonly SimulationEventView[]
   readonly report: SimulationReport | null
@@ -189,6 +194,7 @@ export class SimulationService {
       }
     }
     const persona = this.settings.getPersona()
+    const profile = this.settings.getPersonaProfile()
     const avatar = BUILTIN_AVATARS.find((a) => a.id === persona.avatarId)
     return {
       runNo: run.run_no,
@@ -201,12 +207,14 @@ export class SimulationService {
       routeCounts,
       aiLabelText: persona.aiLabelText,
       avatarLabel: avatar?.label ?? persona.avatarId,
+      profileName: profile.name,
       notes: SIMULATION_NOTES,
     }
   }
 
   state(): SimulationState {
     const persona = this.settings.getPersona()
+    const profile = this.settings.getPersonaProfile()
     const running = this.runningRun()
     const latest = this.latestRun()
     const active = running ?? latest
@@ -222,14 +230,15 @@ export class SimulationService {
       startedAt: active?.started_at ?? null,
       endedAt: active?.ended_at ?? null,
       persona: {
-        name: persona.personaName,
+        name: profile.name,
         avatarId: persona.avatarId,
         aiLabelText: persona.aiLabelText,
         voiceId: persona.voiceId,
         voiceInteractionEnabled: persona.voiceInteractionEnabled,
-        theme: avatar?.theme ?? { bg: '#0f3d38', primary: '#0f5e57', accent: '#ffd166' },
+        theme: avatar?.theme ?? profile.theme,
       },
-      catalogs: { avatars: BUILTIN_AVATARS, voices: BUILTIN_VOICES },
+      profile,
+      catalogs: { avatars: BUILTIN_AVATARS, voices: BUILTIN_VOICES, profiles: BUILTIN_PROFILES },
       events,
       report: active === undefined ? null : this.buildReport(active, events),
     }

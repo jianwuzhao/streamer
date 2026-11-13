@@ -1,7 +1,7 @@
 {
   "name": "dsh-dafeiyu-evolve",
-  "version": "0.11.0",
-  "description": "大肥鱼自学习直播系统：大肥鱼桌宠、第一次模拟开播、语音互动、本地优先推理、统一记忆、技能库、观众画像、训练与自动发布（DSH 插件）",
+  "version": "0.12.0",
+  "description": "大肥鱼自学习直播系统：鹅次元式角色档案（含 dsh-pet 插件中桌宠）、大肥鱼桌宠、第一次模拟开播、语音互动、本地优先推理、统一记忆、技能库、观众画像、训练与自动发布（DSH 插件）",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

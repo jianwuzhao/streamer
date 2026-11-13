@@ -37,6 +37,11 @@ test('simulation：初始态 idle、无报告；桌宠为默认形象', () => {
     assert.equal(s.persona.avatarId, 'fish-deskpet')
     assert.equal(s.persona.voiceInteractionEnabled, true)
     assert.equal(s.catalogs.avatars[0]?.style, 'deskpet')
+    // 角色档案（主播信息）：默认 dsh-pet 插件中档案，目录含鹅次元角色
+    assert.equal(s.profile.id, 'dsh-pet')
+    assert.equal(s.profile.source, 'plugin')
+    assert.equal(s.persona.name, '大肥鱼')
+    assert.equal(s.catalogs.profiles.length, 5)
     assert.ok(s.persona.aiLabelText.length > 0)
     assert.equal(t.service.report(), null)
   } finally {
@@ -69,6 +74,7 @@ test('simulation：start 幂等、stop 收尾，AI 标识与桌宠主题随设�
     assert.equal(b.report?.isFirst, true)
     assert.ok(b.report?.notes.some((n) => n.includes('未推流')))
     assert.ok(b.report?.notes.some((n) => n.includes('AI 标识')))
+    assert.equal(b.report?.profileName, '大肥鱼') // 演练报告带出角色档案中文名
 
     // 第二场 isFirst=false
     await t.service.start()
