@@ -32,6 +32,9 @@ import { loadPolicyPack } from './platform/policy-pack.ts'
 import { LiveSession } from './live/session.ts'
 import { TrainingEntry } from './live/training-entry.ts'
 import { SettingsStore } from './settings/store.ts'
+import { resolveCloudBaseUrl } from './settings/catalogs.ts'
+import { ReferenceVoiceStream } from './avatar/reference-stream.ts'
+import { AvatarAssetStore } from './avatar/model-store.ts'
 import { MemoryStore } from './memory/l2-store.ts'
 import { PolicyService } from './governance/policy-decision.ts'
 import { EventDedup } from './perception/dedup.ts'
@@ -75,6 +78,10 @@ export interface DafeiyuPluginHandle {
   /** 实际加载的配置文件路径（未指定时为包内默认） */
   readonly configPath: string
   readonly db: DB
+  /** Live2D 桌宠资产（vendor 运行时 + 本地模型包；host-api/avatar 下发） */
+  readonly avatar: AvatarAssetStore
+  readonly referenceVoiceStream: ReferenceVoiceStream
+  readonly router: RequestRouter
   readonly runtime: LearningRuntime
   readonly blackboard: BlackboardStore
   readonly arbiter: ResourceArbiter
@@ -138,9 +145,16 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   const recovered = recoverPendingOperations(db)
   if (recovered > 0) log(ctx, `启动恢复：${recovered} 个未完成写入操作转入对账（reconcile_required）`)
 
+  const referenceVoiceStream = new ReferenceVoiceStream(dataDir)
+
   // 2.5 操作员设置（§24.1 向导输入的持久化）：云端覆盖重启生效；密钥仍走环境变量
   const settings = new SettingsStore(db)
   const config = applyCloudOverrides(baseConfig, settings.getCloud())
+  // Live2D 桌宠资产：vendor 随插件（client/vendor），模型包在数据目录（data/models，不入库）
+  const avatar = new AvatarAssetStore({
+    modelsDir: join(dataDir, 'models'),
+    vendorDir: process.env.DAFEIYU_VENDOR_DIR ?? join(packageDir(), 'client', 'vendor'),
+  })
   const featureGates = getFeatureGates(config)
   if (!featureGates.cloudCallsEnabled) {
     log(ctx, `第三方调用禁用：${featureGates.cloudDisabledReasons.join('; ')}`)
@@ -168,7 +182,11 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
 
   const providerConfigured = config.models.cloud.provider !== 'configure_before_acceptance'
   const cloud = new OpenAICompatCloudAdapter({
-    baseURL: process.env.DAFEIYU_CLOUD_BASE_URL ?? 'http://127.0.0.1:9/v1',
+    // 端点解析优先级：环境变量 > 服务商预设（腾讯云混元 / DeepSeek 官方）> 不可路由占位
+    baseURL:
+      process.env.DAFEIYU_CLOUD_BASE_URL ??
+      resolveCloudBaseUrl(config.models.cloud.provider) ??
+      'http://127.0.0.1:9/v1',
     model: config.models.cloud.model === 'configure_before_acceptance' ? 'unset' : config.models.cloud.model,
     apiKey: process.env.DAFEIYU_CLOUD_API_KEY ?? '',
     enabled: config.models.cloud.enabled,
@@ -287,6 +305,9 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
     dataDir,
     configPath,
     db,
+    avatar,
+    referenceVoiceStream,
+    router,
     runtime,
     blackboard,
     arbiter,
@@ -339,6 +360,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
       scheduler: trainingScheduler,
     },
     dispose() {
+      referenceVoiceStream.dispose()
       arbiter.stop()
       db.close()
     },

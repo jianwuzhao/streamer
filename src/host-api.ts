@@ -4,17 +4,27 @@
  *
  * 路由分派（按功能拆分，均 <400 行/文件）：
  * - 本文件：GET status、POST 四主操作/紧急停止/设置写入/反馈/观众操作/训练
+ *   与 preview/role-speech（macOS 角色语音）
  * - host-api-data.ts：面板数据 GET（settings/preview/selfcheck/diagnostics/
  *   replies/feedback/gifts/summary/training/progress/costs）
  * - host-api-audience.ts：观众与治理 GET（audience×2、governance×4）
  * - host-api-shared.ts：类型与公共助手
  */
+import { randomUUID } from 'node:crypto'
 import type { DafeiyuPluginHandle } from './index.ts'
 import { BUILTIN_VOICES } from './settings/catalogs.ts'
 import { SettingsValidationError, type Readiness } from './settings/store.ts'
 import { json, readBody, todayCostCny, FEEDBACK_LABELS, type FeedbackLabelInput, type ServerRequest, type ServerResponse } from './host-api-shared.ts'
 import { handleDataGetRoute } from './host-api-data.ts'
 import { handleAudienceGetRoute } from './host-api-audience.ts'
+import { handleAvatarGetRoute } from './host-api-avatar.ts'
+import { ReferenceVoiceError, synthesizeReferenceVoice } from './avatar/reference-voice.ts'
+import {
+  ROLE_SPEECH_PROFILE_IDS,
+  ROLE_SPEECH_TEXT_MAX,
+  RoleSpeechError,
+  roleSpeechService,
+} from './avatar/role-speech.ts'
 
 export interface DafeiyuStatus {
   liveStatus: string
@@ -52,7 +62,10 @@ export function buildStatus(handle: DafeiyuPluginHandle): DafeiyuStatus {
     learningPaused: handle.live.trainingEntry.learningPaused,
     activeReleaseId: handle.governance.releases.activeReleaseId(),
     trainingEligible: verdict.admit,
-    trainingEligibleDetail: verdict.admit ? '样本/资源/政策门通过' : verdict.detail,
+    trainingEligibleDetail: verdict.admit ? '满足当前训练条件'
+      : verdict.reason === 'training_disabled' ? '训练尚未启用'
+      : verdict.reason === 'insufficient_vram' ? '当前可用显存不足'
+      : verdict.detail,
     cloudEnabled: handle.featureGates.cloudCallsEnabled,
     mode: handle.config.mode,
     killSwitch: handle.config.killSwitch,
@@ -68,6 +81,7 @@ export function buildStatus(handle: DafeiyuPluginHandle): DafeiyuStatus {
 
 /** 生成 connection/request 处理器：非 /api/dafeiyu/ 前缀一律 next() 放行。 */
 export function createRequestHandler(handle: DafeiyuPluginHandle) {
+  let pendingPreviewRun: number | null = null
   return async (req: ServerRequest, res: ServerResponse, next: () => Promise<void>): Promise<void> => {
     const url = req.url ?? ''
     if (!url.startsWith('/api/dafeiyu/')) return next()
@@ -83,11 +97,24 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
       if (method === 'GET') {
         if (await handleDataGetRoute(handle, path, res)) return
         if (handleAudienceGetRoute(handle, path, query, res)) return
+        if (handleAvatarGetRoute(handle.avatar, path, query, res, req.headers)) return
       }
 
       if (method === 'POST') {
-        const body = await readBody(req)
-        const args = body === '' ? {} : (JSON.parse(body) as Record<string, unknown>)
+        // 预览输入类端点共用 8192 字节请求体上限（chat 文本 + role-speech 的 profileId/文本）
+        const boundedPreviewInput = path === 'preview/chat' || path.startsWith('preview/role-speech')
+        const body = await readBody(req, boundedPreviewInput ? 8192 : Infinity)
+        if (body === null) return json(res, 413, { ok: false, error: '请求体过大' })
+        let parsed: unknown
+        try {
+          parsed = body === '' ? {} : JSON.parse(body)
+        } catch {
+          return json(res, 400, { ok: false, error: '请求体须为 JSON 对象' })
+        }
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          return json(res, 400, { ok: false, error: '请求体须为 JSON 对象' })
+        }
+        const args = parsed as Record<string, unknown>
         switch (path) {
           case 'live/start': {
             // preflight 由操作员设置与实况状态拼装（§24.1/§23.2）：
@@ -122,6 +149,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
           case 'live/emergency-stop': {
+            handle.referenceVoiceStream.cancel()
             const status = handle.live.session.emergencyStop()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
@@ -130,6 +158,9 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
           case 'preview/start': {
+            if (handle.live.session.current === 'safe_scene' && args.resume !== true) {
+              return json(res, 409, { ok: false, error: '请先恢复本地预览', status: buildStatus(handle) })
+            }
             const gate = handle.live.session.enterPreview(handle.settings.personaReady())
             if (!gate.ok) {
               return json(res, 400, { ok: false, error: gate.reason, status: buildStatus(handle) })
@@ -140,20 +171,126 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
             const status = handle.live.session.exitPreview()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
+          case 'preview/chat': {
+            const session = handle.live.session
+            const previewRun = session.previewRunId
+            if (previewRun === null) return json(res, 409, { ok: false, error: '请先进入本地预览' })
+            if (pendingPreviewRun !== null) return json(res, 409, { ok: false, error: '正在等待上一条预览回复' })
+            const text = typeof args.text === 'string' ? args.text.trim() : ''
+            if (text.length === 0 || text.length > 500) {
+              return json(res, 400, { ok: false, error: '请输入 1–500 字的文字' })
+            }
+            const profile = handle.settings.getPersonaProfile()
+            pendingPreviewRun = previewRun
+            try {
+              const result = await handle.router.routePreview({
+                requestId: randomUUID(),
+                sessionId: `preview-${previewRun}`,
+                roomId: 'local-preview',
+                text,
+                type: 'operator',
+                purposeTags: ['preview'],
+                occurredAt: new Date().toISOString(),
+              }, profile.name, profile.media ? profile.tagline : undefined)
+              if (session.previewRunId !== previewRun) {
+                return json(res, 409, { ok: false, error: '本次预览已结束' })
+              }
+              if (handle.settings.getPersonaProfile().id !== profile.id) {
+                return json(res, 409, { ok: false, error: '角色已切换，请重新发送' })
+              }
+              return json(res, 200, { ok: true, result })
+            } finally {
+              pendingPreviewRun = null
+            }
+          }
+          case 'preview/role-speech/warm': {
+            const profileId = handle.settings.getPersonaProfile().id
+            if (handle.settings.personaReady().ready &&
+              (ROLE_SPEECH_PROFILE_IDS as readonly string[]).includes(profileId)) handle.referenceVoiceStream.warm(profileId)
+            return json(res, 200, { ok: true })
+          }
+          case 'preview/role-speech': {
+            // 使用已保存角色的本地参考音色，未安装时标明系统音色。
+            const personaGate = handle.settings.personaReady()
+            if (!personaGate.ready) {
+              return json(res, 400, { ok: false, error: personaGate.reason, status: buildStatus(handle) })
+            }
+            const profileId = typeof args.profileId === 'string' ? args.profileId.trim() : ''
+            if (!(ROLE_SPEECH_PROFILE_IDS as readonly string[]).includes(profileId)) {
+              return json(res, 400, { ok: false, error: `profileId 须为 ${ROLE_SPEECH_PROFILE_IDS.join('/')} 之一` })
+            }
+            const currentProfile = handle.settings.getPersonaProfile()
+            if (profileId !== currentProfile.id) {
+              return json(res, 409, {
+                ok: false,
+                error: `请求的角色（${profileId}）与当前保存角色（${currentProfile.id}）不一致，请刷新后重试`,
+              })
+            }
+            const speechText = typeof args.text === 'string' ? args.text.trim() : ''
+            if (speechText.length === 0 || speechText.length > ROLE_SPEECH_TEXT_MAX) {
+              return json(res, 400, { ok: false, error: `请输入 1–${ROLE_SPEECH_TEXT_MAX} 字的文字` })
+            }
+            let streaming = false
+            const controller = new AbortController()
+            const disconnect = () => controller.abort()
+            try {
+              const write = res.write?.bind(res)
+              if (args.stream === true && write) {
+                res.once?.('close', disconnect)
+                const streamed = await handle.referenceVoiceStream.speak(profileId, speechText, (chunk) => {
+                  if (!streaming) {
+                    res.statusCode = 200
+                    res.setHeader('content-type', 'application/x-ndjson; charset=utf-8')
+                    res.setHeader('cache-control', 'no-store')
+                    res.setHeader('x-accel-buffering', 'no')
+                    streaming = true
+                  }
+                  write(JSON.stringify({ type: 'audio', voiceName: currentProfile.name, ...chunk }) + '\n')
+                }, controller.signal)
+                if (streamed) {
+                  if (!streaming) return json(res, 500, { ok: false, error: '角色语音没有可播放的音频' })
+                  return void res.end(JSON.stringify({ type: 'end' }) + '\n')
+                }
+              }
+              const reference = await synthesizeReferenceVoice(handle.dataDir, profileId, speechText)
+              const speech = reference === null ? await roleSpeechService.synthesize(profileId, speechText) : {
+                audioBase64: reference.toString('base64'),
+                voiceName: currentProfile.name,
+              }
+              const source = reference === null ? 'system' : 'reference'
+              // 合成耗时数秒，期间角色可能被切换——与 preview/chat 同样事后复核
+              if (handle.settings.getPersonaProfile().id !== profileId) {
+                return json(res, 409, { ok: false, error: '角色已切换，请重新生成' })
+              }
+              return json(res, 200, { ok: true, result: { audioBase64: speech.audioBase64, voiceName: speech.voiceName, source } })
+            } catch (err) {
+              if (controller.signal.aborted) return
+              if (streaming) {
+                const error = err instanceof ReferenceVoiceError ? err.message : '角色语音播放中断'
+                return void res.end(JSON.stringify({ type: 'error', error }) + '\n')
+              }
+              if (err instanceof ReferenceVoiceError) {
+                const status = err.code === 'busy' ? 429 : err.code === 'timeout' ? 504 : 500
+                const error = err.code === 'synthesis_failed' ? '本地参考音色生成失败，请检查模型和参考录音' : err.message
+                return json(res, status, { ok: false, error, code: err.code })
+              }
+              if (err instanceof RoleSpeechError) {
+                return json(res, err.status, { ok: false, error: err.message, code: err.code, fallback: err.fallback })
+              }
+              throw err
+            } finally {
+              res.removeListener?.('close', disconnect)
+            }
+          }
           case 'preview/voice-test': {
-            // 试听语句本地返回（不调模型）；客户端用浏览器语音朗读并如实标注
             const persona = handle.settings.getPersona()
-            const voice =
-              BUILTIN_VOICES.find((v) => v.id === persona.voiceId) ??
-              ({ id: 'qing-wan', label: '清婉（女声）', lang: 'zh-CN', style: '温和亲切，日常闲聊' } as const)
-            return json(res, 200, {
-              ok: true,
-              result: {
-                phrase: persona.samplePhrase,
-                voice: { id: voice.id, label: voice.label, lang: voice.lang, style: voice.style },
-                note: '浏览器语音试听（系统 TTS）；最终播出音色以直播伴侣音轨为准',
-              },
-            })
+            const phrase = args.phrase === undefined ? persona.samplePhrase :
+              typeof args.phrase === 'string' ? args.phrase.trim() : ''
+            const voice = BUILTIN_VOICES.find((entry) => entry.id === (args.voiceId ?? persona.voiceId))
+            if (phrase.length === 0 || phrase.length > 80 || voice === undefined) {
+              return json(res, 400, { ok: false, error: '请选择有效的朗读风格并输入 1–80 字的试听语句' })
+            }
+            return json(res, 200, { ok: true, result: { phrase, voice, note: '浏览器语音试听（本地）' } })
           }
           case 'settings/persona':
           case 'settings/platform':

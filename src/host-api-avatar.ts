@@ -1,0 +1,114 @@
+/**
+ * Live2D 桌宠资产 GET 路由（host-api/avatar）：
+ * - avatar/catalog：vendor 就绪状态 + 已安装模型包列表（客户端据此决定渲染或回退）；
+ * - avatar/vendor?name=core|pixi|extension：vendor 脚本文本（blob <script> 注入用）；
+ * - avatar/model-file?id=&path=：模型包内单文件（base64；客户端拼 Blob URL 喂渲染器）。
+ * 模型包不随插件分发：本地数据目录 + scripts/fetch-live2d-samples.sh 安装。
+ */
+import type { AvatarAssetStore } from './avatar/model-store.ts'
+import { AvatarAssetError } from './avatar/model-store.ts'
+import { BUILTIN_PROFILES } from './settings/catalogs.ts'
+import { json, type ServerRequest, type ServerResponse } from './host-api-shared.ts'
+
+function fail(res: ServerResponse, err: unknown): void {
+  if (err instanceof AvatarAssetError) {
+    json(res, err.status, { ok: false, error: err.message })
+    return
+  }
+  json(res, 500, { ok: false, error: (err as Error).message })
+}
+
+export function handleAvatarGetRoute(
+  avatar: AvatarAssetStore,
+  path: string,
+  query: URLSearchParams,
+  res: ServerResponse,
+  headers?: ServerRequest['headers'],
+): boolean {
+  if (path === 'avatar/catalog') {
+    const scenes = BUILTIN_PROFILES.flatMap(({ media }) => media && avatar.hasScene(media.modelId) ? [media.modelId] : [])
+    json(res, 200, { ok: true, catalog: { vendors: avatar.vendorStatus(), models: avatar.listModels(), scenes } })
+    return true
+  }
+
+  if (path === 'avatar/mouth-track') {
+    const id = query.get('id')
+    if (!id || !BUILTIN_PROFILES.some(({ media }) => media?.modelId === id) || !avatar.hasScene(id)) {
+      json(res, 404, { ok: false })
+      return true
+    }
+    try {
+      const file = avatar.readModelFile(id, 'mouth-track.json')
+      const track = JSON.parse(Buffer.from(file.base64, 'base64').toString('utf8')) as { frames?: unknown }
+      const frames = track?.frames
+      if (!Array.isArray(frames) || frames.length > 3000 || !frames.every((row: unknown) =>
+        Array.isArray(row) && row.length === 6 && row.every((value, i) =>
+          typeof value === 'number' && Number.isFinite(value) && value >= 0 && (i === 0 || value <= 1)))) {
+        json(res, 400, { ok: false, error: '口型跟踪文件无效' })
+        return true
+      }
+      json(res, 200, { ok: true, frames })
+    } catch (err) {
+      fail(res, err)
+    }
+    return true
+  }
+
+  if (path === 'avatar/scene') {
+    const id = query.get('id')
+    if (!id || !BUILTIN_PROFILES.some(({ media }) => media?.modelId === id)) {
+      json(res, 404, { ok: false, error: '角色动态形象不存在' })
+      return true
+    }
+    try {
+      const video = avatar.readScene(id)
+      const header = typeof headers?.range === 'string' ? headers.range : undefined
+      const match = header?.match(/^bytes=(\d*)-(\d*)$/)
+      const start = match?.[1] ? Number(match[1]) :
+        match?.[2] ? Math.max(0, video.length - Number(match[2])) : 0
+      const end = match?.[1] && match[2] ? Math.min(Number(match[2]), video.length - 1) : video.length - 1
+      res.setHeader('accept-ranges', 'bytes')
+      res.setHeader('cache-control', 'private, no-cache')
+      if (header && (!match || !(match[1] || match[2]) || start > end)) {
+        res.statusCode = 416
+        res.setHeader('content-range', `bytes */${video.length}`)
+        res.end()
+        return true
+      }
+      const body = video.subarray(start, end + 1)
+      res.statusCode = header ? 206 : 200
+      res.setHeader('content-type', 'video/mp4')
+      res.setHeader('content-length', String(body.length))
+      if (header) res.setHeader('content-range', `bytes ${start}-${end}/${video.length}`)
+      res.end(body)
+    } catch (err) {
+      fail(res, err)
+    }
+    return true
+  }
+
+  if (path === 'avatar/vendor') {
+    const name = query.get('name') ?? ''
+    try {
+      const file = avatar.readVendorFile(name)
+      json(res, 200, { ok: true, vendor: { name: file.name, file: file.file, text: file.text } })
+    } catch (err) {
+      fail(res, err)
+    }
+    return true
+  }
+
+  if (path === 'avatar/model-file') {
+    const id = query.get('id') ?? ''
+    const filePath = query.get('path') ?? ''
+    try {
+      const file = avatar.readModelFile(id, filePath)
+      json(res, 200, { ok: true, file })
+    } catch (err) {
+      fail(res, err)
+    }
+    return true
+  }
+
+  return false
+}

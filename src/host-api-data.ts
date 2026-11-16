@@ -6,7 +6,7 @@
 import type { DafeiyuPluginHandle } from './index.ts'
 import { runSelfCheck } from './installer/selfcheck.ts'
 import { exportDiagnosticReport } from './installer/diagnostics.ts'
-import { BUILTIN_AVATARS, BUILTIN_VOICES, BUILTIN_PROFILES } from './settings/catalogs.ts'
+import { BUILTIN_AVATARS, BUILTIN_VOICES, BUILTIN_PROFILES, CLOUD_PROVIDER_PRESETS } from './settings/catalogs.ts'
 import { type Readiness } from './settings/store.ts'
 import { all, get } from './storage/db.ts'
 import { json, todayCostCny, type ServerResponse } from './host-api-shared.ts'
@@ -21,7 +21,12 @@ interface SettingsPayload {
   /** 当前选中的角色档案（主播信息来源） */
   profile: ReturnType<DafeiyuPluginHandle['settings']['getPersonaProfile']>
   readiness: { persona: Readiness; platform: Readiness }
-  catalogs: { avatars: typeof BUILTIN_AVATARS; voices: typeof BUILTIN_VOICES; profiles: typeof BUILTIN_PROFILES }
+  catalogs: {
+    avatars: typeof BUILTIN_AVATARS
+    voices: typeof BUILTIN_VOICES
+    profiles: typeof BUILTIN_PROFILES
+    cloudProviders: typeof CLOUD_PROVIDER_PRESETS
+  }
   notes: readonly string[]
 }
 
@@ -35,7 +40,12 @@ function buildSettingsPayload(handle: DafeiyuPluginHandle): SettingsPayload {
     dataUsage: handle.settings.getDataUsage(),
     gifts: handle.settings.getGifts(),
     readiness: handle.settings.readiness(),
-    catalogs: { avatars: BUILTIN_AVATARS, voices: BUILTIN_VOICES, profiles: BUILTIN_PROFILES },
+    catalogs: {
+      avatars: BUILTIN_AVATARS,
+      voices: BUILTIN_VOICES,
+      profiles: BUILTIN_PROFILES,
+      cloudProviders: CLOUD_PROVIDER_PRESETS,
+    },
     notes: [
       '平台登录、实名与人脸认证在官方客户端完成，本插件只保存操作员声明时间戳，不保存任何凭据',
       '云端 API Key 不落库（环境变量 DAFEIYU_CLOUD_API_KEY）；云端设置覆盖在重启插件后生效',
@@ -104,13 +114,20 @@ export async function handleDataGetRoute(
         liveStatus: handle.live.session.current,
         liveDisplay: handle.live.session.display(),
         previewActive: handle.live.session.previewActive,
+        conversationEnabled: handle.live.session.previewRunId !== null,
         // 本地预览 ≠ 已开播（§24.2）；画布常显 AI 标识
         persona: {
           name: profile.name,
           enName: profile.enName,
           profileId: profile.id,
           tagline: profile.tagline,
+          bio: profile.bio,
+          theme: profile.theme,
+          // 官方媒体档案（官网角色封面/试听 + 本地 Live2D 包 id）；插件内角色为 null
+          media: profile.media ?? null,
           avatarId: persona.avatarId,
+          live2dModelId: persona.live2dModelId,
+          voiceId: persona.voiceId,
           aiLabelText: persona.aiLabelText,
         },
         scene,

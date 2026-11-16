@@ -8,6 +8,8 @@
  * - 平台未确认绝不显示「直播中」；无状态读取能力时停在「等待平台确认」
  *   并提示打开官方客户端（单一可操作原因 §23.2）；
  * - 开始/结束带幂等任务键，重复点击不重复开播；
+ * - 等待平台通道（connectChannel）期间发生紧急停止/结束/退出预览时，
+ *   转换守卫使迟到的开播续行失效——绝不把安全场景/已停止改写成等待确认/直播中；
  * - 紧急停止播出 ≠ 暂停学习：前者立即停止语音/动作输出并进入安全场景，
  *   后者仅停止学习写入/训练/发布（§14）；
  * - 异常重启默认不自动公开开播。
@@ -66,8 +68,16 @@ export interface PreviewGateResult {
 }
 
 export class LiveSession {
+  private standalonePreviewRun = 0
+  private standalonePreview = false
   private status: LiveStatus = 'unconfigured'
-  private startKey: string | null = null
+  /**
+   * 转换守卫（§24.2）：开播尝试的身份代数（单调递增）。
+   * 新的开播尝试推进一次；紧急停止/结束/退出预览等停止类转换也推进一次，
+   * 使仍在等待平台通道的旧续行过期。仅凭 startKey 无法区分「同一幂等键
+   * 在停止后的重试」与「停止前那次尝试的迟到续行」，故必须用代数标记身份。
+   */
+  private startEpoch = 0
   private lastOperatorConfirmation: string | null = null
   private readonly adapter: PlatformAdapter
   private readonly pack: PolicyPack | null
@@ -112,13 +122,13 @@ export class LiveSession {
    * 只有平台回执为 live 才进入 live_confirmed；无读取能力保持待确认。
    */
   async start(idempotencyKey: string, preflightInput: PreflightInput): Promise<LiveStatus> {
-    if (this.status === 'live_confirmed' || this.status === 'awaiting_platform') {
+    if (this.status === 'live_confirmed' || this.status === 'awaiting_platform' ||
+      this.status === 'stream_established' || (this.previewActive && !this.standalonePreview)) {
       return this.status // 幂等：进行中不重复开播
     }
-    if (this.startKey !== null && this.startKey !== idempotencyKey && this.isActive()) {
-      return this.status
-    }
-    this.startKey = idempotencyKey
+    this.standalonePreview = false
+    // 停止后的重试需要与上次未完成的连接区分。
+    const attempt = ++this.startEpoch
 
     const check = this.preflight(preflightInput)
     if (!check.pass) {
@@ -127,7 +137,17 @@ export class LiveSession {
     }
     this.status = 'self_check'
     this.status = 'local_preview'
-    const channel = await this.adapter.connectChannel(idempotencyKey)
+    const channel = await this.adapter.connectChannel(idempotencyKey).catch((error: unknown) => {
+      if (attempt !== this.startEpoch) return null
+      this.status = 'recoverable_fault'
+      throw error
+    })
+    if (channel === null) return this.status
+    if (attempt !== this.startEpoch) {
+      // 过期续行：等待期间已发生紧急停止/结束/退出预览（或被更新的开播尝试取代）。
+      // 拒绝落盘任何状态，保留现行状态（如 safe_scene/ended/stopped）。
+      return this.status
+    }
     if (channel.platformReceipt) {
       // 平台回执确认（适配器具备读取能力的路径）
       this.status = channel.streamEstablished ? 'live_confirmed' : 'awaiting_platform'
@@ -162,6 +182,9 @@ export class LiveSession {
       // 开播流程进行中（含直播中）：预览随流程展示，不回退状态
       return { ok: true, status: this.status }
     }
+    if (this.previewActive && !this.standalonePreview) return { ok: true, status: this.status }
+    if (!this.previewActive) this.standalonePreviewRun++
+    this.standalonePreview = true
     this.status = 'local_preview'
     return { ok: true, status: this.status }
   }
@@ -169,9 +192,16 @@ export class LiveSession {
   /** 退出本地预览（未开播的预览回到已停止；直播中不可用）。 */
   exitPreview(): LiveStatus {
     if (this.status === 'local_preview') {
+      // 等待平台通道期间退出预览同样终结本次开播
+      this.invalidateStartAttempts()
+      this.standalonePreview = false
       this.status = 'stopped'
     }
     return this.status
+  }
+
+  get previewRunId(): number | null {
+    return this.previewActive && this.standalonePreview ? this.standalonePreviewRun : null
   }
 
   get previewActive(): boolean {
@@ -181,6 +211,8 @@ export class LiveSession {
   /** 结束直播：停止新增播出、保存账本、终止推流、确认状态。 */
   async stop(): Promise<LiveStatus> {
     if (this.isActive()) {
+      // 结束后不得再被等待中的开播续行复活
+      this.invalidateStartAttempts()
       this.status = 'ending'
       this.status = 'ended'
     }
@@ -189,13 +221,23 @@ export class LiveSession {
 
   /** 紧急停止播出：立即进入安全场景（优先于一切后台任务；≠暂停学习）。 */
   emergencyStop(): LiveStatus {
+    // 紧急停止优先于一切后台任务，包括正在等待 connectChannel 的开播
+    this.invalidateStartAttempts()
+    this.standalonePreview = false
     this.status = 'safe_scene'
     return this.status
+  }
+
+  /** 推进转换守卫：使所有仍在等待平台通道的开播尝试失效。 */
+  private invalidateStartAttempts(): void {
+    this.startEpoch++
   }
 
   /** 从安全场景恢复需人工操作（异常重启不自动公开开播）。 */
   recoverToPreview(): LiveStatus {
     if (this.status === 'safe_scene' || this.status === 'stopped') {
+      this.standalonePreviewRun++
+      this.standalonePreview = true
       this.status = 'local_preview'
     }
     return this.status

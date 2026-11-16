@@ -4,11 +4,14 @@
  */
 import { get, type DB } from './storage/db.ts'
 
-export type ServerRequest = { method?: string; url?: string; on(eventName: string, cb: (chunk: Buffer) => void): void }
+export type ServerRequest = { method?: string; url?: string; headers?: { range?: string | string[] }; on(eventName: string, cb: (chunk: Buffer) => void): void }
 export type ServerResponse = {
   statusCode?: number
   setHeader(name: string, value: string): unknown
-  end(body?: string): unknown
+  write?(body: string): unknown
+  once?(event: 'close', listener: () => void): unknown
+  removeListener?(event: 'close', listener: () => void): unknown
+  end(body?: string | Buffer): unknown
 }
 
 export const FEEDBACK_LABELS = ['useful', 'wrong', 'off_persona', 'too_slow', 'not_remembered', 'complaint', 'privacy'] as const
@@ -20,11 +23,15 @@ export function json(res: ServerResponse, code: number, payload: unknown): void 
   res.end(JSON.stringify(payload))
 }
 
-export function readBody(req: ServerRequest): Promise<string> {
+export function readBody(req: ServerRequest, maxBytes = Infinity): Promise<string | null> {
   return new Promise((resolve) => {
-    let data = ''
-    req.on('data', (c) => (data += c))
-    req.on('end', () => resolve(data))
+    const chunks: Buffer[] = []
+    let bytes = 0
+    req.on('data', (chunk) => {
+      bytes += chunk.length
+      if (bytes <= maxBytes) chunks.push(chunk)
+    })
+    req.on('end', () => resolve(bytes <= maxBytes ? Buffer.concat(chunks).toString('utf8') : null))
   })
 }
 

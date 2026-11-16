@@ -39,6 +39,8 @@ export const PersonaSettings = z.object({
   personaName: z.string().trim().min(1, '主播名称不能为空').max(24, '主播名称不超过 24 字').default('大肥鱼'),
   /** 默认即「大肥鱼桌宠」（用户要求虚拟形象换成桌宠）；旧值 fish-* 仍合法可回退 */
   avatarId: z.enum(avatarIds).default('fish-deskpet'),
+  /** 缺省沿用自动选取，null 使用内置形象。 */
+  live2dModelId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/).max(128).nullable().optional(),
   voiceId: z.enum(voiceIds).default('qing-wan'),
   samplePhrase: z
     .string()

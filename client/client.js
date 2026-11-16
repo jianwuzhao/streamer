@@ -24,8 +24,6 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-head-t h2{margin:0;font-size:15px;font-weight:700}
 .dfy-head-t p{margin:1px 0 0;font-size:11.5px}
 .dfy-head-x{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.dfy-tabs{display:flex;gap:2px;padding:4px 16px 0;overflow-x:auto;scrollbar-width:none}
-.dfy-tabs::-webkit-scrollbar{display:none}
 .dfy-tab{appearance:none;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--dsw-alias-label-secondary,#45606b);font:inherit;font-size:12.5px;font-weight:500;padding:6px 10px 8px;border-radius:6px 6px 0 0;cursor:pointer;white-space:nowrap}
 .dfy-tab:hover{color:var(--dsw-alias-label-primary,#17303c);background:var(--dsw-alias-interactive-bg-hover,rgba(15,94,87,.06))}
 .dfy-tab-on{color:var(--dsw-alias-state-business-primary,#0f5e57);border-bottom-color:var(--dsw-alias-state-business-primary,#0f5e57);font-weight:700}
@@ -69,17 +67,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-note-warn{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#ffd166) 12%,transparent);border-color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d9b44a) 50%,transparent)}
 .dfy-note-ok{background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1c7a54) 9%,transparent);border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1c7a54) 28%,transparent);color:var(--dsw-alias-state-success-primary,#1c7a54)}
 /* 状态横幅：直播状态最高视觉权重 */
-.dfy-banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;border-radius:12px;border:.5px solid var(--dsw-alias-border-l1,#d8e2e0);background:var(--dsw-alias-bg-layer-1,#fff)}
-.dfy-banner-live{border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1c7a54) 42%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1c7a54) 8%,var(--dsw-alias-bg-layer-1,#fff))}
-.dfy-banner-busy{border-color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#b8860b) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#b8860b) 9%,var(--dsw-alias-bg-layer-1,#fff))}
-.dfy-banner-main{display:grid;gap:2px;min-width:0}
-.dfy-banner-main strong{font-size:17px;font-weight:700;line-height:1.25}
-.dfy-banner-side{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
 /* 语义 toast：role=status / aria-live */
-.dfy-toast{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;font-size:12.5px;border:.5px solid transparent;margin-top:12px}
-.dfy-toast-ok{background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1c7a54) 10%,transparent);border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1c7a54) 30%,transparent);color:var(--dsw-alias-state-success-primary,#1c7a54)}
-.dfy-toast-err{background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#c0392b) 10%,transparent);border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary,#c0392b) 30%,transparent);color:var(--dsw-alias-state-error-primary,#c0392b)}
-.dfy-toast-busy{background:var(--dsw-alias-bg-layer-2,#eef2f1);border-color:var(--dsw-alias-border-l1,#d8e2e0);color:var(--dsw-alias-label-secondary,#45606b)}
 /* 加载态 */
 .dfy-loading{display:inline-flex;align-items:center;gap:8px;color:var(--dsw-alias-label-tertiary,#5b6f6c);font-size:12.5px}
 .dfy-spin{width:13px;height:13px;border-radius:50%;border:2px solid var(--dsw-alias-border-l3,#c9d6d3);border-top-color:var(--dsw-alias-state-business-primary,#0f5e57);animation:dfy-spin .7s linear infinite}
@@ -122,7 +110,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-split{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(220px,1fr);gap:12px;align-items:start}
 @media (max-width:760px){.dfy-split{grid-template-columns:1fr}}
 .dfy-root button:focus-visible,.dfy-root a:focus-visible,.dfy-root input:focus-visible,.dfy-root select:focus-visible{outline:2px solid var(--dsw-focus-ring-color,rgba(15,94,87,.6));outline-offset:2px}
-@media (max-width:760px){.dfy-wizard{grid-template-columns:1fr}.dfy-body{padding:12px}.dfy-head,.dfy-tabs,.dfy-foot{padding-left:12px;padding-right:12px}.dfy-kpis{grid-template-columns:repeat(auto-fit,minmax(104px,1fr))}}
+@media (max-width:760px){.dfy-wizard{grid-template-columns:1fr}.dfy-body{padding:12px}.dfy-head,.dfy-foot{padding-left:12px;padding-right:12px}.dfy-kpis{grid-template-columns:repeat(auto-fit,minmax(104px,1fr))}}
 /* 大肥鱼桌宠：桌面小组件窗口（非 16:9 画布）+ 悬浮感 + 气泡 + 摆尾/呼吸动画 */
 .dfy-pet-wrap{display:flex;justify-content:center;align-items:center;padding:18px;border-radius:16px;background:radial-gradient(circle at 50% 28%,var(--dsw-alias-interactive-bg-hover,rgba(15,94,87,.10)),transparent 72%)}
 .dfy-pet-window{position:relative;width:min(360px,100%);border-radius:18px;overflow:hidden;border:.5px solid var(--dsw-alias-border-l2,#d8e2e0);box-shadow:0 14px 32px rgba(8,19,26,.24),0 2px 6px rgba(8,19,26,.12);background:var(--dsw-alias-bg-layer-1,#fff);animation:dfy-pet-float 4s ease-in-out infinite}
@@ -150,6 +138,16 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 @keyframes dfy-pet-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 @keyframes dfy-pet-tail{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}
 @keyframes dfy-pet-bubble{0%{transform:translateY(0);opacity:0}20%{opacity:.7}100%{transform:translateY(-120px);opacity:0}}
+/* Live2D 桌宠场景：贴满场景区，canvas 透明背景叠在渐变底上；加载提示小字不挡模型 */
+.dfy-pet-window-model{animation:none}
+.dfy-pet-window-model .dfy-pet-scene{min-height:240px}
+.dfy-pet-model-caption{margin:0;padding:8px 12px;min-height:36px;color:var(--dsw-alias-label-primary,#17303c);font-size:12px;text-align:center;overflow-wrap:anywhere;border-bottom:.5px solid var(--dsw-alias-border-l1,#d8e2e0)}
+.dfy-pet-model-caption-on{background:var(--dsw-alias-interactive-bg-hover,#e7f4ef)}
+.dfy-preview-conversation textarea,.dfy-model-picker select{width:100%;border:1px solid var(--dsw-alias-border-l2,#d8e2e0);border-radius:6px;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#17303c);font:inherit;padding:6px 8px}
+.dfy-preview-conversation textarea{resize:vertical}
+.dfy-pet-l2d{position:absolute;inset:0;z-index:2;cursor:pointer}
+.dfy-pet-l2d canvas{display:block;width:100%;height:100%}
+.dfy-pet-l2d-note{position:absolute;bottom:6px;left:8px;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:rgba(255,255,255,.55);pointer-events:none}
 /* 角色档案卡（参照 eciyuan.qq.com CHARACTERS）：中文名/英文名/#标签 + 年龄·身高·星座·MBTI */
 .dfy-profiles{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(210px,100%),1fr));align-items:start}
 .dfy-profile{position:relative;display:grid;gap:8px;min-width:0;padding:14px;border-radius:14px;border:.5px solid var(--dsw-alias-border-l2,#d8e2e0);background:var(--dsw-alias-bg-layer-1,#fff);cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .15s}
@@ -170,10 +168,83 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-profile-kv span:first-child{color:var(--dsw-alias-label-tertiary,#5b6f6c)}
 .dfy-profile-kv strong{font-weight:700;overflow-wrap:anywhere;text-align:right}
 .dfy-profile-bio{font-size:11px;color:var(--dsw-alias-label-tertiary,#5b6f6c);line-height:1.5;overflow-wrap:anywhere}
+.dfy-preview-conversation{border-top:1px solid var(--dsw-alias-border-l1,#d8e2e0);padding-top:8px}
+.dfy-preview-conversation .dfy-actions{margin-top:6px}
+.dfy-preview-conversation .dfy-caption:empty{display:none}
+.dfy-preview-reply{overflow-wrap:anywhere;white-space:pre-wrap}
+.dfy-role-preview{border:.5px solid var(--dsw-alias-border-l2,#d8e2e0);border-radius:14px;overflow:hidden;background:var(--dsw-alias-bg-layer-1,#fff)}
+.dfy-role-stage{position:relative;display:grid;place-items:center;min-height:220px;aspect-ratio:16/10;overflow:hidden}
+.dfy-scene-mouth{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.dfy-role-stage :is(img,video){display:block;width:100%;height:100%;position:absolute;inset:0;object-fit:cover;object-position:center}
+.dfy-role-initial{font-size:28px;font-weight:700}
+.dfy-role-caption{padding:10px 12px;display:grid;gap:4px}
+.dfy-role-caption p{margin:0;overflow-wrap:anywhere}
+.dfy-role-caption-speaking{background:var(--dsw-alias-interactive-bg-hover,#e7f4ef)}
+.dfy-role-audio{display:grid;gap:5px}
+.dfy-role-audio audio{width:100%;height:36px}
+.dfy-l2d-hit{position:absolute;inset:0;background:transparent;border:0;cursor:pointer}
+.dfy-l2d-hit:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#0f5e57);outline-offset:-3px}
 .dfy-profile-hero{display:grid;gap:10px}
 .dfy-profile-hero .dfy-profile-zh{font-size:24px}
 .dfy-profile-hero .dfy-profile-en{font-size:12px;letter-spacing:3px}
 .dfy-profile-hero .dfy-profile-info{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.dfy-desk-root{--desk-bg:var(--dsw-alias-bg-base,#edf2f1);--desk-sheet:var(--dsw-alias-bg-layer-1,#fff);--desk-line:var(--dsw-alias-border-l1,#dce5e2);--desk-text:var(--dsw-alias-label-primary,#102922);--desk-muted:var(--dsw-alias-label-secondary,#536a61);--desk-accent:var(--dsw-alias-state-business-primary,#176452);background:var(--desk-bg);color:var(--desk-text);font-family:var(--dsw-font-family,Inter,"PingFang SC","Microsoft YaHei",sans-serif)}
+.dfy-desk-header{padding:10px 20px;background:var(--desk-sheet);min-height:54px}
+.dfy-desk-header h2{font-size:15px;white-space:nowrap;margin:0;letter-spacing:.02em}
+.dfy-desk-nav{display:flex;gap:4px;margin-left:10px}
+.dfy-desk-body{padding:clamp(12px,2.4vw,28px)}
+.dfy-workbench{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) minmax(230px,29%);gap:18px;align-items:start}
+.dfy-desk-preview,.dfy-desk-controls{min-width:0;border:1px solid var(--desk-line);border-radius:16px;background:var(--desk-sheet)}
+.dfy-desk-preview{padding:14px;display:grid;gap:10px}
+.dfy-desk-stage-head,.dfy-desk-selectors{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.dfy-desk-stage-head{justify-content:space-between}
+.dfy-desk-stage-head h3,.dfy-desk-section h3{margin:0;font-size:13px;font-weight:700}
+.dfy-desk-selectors{align-items:end}
+.dfy-desk-selectors .dfy-field{flex:1;min-width:118px}
+.dfy-desk-selectors select{min-width:0;width:100%;padding:6px 8px;border:1px solid var(--desk-line);background:var(--desk-sheet);color:inherit;border-radius:7px;font:inherit}
+.dfy-desk-preview .dfy-role-stage{width:100%;aspect-ratio:auto;height:clamp(210px,35vh,350px)}
+.dfy-desk-preview .dfy-role-stage :is(img,video){object-fit:cover;object-position:center 42%}
+.dfy-desk-preview .dfy-pet-wrap{padding:0;background:none}
+.dfy-desk-preview .dfy-pet-window{width:100%;box-shadow:none;animation:none}
+.dfy-desk-preview .dfy-pet-scene{min-height:clamp(205px,31vh,320px)}
+.dfy-desk-preview .dfy-preview-conversation{border-top:0;padding-top:0}
+.dfy-desk-preview .dfy-preview-conversation textarea{border-color:var(--desk-line);background:var(--desk-bg)}
+.dfy-desk-preview .dfy-role-audio{margin:0 0 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dfy-desk-preview .dfy-role-audio audio{width:min(320px,100%)}
+.dfy-desk-preview .dfy-pet-model-caption,.dfy-desk-preview .dfy-role-caption{min-height:0}
+.dfy-desk-speak-options{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.dfy-desk-speak-options label{display:flex;align-items:center;gap:4px;margin-left:auto;font-size:12px;color:var(--desk-muted)}
+.dfy-desk-safe{position:relative;min-height:205px;border-radius:12px;background:#142821;color:#e8f2ec;display:grid;align-content:center;justify-items:center;gap:8px}
+.dfy-desk-safe strong{font-size:20px}
+.dfy-desk-inline{margin:0;color:var(--desk-muted)}
+.dfy-desk-controls{position:sticky;top:0;overflow:hidden}
+.dfy-desk-section{padding:16px;display:grid;gap:9px}
+.dfy-desk-section + .dfy-desk-section{border-top:1px solid var(--desk-line)}
+.dfy-desk-section p{margin:0;overflow-wrap:anywhere}
+.dfy-desk-state{font-size:clamp(17px,2.1vw,23px);font-weight:700;letter-spacing:-.02em}
+.dfy-desk-link{display:block;text-align:center;text-decoration:none}
+.dfy-desk-learning{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.dfy-desk-summary{display:grid;grid-template-columns:1fr 1fr;margin:0;border-top:1px solid var(--desk-line)}
+.dfy-desk-summary div{padding:12px 16px}
+.dfy-desk-summary div + div{border-left:1px solid var(--desk-line)}
+.dfy-desk-summary dt{font-size:12px;color:var(--desk-muted)}
+.dfy-desk-summary dd{font-weight:650;margin:2px 0 0;font-variant-numeric:tabular-nums}
+.dfy-desk-text-button{color:var(--desk-accent);font:inherit;background:none;border:0;padding:0;text-decoration:underline;cursor:pointer}
+.dfy-desk-foot{min-height:50px;padding-inline:20px}
+.dfy-desk-foot .dfy-caption{overflow-wrap:anywhere}
+.dfy-desk-foot .dfy-btn{flex-shrink:0}
+.dfy-manage{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:140px minmax(0,1fr);gap:16px}
+.dfy-manage-nav{display:flex;flex-direction:column;gap:4px;align-items:stretch}
+.dfy-manage-nav button{text-align:left}
+.dfy-manage-content{min-width:0}
+@media(max-width:760px){
+.dfy-workbench,.dfy-manage{grid-template-columns:minmax(0,1fr)}
+.dfy-desk-controls{position:static}
+.dfy-manage-nav{flex-direction:row;flex-wrap:wrap}
+.dfy-desk-header,.dfy-desk-foot{padding-inline:10px;gap:6px}
+.dfy-desk-nav{margin-left:0}
+.dfy-desk-header .dfy-head-x{min-width:0}
+}
 @media (prefers-reduced-motion:reduce){.dfy-root *{animation:none!important;transition:none!important}}
 `;
 
@@ -248,12 +319,6 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 	const Loading = ({ text }) => h("span", { className: "dfy-loading", role: "status" }, h("i", { className: "dfy-spin", "aria-hidden": true }), text || "加载中…");
 
-	/** 语义 toast：成功 / 失败 / 进行中，role=status + aria-live。 */
-	const Toast = ({ note }) => {
-		if (!note) return null;
-		const tone = note.endsWith("…") ? "busy" : /失败|未通过|无效|错误/.test(note) ? "err" : "ok";
-		return h("div", { className: "dfy-toast dfy-toast-" + tone, role: "status", "aria-live": "polite" }, note);
-	};
 
 	// ------------------------------------------------------------------ 图标（画布彩色鱼 / 导航单色剪影+蓝气泡）
 
@@ -292,20 +357,200 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		return typeof avatarId === "string" && avatarId.indexOf("deskpet") !== -1;
 	}
 
+	// ------------------------------------------------------------------ Live2D 桌宠（0.14.0）
+	// 架构对齐鹅次元的「形象层」：Cubism Core + pixi.js + pixi-live2d-display（vendor 随插件分发，
+	// client/vendor/VENDOR-LICENSES.md），模型包本地数据目录管理（scripts/fetch-live2d-samples.sh）。
+	// 客户端单文件契约：vendor 经 /api/dafeiyu/avatar/vendor 以脚本文本下发，blob <script> 顺序注入；
+	// 模型文件经 /api/dafeiyu/avatar/model-file 以 base64 下发，重写 FileReferences 为 blob URL 后喂渲染器。
+	// 任何一步失败都回退到 CSS 大肥鱼（不阻断预览）。
+
+	const L2_MIME = { ".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".json": "application/json", ".wav": "audio/wav", ".mp3": "audio/mpeg" };
+	let live2dStack;
+
+	function decodeAsset(base64) {
+		return Uint8Array.from(atob(base64), (byte) => byte.charCodeAt(0));
+	}
+
+	function ensureLive2DStack() {
+		if (live2dStack) return live2dStack;
+		live2dStack = (async () => {
+			for (const name of ["core", "pixi", "extension"]) {
+				const r = await api("avatar/vendor?name=" + name);
+				if (!r.ok) throw new Error(r.error || "Live2D 运行时不可用");
+				const url = URL.createObjectURL(new Blob([r.vendor.text], { type: "text/javascript" }));
+				const script = document.createElement("script");
+				try {
+					await new Promise((resolve, reject) => {
+						script.src = url;
+						script.onload = resolve;
+						script.onerror = () => reject(new Error("无法加载 Live2D 运行时"));
+						document.head.appendChild(script);
+					});
+				} finally {
+					script.remove();
+					URL.revokeObjectURL(url);
+				}
+			}
+			const PIXI = window.PIXI;
+			const LD = PIXI?.live2d;
+			if (!LD?.Live2DModel || !LD.Cubism4ModelSettings) throw new Error("Live2D 渲染栈未就绪");
+			return { PIXI, LD };
+		})().catch((err) => {
+			live2dStack = null;
+			throw err;
+		});
+		return live2dStack;
+	}
+
+	async function loadLive2DSettings(LD, entry, urls, signal) {
+		const file = async (path) => {
+			const query = new URLSearchParams({ id: entry.id, path });
+			const response = await fetch("/api/dafeiyu/avatar/model-file?" + query, { signal });
+			const result = await response.json();
+			if (!result.ok) throw new Error(result.error || path);
+			signal.throwIfAborted();
+			return decodeAsset(result.file.base64);
+		};
+		const raw = JSON.parse(new TextDecoder().decode(await file(entry.entry)));
+		const references = raw.FileReferences;
+		const base = entry.entry.slice(0, entry.entry.lastIndexOf("/") + 1);
+		const resources = new Map();
+		const ref = (rel) => {
+			if (typeof rel !== "string" || !rel || /^[\\/]|^[a-z]+:/i.test(rel)) throw new Error("模型包含非本地资源");
+			if (!resources.has(rel)) resources.set(rel, (async () => {
+				const bytes = await file(base + rel);
+				const ext = rel.slice(rel.lastIndexOf(".")).toLowerCase();
+				const url = URL.createObjectURL(new Blob([bytes], { type: L2_MIME[ext] || "application/octet-stream" }));
+				urls.add(url);
+				return url;
+			})());
+			return resources.get(rel);
+		};
+		for (const key of ["Moc", "Physics", "Pose", "UserData", "DisplayInfo"]) {
+			if (references[key]) references[key] = await ref(references[key]);
+		}
+		references.Textures = await Promise.all(references.Textures.map(ref));
+		for (const expression of references.Expressions || []) expression.File = await ref(expression.File);
+		for (const group of Object.values(references.Motions || {})) {
+			for (const motion of group) {
+				motion.File = await ref(motion.File);
+				if (motion.Sound) motion.Sound = await ref(motion.Sound);
+			}
+		}
+		raw.url = new URL("/" + entry.entry, window.location.origin).href;
+		const settings = new LD.Cubism4ModelSettings(raw);
+		settings.resolveURL = (path) => {
+			if (!urls.has(path)) throw new Error("模型包含未登记的资源");
+			return path;
+		};
+		return settings;
+	}
+
+	function Live2DScene({ entry, onFail, speaking, mouthLevel }) {
+		const host = useRef(null);
+		const modelRef = useRef(null);
+		const speechRef = useRef({ speaking: false, mouthLevel: null });
+		const [ready, setReady] = useState(false);
+		useEffect(() => { speechRef.current = { speaking, mouthLevel }; }, [speaking, mouthLevel]);
+		useEffect(() => {
+			const controller = new AbortController();
+			const urls = new Set();
+			let app, model, observer;
+			const dispose = () => {
+				observer?.disconnect();
+				const destroyTextures = { children: true, texture: true, baseTexture: true };
+				if (model && !model.destroyed) model.destroy(destroyTextures);
+				app?.destroy(true, destroyTextures);
+				app = null;
+				model = null;
+				modelRef.current = null;
+				for (const url of urls) URL.revokeObjectURL(url);
+				urls.clear();
+			};
+			(async () => {
+				try {
+					const { PIXI, LD } = await ensureLive2DStack();
+					controller.signal.throwIfAborted();
+					const settings = await loadLive2DSettings(LD, entry, urls, controller.signal);
+					controller.signal.throwIfAborted();
+					const surface = host.current;
+					app = new PIXI.Application({ backgroundAlpha: 0, antialias: true,
+						autoDensity: true, resolution: Math.min(2, window.devicePixelRatio || 1) });
+					const loaded = await LD.Live2DModel.from(settings, { autoInteract: false, ticker: app.ticker });
+					if (controller.signal.aborted) {
+						loaded.destroy({ children: true, texture: true, baseTexture: true });
+						return;
+					}
+					model = loaded;
+					modelRef.current = model;
+					const internal = model.internalModel;
+					const params = settings.getLipSyncParameters() || [];
+					const mouthIds = params.length ? params : ["ParamMouthOpenY"];
+					let opening = 0;
+					internal.on("beforeModelUpdate", () => {
+						const speech = speechRef.current;
+						const speakingNow = speech.speaking;
+						const desired = speakingNow ? (speech.mouthLevel?.() ?? 0.2 + 0.65 * Math.abs(Math.sin(performance.now() / 75))) : 0;
+						opening += (desired - opening) * 0.3;
+						if (speakingNow || opening > 0.01) {
+							for (const id of mouthIds) internal.coreModel.setParameterValueById(id, opening);
+						}
+					});
+					model.anchor.set(0.5, 1);
+					app.stage.addChild(model);
+					surface.appendChild(app.view);
+					const fit = () => {
+						const width = Math.max(1, surface.clientWidth);
+						const height = Math.max(1, surface.clientHeight);
+						app.renderer.resize(width, height);
+						model.scale.set(Math.min(width / internal.originalWidth, height / internal.originalHeight) * 0.94);
+						model.position.set(width / 2, height * 0.97);
+					};
+					fit();
+					observer = new ResizeObserver(fit);
+					observer.observe(surface);
+					setReady(true);
+				} catch (error) {
+					if (!controller.signal.aborted) {
+						controller.abort();
+						dispose();
+						onFail(error.message);
+					}
+				}
+			})();
+			return () => { controller.abort(); dispose(); };
+		}, [entry]);
+		const tap = () => {
+			const model = modelRef.current;
+			if (!model) return;
+			const groups = model.internalModel.settings.motions || {};
+			const group = ["Tap", "TapBody", "Flick"].find((key) => groups[key]?.length);
+			if (group) model.motion(group, undefined, 3).catch(() => {});
+			else model.expression().catch(() => {});
+		};
+		return h("div", { className: "dfy-pet-l2d", ref: host },
+			ready ? h("button", { className: "dfy-l2d-hit", type: "button", onClick: tap, "aria-label": "触发形象动作" }) :
+				h("span", { className: "dfy-pet-l2d-note", role: "status" }, "形象加载中…"));
+	}
+
 	/**
 	 * 大肥鱼桌宠：圆角「桌面小组件」窗口（非 16:9 画布）。
 	 * 标题栏 + 半透明渐变场景 + 摆尾/呼吸的胖鱼 + 嘴边气泡字幕 + 常显红色 AI 角标 + 底部状态条。
-	 * 纯展示组件；speaking 时气泡高亮；字幕容器 role=status / aria-live=polite。
+	 * 0.14.0：数据目录装有 Live2D 模型包时优先渲染 Live2D（待机动作/口型/点击互动），
+	 * 未安装或加载失败自动回退 CSS 胖鱼；speaking 时气泡高亮；字幕容器 role=status。
 	 */
-	function DeskPet({ persona, speaking, subtitle }) {
+	function DeskPet({ persona, speaking, subtitle, entry, fallback, mouthLevel }) {
 		const p = persona || {};
 		const theme = p.theme || AVATAR_THEME[p.avatarId] || AVATAR_THEME["fish-deskpet"];
 		const name = p.name || "大肥鱼";
 		const aiLabel = p.aiLabelText || "AI 生成内容";
 		const text = subtitle || "大家好，我是大肥鱼～";
 		const sceneBg = p.theme && p.theme.bg ? p.theme.bg : null;
+		const [loadError, setLoadError] = useState("");
+		const model = loadError ? null : entry;
+		const detail = loadError ? "Live2D 加载失败：" + loadError : fallback;
 		return h("div", { className: "dfy-pet-wrap" },
-			h("div", { className: "dfy-pet-window" },
+			h("div", { className: "dfy-pet-window" + (model ? " dfy-pet-window-model" : "") },
 				h("div", { className: "dfy-pet-title" },
 					h("span", { className: "dfy-pet-dots", "aria-hidden": true }, h("i"), h("i"), h("i")),
 					h("span", { className: "dfy-pet-name" }, name),
@@ -313,26 +558,143 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				h("div", { className: "dfy-pet-scene", style: sceneBg ? { background: sceneBg } : undefined },
 					h("span", { className: "dfy-pet-ai", title: "AI 标识常显，不可隐藏" }, aiLabel),
 					h("div", { className: "dfy-pet-bubbles", "aria-hidden": true }, h("i"), h("i"), h("i")),
-					h("div", { className: "dfy-pet-bubble" + (speaking ? " dfy-pet-bubble-on" : ""), role: "status", "aria-live": "polite" }, text),
-					h("div", { className: "dfy-pet-fish" },
-						h("span", { className: "dfy-pet-sway" }, h(FishIcon, { size: 116, theme: theme })))),
-				h("div", { className: "dfy-pet-status" },
-					h("span", null, "本地预览 · 未推流 · AI 标识常显"),
+					!model ? h("div", { className: "dfy-pet-bubble" + (speaking ? " dfy-pet-bubble-on" : ""), role: "status" }, text) : null,
+					model ? h(Live2DScene, { entry: model, speaking, mouthLevel, onFail: setLoadError })
+						: h("div", { className: "dfy-pet-fish" },
+							h("span", { className: "dfy-pet-sway" }, h(FishIcon, { size: 116, theme: theme })))),
+			model ? h("p", { className: "dfy-pet-model-caption" + (speaking ? " dfy-pet-model-caption-on" : ""), role: "status" }, text) : null,
+			h("div", { className: "dfy-pet-status" },
+				h("span", { title: detail || undefined }, detail || (model ? model.name : "内置大肥鱼")),
 					h("span", null, speaking ? "● 正在说话" : "○ 待机中"))));
 	}
 
-	function PreviewCanvas({ preview, compact }) {
+	function SceneMouth({ video, level, sceneUrl }) {
+		const overlay = useRef(null);
+		useEffect(() => {
+			const source = video.current;
+			const canvas = overlay.current;
+			const context = canvas?.getContext("2d");
+			if (!source || !context || !level) return;
+			const controller = new AbortController();
+			const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+			let raf = 0;
+			let track;
+			let opening = 0;
+			const draw = () => {
+				raf = requestAnimationFrame(draw);
+				const width = canvas.clientWidth, height = canvas.clientHeight;
+				if (canvas.width !== width || canvas.height !== height) {
+					canvas.width = width;
+					canvas.height = height;
+				}
+				context.clearRect(0, 0, width, height);
+				opening += (level() - opening) * 0.46;
+				if (opening < 0.025 || !track || source.readyState < 2 || source.paused || motion.matches) return;
+
+				// Map the tracked lips through the same cover crop as the scene video.
+				const time = source.currentTime;
+				const nextIndex = track.findIndex((frame) => frame[0] >= time);
+				const before = track[nextIndex < 0 ? track.length - 1 : Math.max(0, nextIndex - 1)];
+				const after = track[nextIndex < 0 ? track.length - 1 : nextIndex];
+				const span = after[0] - before[0];
+				if (span > 0.4 || Math.abs(before[0] - time) > 0.4) return;
+				const blend = span ? Math.min(1, Math.max(0, (time - before[0]) / span)) : 0;
+				const [lx, ly, rx, ry, lipHeight] = before.slice(1).map((value, index) =>
+					value + (after[index + 1] - value) * blend);
+				const sw = source.videoWidth, sh = source.videoHeight;
+				const scale = Math.max(width / sw, height / sh);
+				const offsetX = (width - sw * scale) / 2;
+				const offsetY = (height - sh * scale) * 0.42;
+				const sx = (lx + rx) * sw / 2, sy = (ly + ry) * sh / 2;
+				const mouthWidth = (rx - lx) * sw;
+				const halfWidth = mouthWidth * 0.82;
+				const halfHeight = Math.max(lipHeight * sh * 0.93, mouthWidth * 0.29);
+				if (halfWidth < 2 || halfHeight < 2 || sx - halfWidth < 0 || sx + halfWidth > sw ||
+					sy - halfHeight < 0 || sy + halfHeight > sh) return;
+				const dx = sx * scale + offsetX, dy = sy * scale + offsetY;
+				const stride = 2 * halfWidth / 30;
+				for (let i = 0; i < 30; i++) {
+					const x = -halfWidth + i * stride;
+					const weight = Math.sin(Math.PI * (i + 0.5) / 30) ** 2;
+					const change = opening * halfHeight * 0.5 * weight;
+					const band = halfHeight * 0.30;
+					const left = dx + x * scale;
+					context.drawImage(source, sx + x, sy - halfHeight, stride, halfHeight - band,
+						left, dy - halfHeight * scale, stride * scale + 0.15, (halfHeight - band - change) * scale);
+					context.drawImage(source, sx + x, sy - band, stride, 2 * band,
+						left, dy - (band + change) * scale, stride * scale + 0.15, 2 * (band + change) * scale);
+					context.drawImage(source, sx + x, sy + band, stride, halfHeight - band,
+						left, dy + (band + change) * scale, stride * scale + 0.15, (halfHeight - band - change) * scale);
+				}
+			};
+			fetch(sceneUrl.replace("/scene?", "/mouth-track?"), { signal: controller.signal })
+				.then((response) => response.json()).then(({ frames }) => {
+					if (!controller.signal.aborted && frames?.length) {
+						track = frames;
+						draw();
+					}
+				}).catch(() => {});
+			return () => {
+				controller.abort();
+				cancelAnimationFrame(raf);
+				context.clearRect(0, 0, canvas.width, canvas.height);
+			};
+		}, [video, level, sceneUrl]);
+		return h("canvas", { className: "dfy-scene-mouth", ref: overlay, "aria-hidden": true });
+	}
+
+	function EciyuanPreview({ persona, entry, sceneUrl, fallback, speaking, subtitle, compact, mouthLevel }) {
+		const [failure, setFailure] = useState("");
+		const [sceneFailed, setSceneFailed] = useState(false);
+		const [portraitUnavailable, setPortraitUnavailable] = useState(false);
+		const model = entry && !failure && !compact;
+		const scene = !model && sceneUrl && !sceneFailed && !compact;
+		const video = useRef(null);
+		useEffect(() => {
+			if (!scene || !video.current) return;
+			const element = video.current;
+			const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+			const update = () => {
+				if (document.hidden || motion.matches) element.pause();
+				else element.play().catch(() => {});
+			};
+			update();
+			document.addEventListener("visibilitychange", update);
+			motion.addEventListener("change", update);
+			return () => {
+				element.pause();
+				document.removeEventListener("visibilitychange", update);
+				motion.removeEventListener("change", update);
+			};
+		}, [scene]);
+		return h("div", { className: "dfy-role-preview" },
+			h("div", { className: "dfy-role-stage", style: { background: persona.theme?.bg, color: persona.theme?.accent } },
+				h("span", { className: "dfy-pet-ai" }, persona.aiLabelText || "AI 生成内容"),
+				model ? h(Live2DScene, { entry, speaking, mouthLevel, onFail: setFailure }) :
+					scene ? h("video", { ref: video, src: sceneUrl, muted: true, playsInline: true, loop: true,
+						poster: persona.media.portraitUrl, "aria-label": persona.name + "的动态形象",
+						onError: () => setSceneFailed(true) }) :
+					portraitUnavailable ? h("span", { className: "dfy-role-initial" }, persona.name) :
+						h("img", { src: persona.media.portraitUrl, alt: persona.name + "的官方立绘", onError: () => setPortraitUnavailable(true) }),
+				scene && speaking && mouthLevel ? h(SceneMouth, { video, level: mouthLevel, sceneUrl }) : null),
+			h("div", { className: "dfy-role-caption" + (speaking ? " dfy-role-caption-speaking" : "") },
+				h("strong", null, persona.name),
+				subtitle ? h("p", { role: "status" }, subtitle) : null,
+				!compact ? h("p", { className: "dfy-caption" },
+					model ? "Live2D · " + entry.name : scene ? "鹅次元动态形象" : (portraitUnavailable ? "官方立绘暂不可用" : "鹅次元官方立绘") +
+						(failure ? " · 本地模型加载失败" : fallback ? " · " + fallback : "")) : null));
+	}
+
+	function PreviewCanvas({ preview, compact, entry, sceneUrl, fallback, speaking, subtitle, mouthLevel }) {
 		const p = preview || {};
 		const persona = p.persona || { name: "大肥鱼", avatarId: "fish-classic", aiLabelText: "AI 生成内容" };
+		if (persona.media) return h(EciyuanPreview, { key: persona.profileId + ":" + (entry?.id || "") + ":" + (sceneUrl || ""), persona, entry, sceneUrl, fallback, speaking, subtitle, compact, mouthLevel });
 		const scene = p.scene || { title: "大肥鱼的直播间", danmakuOverlay: true };
 		const theme = AVATAR_THEME[persona.avatarId] || AVATAR_THEME["fish-classic"];
 		const bg = SCENE_BG[scene.background || "teal"] || SCENE_BG.teal;
 		// 桌宠形象：改用桌面小组件窗口（compact 同样正常显示），不再用 16:9 全屏画布
 		if (isDeskpetId(persona.avatarId)) {
-			return h("div", { style: { minWidth: 0 } },
-				h(DeskPet, { persona: persona, speaking: false, subtitle: "大家好，我是大肥鱼～" }),
-				h("p", { className: "dfy-caption", style: { margin: "8px 2px 0" } },
-					"大肥鱼桌宠 · 本地预览（未推流）· AI 标识常显"));
+			return h(DeskPet, { key: entry?.id || "builtin", persona, speaking, subtitle, entry, fallback, mouthLevel });
 		}
 		return h("div", {
 			className: "dfy-canvas",
@@ -352,59 +714,42 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 	// ------------------------------------------------------------------ 首页
 
-	function HomeTab({ status, settings, act, busy, goTab }) {
+	function WorkbenchControls({ status, act, busy, goTab, officialUrl, connected }) {
 		const s = status;
-		const live = s && s.liveStatus === "live_confirmed";
-		const starting = s && ["self_check", "local_preview", "awaiting_platform", "stream_established"].includes(s.liveStatus);
-		const canTrain = s && s.trainingEligible && !s.learningPaused;
-		const needWizard = s && (!s.personaReady || !s.platformReady);
-		return h("div", { className: "dfy-grid" },
-			h("div", { className: "dfy-banner " + (live ? "dfy-banner-live" : starting ? "dfy-banner-busy" : "") + " dfy-spanall" },
-				h(FishIcon, { size: 30, theme: AVATAR_THEME["fish-classic"] }),
-				h("div", { className: "dfy-banner-main" },
-					h("strong", null, s ? s.liveDisplay : "连接中…"),
-					h("span", { className: "dfy-caption" },
-						live ? "平台已确认直播中 · 紧急停止可立即进入安全场景"
-							: starting ? "开播流程进行中：确认形象与 AI 标识正常后等待平台确认"
-								: "未开播 · 先完成配置，再进入本地预览确认画面")),
-				h("div", { className: "dfy-banner-side" },
-					s ? h(Badge, { tone: s.personaReady ? "ok" : "err", text: s.personaReady ? "形象就绪" : "形象未配置" }) : null,
-					s ? h(Badge, { tone: s.platformReady ? "ok" : "err", text: s.platformReady ? "接入就绪" : "接入未配置" }) : null)),
-			h("div", { className: "dfy-kpis dfy-spanall" },
-				h(Kpi, { label: "直播状态", value: s ? s.liveDisplay : "—", tone: live ? "ok" : undefined }),
-				h(Kpi, { label: "学习状态", value: s ? (s.learningPaused ? "已暂停" : "观察学习中") : "—" }),
-				h(Kpi, { label: "当前版本", value: s && s.activeReleaseId ? s.activeReleaseId : "基线", title: s && s.activeReleaseId ? s.activeReleaseId : "基线" }),
-				h(Kpi, { label: "当日费用", value: s ? s.todayCostCny.toFixed(2) + " 元" : "—", title: "以服务商账单为准" }),
-				h(Kpi, { label: "云端兜底", value: s ? (s.cloudEnabled ? "已启用" : "未配置") : "—" }),
-				h(Kpi, { label: "待处理", value: s ? s.pendingIssues + " 条" : "—", tone: s && s.pendingIssues > 0 ? "err" : undefined })),
-			needWizard ? h("div", { className: "dfy-note dfy-note-warn dfy-spanall" },
-				h("strong", null, "首次配置未完成"),
-				h("span", { className: "dfy-muted" }, !s.personaReady ? s.personaReadyReason : s.platformReadyReason),
-				h("div", { className: "dfy-actions" },
-					h(Btn, { tone: "primary", disabled: busy, onClick: () => goTab("wizard") }, "去首次配置"))) : null,
-			s && s.liveStatus === "awaiting_platform" ? h("div", { className: "dfy-note dfy-note-warn dfy-spanall" },
-				h("span", null, "平台状态待确认：在直播伴侣完成开播后，回来同步状态。"),
-				h("div", { className: "dfy-actions" },
-					h(Btn, { disabled: busy, onClick: () => act("live/operator-confirm", {}, "我已在官方客户端开播") }, "我已在官方客户端开播"))) : null,
-			h(Card, { title: "主操作", extra: h(Badge, { tone: s && s.personaReady ? "ok" : "err", text: s && s.personaReady ? "形象就绪" : "形象未配置" }) },
-				h("div", { className: "dfy-actions" },
-					h(Btn, { tone: "primary", disabled: busy || !s || live, onClick: () => act("live/start", {}, "开始直播") }, starting ? "开播进行中…" : "开始直播"),
-					h(Btn, { disabled: busy || !s || (!live && !starting), onClick: () => act("live/stop", {}, "结束直播") }, "结束直播"),
-					h(Btn, { disabled: busy || !s || !canTrain, onClick: () => act("training/train-once", {}, "训练一次") }, "训练一次"),
-					h(Btn, { disabled: busy || !s, onClick: () => act(s && s.learningPaused ? "learning/resume" : "learning/pause", {}, s && s.learningPaused ? "恢复学习" : "暂停学习") }, s && s.learningPaused ? "恢复学习" : "暂停学习"),
-					h(Btn, { disabled: busy || !s || !s.activeReleaseId, onClick: () => act("release/rollback", {}, "恢复稳定版本") }, "恢复稳定版本")),
-				h("p", { className: "dfy-caption" }, "开播流程：自检 → 本地预览 → 等待平台确认；平台未确认绝不显示「直播中」。")),
-			h(Card, { title: "运行信息", extra: h(Badge, { tone: s && s.platformReady ? "ok" : "err", text: s && s.platformReady ? "接入就绪" : "接入未配置" }) },
-				h(Row, { label: "运行模式", value: s ? s.mode + (s.killSwitch ? "（killSwitch）" : "") : "—" }),
-				h(Row, { label: "训练机会", value: s ? (s.trainingEligible ? "三门通过" : s.trainingEligibleDetail) : "—" }),
-				h(Row, { label: "云端配置", value: s ? (s.cloudEnabled ? "已启用（按日预算）" : "未配置：不产生付费调用") : "—" })),
-			settings && settings.profile ? h(Card, { title: "主播信息 · 角色档案",
-				extra: h(Badge, { tone: settings.profile.source === "plugin" ? "ok" : "idle", text: settings.profile.source === "plugin" ? "dsh-pet · 插件中" : "鹅次元角色" }) },
-				h(ProfileCard, { profile: settings.profile, hero: true }),
-				h("div", { className: "dfy-actions" },
-					h(Btn, { tone: "ghost", onClick: () => goTab("wizard") }, "更换角色档案"))) : null,
-			s && s.previewActive ? h(Card, { title: "本地预览进行中", extra: h(Btn, { tone: "ghost", onClick: () => goTab("preview") }, "打开预览") },
-				h(PreviewCanvas, { preview: { previewActive: true, persona: { name: "大肥鱼", aiLabelText: "AI 生成内容" }, scene: {} }, compact: true })) : null);
+		const live = s?.liveStatus === "live_confirmed";
+		const awaiting = ["awaiting_platform", "stream_established"].includes(s?.liveStatus);
+		const unconfigured = s && (!s.personaReady || !s.platformReady);
+		const broadcastBusy = busy || !connected || !s;
+		const primary = live ? "确认已下播" : awaiting ? "我已在直播伴侣开播" : unconfigured ? "完成首次配置" : "开始直播";
+		const runPrimary = () => {
+			if (live) return act("live/stop", {}, primary);
+			if (awaiting) return act("live/operator-confirm", {}, primary);
+			if (unconfigured) return goTab("wizard");
+			return act("live/start", {}, primary);
+		};
+		const learning = s?.learningPaused ? "恢复学习" : "暂停学习";
+		return h("aside", { className: "dfy-desk-controls", "aria-label": "直播和学习操作" },
+			h("section", { className: "dfy-desk-section" },
+				h("h3", null, "直播"),
+				h("p", { className: "dfy-desk-state" }, s?.liveDisplay || "连接中…"),
+				unconfigured && !live && !awaiting ? h("p", { className: "dfy-muted" }, s.personaReadyReason || s.platformReadyReason) : null,
+				awaiting ? h("p", { className: "dfy-muted" }, "先在直播伴侣完成开播，再回来确认。") : null,
+				live ? h("p", { className: "dfy-muted" }, "在直播伴侣结束直播后，回来确认。") : null,
+				(awaiting || live) && officialUrl ? h("a", { className: "dfy-btn dfy-desk-link", href: officialUrl, target: "_blank", rel: "noreferrer" }, "打开直播伴侣说明") : null,
+				h(Btn, { tone: "primary", disabled: broadcastBusy, onClick: runPrimary }, primary),
+				awaiting ? h(Btn, { disabled: broadcastBusy, onClick: () => act("live/stop", {}, "取消开播") }, "取消开播") : null),
+			h("section", { className: "dfy-desk-section" },
+				h("h3", null, "学习"),
+				h("p", { className: "dfy-muted" }, s?.learningPaused ? "学习已暂停" : s?.trainingEligible ? "满足当前训练条件" : s?.trainingEligibleDetail || "正在检查训练条件…"),
+				h(Btn, { disabled: broadcastBusy || s.learningPaused || !s.trainingEligible,
+					onClick: () => act("training/train-once", {}, "运行训练演练") }, "运行训练演练"),
+				h("div", { className: "dfy-desk-learning" },
+					h(Btn, { disabled: broadcastBusy, onClick: () => act(s.learningPaused ? "learning/resume" : "learning/pause", {}, learning) }, learning),
+					h(Btn, { disabled: broadcastBusy || !s.activeReleaseId, onClick: () => act("release/rollback", {}, "恢复稳定版本") }, "恢复稳定版本"))),
+			h("dl", { className: "dfy-desk-summary" },
+				h("div", null, h("dt", null, "待处理"), h("dd", null, s ? h("button", { type: "button", className: "dfy-desk-text-button",
+					onClick: () => goTab("interact") }, s.pendingIssues + " 条") : "—")),
+				h("div", null, h("dt", null, "今日费用"), h("dd", null, s ? "¥" + s.todayCostCny.toFixed(2) : "—"))));
 	}
 
 	// ------------------------------------------------------------------ 首次配置向导（§24.1 五步 + 自检）
@@ -516,20 +861,21 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const [phrase, setPhrase] = useState(p.samplePhrase);
 		const [right, setRight] = useState(p.usageRightConfirmed);
 		const [listenNote, setListenNote] = useState("");
+		const audition = useRoleSpeech(profileId);
 
 		const selected = profiles.find((x) => x.id === profileId) || settings.profile || null;
 		const payload = () => ({ profileId: profileId, personaName: selected ? selected.name : p.personaName, voiceId: voice, samplePhrase: phrase, usageRightConfirmed: right });
 
-		const listen = async () => {
-			setListenNote("准备试听…");
-			const r = await api("preview/voice-test");
-			if (!r.ok) { setListenNote("试听失败：" + r.error); return; }
-			if (typeof window.speechSynthesis === "undefined") { setListenNote("当前浏览器不支持语音合成"); return; }
-			window.speechSynthesis.cancel();
-			const u = new SpeechSynthesisUtterance(r.result.phrase);
-			u.lang = r.result.voice.lang;
-			window.speechSynthesis.speak(u);
-			setListenNote("正在试听（" + r.result.note + "）");
+		const listen = () => {
+			if (audition.phase !== "idle") { audition.stop(); return; }
+			const draft = phrase.trim();
+			if (!draft) { setListenNote("请输入试听语句"); return; }
+			if (selected?.media && (profileId !== p.profileId || !p.usageRightConfirmed)) {
+				setListenNote("保存角色与使用授权后即可试听");
+				return;
+			}
+			setListenNote("");
+			audition.speak(draft, voice);
 		};
 
 		return h("div", { style: { display: "grid", gap: 12 } },
@@ -540,17 +886,18 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			h(Field, { label: "选择角色档案" },
 				h("div", { className: "dfy-profiles" },
 					profiles.map((x) => h(ProfileCard, { key: x.id, profile: x, selected: x.id === profileId, onSelect: () => setProfileId(x.id) })))),
-			h(Field, { label: "音色（最终播出音色以直播伴侣音轨为准）" },
+			selected?.media ? h("p", { className: "dfy-caption" }, "本地音色随角色切换，试听和回复使用同一音色。") :
+			h(Field, { label: "预览朗读风格（使用浏览器本地中文音色）" },
 				h("div", { className: "dfy-choice" },
 					settings.catalogs.voices.map((v) => h("button", {
 						key: v.id, type: "button", className: "dfy-chip" + (voice === v.id ? " dfy-chip-on" : ""),
 						onClick: () => setVoice(v.id),
-					}, h("b", null, v.label), h("span", { className: "dfy-muted" }, v.style))))),
+					}, h("b", null, v.label.split("（")[0]), h("span", { className: "dfy-muted" }, v.style))))),
 			h(Field, { label: "试听语句" },
 				h("div", { style: { display: "grid", gap: 8, gridTemplateColumns: "minmax(0,1fr) auto" } },
 					h("input", { className: "dfy-input", value: phrase, maxLength: 80, onChange: (e) => setPhrase(e.target.value) }),
-					h(Btn, { onClick: listen }, "试听")),
-				listenNote ? h("span", { className: "dfy-caption" }, listenNote) : null),
+					h(Btn, { onClick: listen }, audition.phase === "idle" ? "试听" : "停止试听")),
+				h("span", { className: "dfy-caption", role: "status" }, listenNote || audition.note)),
 			h("label", { className: "dfy-check" },
 				h("input", { type: "checkbox", checked: right, onChange: (e) => setRight(e.target.checked) }),
 				h("span", null, "我确认对所选角色形象与声音具有使用授权（开播前必须勾选）")),
@@ -561,21 +908,44 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 	function CloudStep({ settings, save }) {
 		const c = settings.cloud;
+		const presets = (settings.catalogs && settings.catalogs.cloudProviders) || [];
 		const [enabled, setEnabled] = useState(c.enabled);
 		const [provider, setProvider] = useState(c.provider);
 		const [model, setModel] = useState(c.model);
 		const [budget, setBudget] = useState(c.dailyBudgetCny === null ? "" : String(c.dailyBudgetCny));
+		const selPreset = presets.find((p) => p.id === provider) || null;
+		const pickPreset = (p) => {
+			setProvider(p.id);
+			if (!p.models.includes(model)) setModel(p.models[0] || "");
+		};
 		return h("div", { style: { display: "grid", gap: 12 } },
 			h("p", { className: "dfy-muted", style: { margin: 0 } }, "本地优先：常规请求先走本地模型；未配置云端时不产生任何付费调用。云端仅作兜底，可全部留空。"),
 			h(Row, { label: "本地预设", value: "Ollama · Qwen3-4B-Instruct（随安装固定）" }),
+			presets.length > 0 ? h(Field, { label: "服务商预设（OpenAI 兼容端点）" },
+				h("div", { className: "dfy-choice" },
+					presets.map((p) => h("button", {
+						key: p.id, type: "button",
+						className: "dfy-chip" + (provider === p.id ? " dfy-chip-on" : ""),
+						title: p.baseUrl, onClick: () => pickPreset(p),
+					}, p.label)),
+					h("button", {
+						key: "_custom", type: "button",
+						className: "dfy-chip" + (selPreset ? "" : " dfy-chip-on"),
+						title: "自定义：服务商名自由填写，端点用 DAFEIYU_CLOUD_BASE_URL 提供",
+						onClick: () => setProvider(""),
+					}, "自定义"))) : null,
+			selPreset ? h("p", { className: "dfy-caption", style: { margin: 0 } },
+				"端点：" + selPreset.baseUrl + "（环境变量 DAFEIYU_CLOUD_BASE_URL 可覆盖）。" + selPreset.note) : h("p", { className: "dfy-caption", style: { margin: 0 } },
+				"自定义服务商：填写名称与模型，并以 DAFEIYU_CLOUD_BASE_URL 提供端点。"),
 			h("label", { className: "dfy-check" },
 				h("input", { type: "checkbox", checked: enabled, onChange: (e) => setEnabled(e.target.checked) }),
 				h("span", null, "启用第三方兜底（OpenAI 兼容端点）")),
 			h("div", { style: { display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))" } },
-				h(Field, { label: "服务商" }, h("input", { className: "dfy-input", value: provider, placeholder: "留空 = 不覆盖配置文件", onChange: (e) => setProvider(e.target.value) })),
-				h(Field, { label: "模型名" }, h("input", { className: "dfy-input", value: model, placeholder: "如 deepseek-chat", onChange: (e) => setModel(e.target.value) })),
+				h(Field, { label: "服务商" }, h("input", { className: "dfy-input", value: provider, placeholder: selPreset ? selPreset.id : "留空 = 不覆盖配置文件", onChange: (e) => setProvider(e.target.value) })),
+				h(Field, { label: "模型名" }, h("input", { className: "dfy-input", list: "dfy-cloud-models", value: model, placeholder: "如 hunyuan-lite", onChange: (e) => setModel(e.target.value) },
+					selPreset ? h("datalist", { id: "dfy-cloud-models" }, selPreset.models.map((m) => h("option", { key: m, value: m }))) : null)),
 				h(Field, { label: "每日费用上限（元）" }, h("input", { className: "dfy-input", value: budget, placeholder: "未设置 ⇒ 付费禁用", onChange: (e) => setBudget(e.target.value) }))),
-			h("p", { className: "dfy-caption", style: { margin: 0, color: "var(--dsw-alias-state-error-primary,#c0392b)" } }, "API Key 不在界面保存：以环境变量 DAFEIYU_CLOUD_API_KEY 提供；覆盖在重启插件后生效。"),
+			h("p", { className: "dfy-caption", style: { margin: 0, color: "var(--dsw-alias-state-error-primary,#c0392b)" } }, "API Key 不在界面保存：以环境变量 DAFEIYU_CLOUD_API_KEY 提供（混元用腾讯云密钥）；覆盖在重启插件后生效。"),
 			h("div", { className: "dfy-actions" },
 				h(Btn, { tone: "primary", onClick: () => save("cloud", { enabled: enabled, provider: provider, model: model, dailyBudgetCny: budget === "" ? null : Number(budget) }) }, "保存")));
 	}
@@ -596,36 +966,609 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 	// ------------------------------------------------------------------ 直播预览
 
-	function PreviewTab({ status, act, busy }) {
-		const [preview, setPreview] = useState(null);
-		const load = useCallback(async () => {
-			const r = await api("preview");
-			if (r.ok) setPreview(r.preview);
+	function useLocalSpeech(role) {
+		const utterance = useRef(null);
+		const [phase, setPhase] = useState("idle");
+		const [note, setNote] = useState("");
+		const cancel = useCallback(() => {
+			if (!utterance.current) return;
+			utterance.current = null;
+			window.speechSynthesis.cancel();
 		}, []);
-		useEffect(() => { load() }, [load, status && status.liveStatus]);
+		useEffect(() => {
+			window.speechSynthesis?.getVoices();
+			return cancel;
+		}, [cancel, role]);
+		const stop = () => {
+			cancel();
+			setPhase("idle");
+			setNote("已停止朗读");
+		};
+		const speak = (text, voiceId) => {
+			cancel();
+			setPhase("idle");
+			const synth = window.speechSynthesis;
+			if (!synth || !window.SpeechSynthesisUtterance) {
+				setNote("当前浏览器不支持朗读");
+				return;
+			}
+			const voices = synth.getVoices().filter((voice) => voice.localService && /^zh(?:[-_]|$)/i.test(voice.lang));
+			const mandarin = voices.filter((v) => /^zh[-_]CN$/i.test(v.lang));
+		const candidates = mandarin.length ? mandarin : voices;
+		const voice = role ? candidates.find((v) => v.name.includes(role.name)) ||
+			candidates[role.index % candidates.length] : candidates[0];
+			if (!voice) {
+				setNote("浏览器未提供本地中文音色，请在系统中启用后重试");
+				return;
+			}
+			const item = new SpeechSynthesisUtterance(text);
+			item.voice = voice;
+			item.lang = voice.lang;
+			const style = {
+				"qing-wan": [0.95, 1.05], "chen-lang": [0.9, 0.9],
+				"tong-qu": [1.08, 1.15], "ping-shi": [1, 1],
+			}[voiceId] || [1, 1];
+			[item.rate, item.pitch] = role ? [role.rate, role.pitch] : style;
+			utterance.current = item;
+			setPhase("pending");
+			setNote("准备朗读…");
+			item.onstart = () => {
+				if (utterance.current !== item) return;
+				setPhase("speaking");
+				setNote("正在朗读 · " + voice.name);
+			};
+			const finish = (message) => {
+				if (utterance.current !== item) return;
+				utterance.current = null;
+				setPhase("idle");
+				setNote(message);
+			};
+			item.onend = () => finish("朗读完成");
+			item.onerror = () => finish("朗读失败，请检查系统音色后重试");
+			try { synth.speak(item); } catch { finish("朗读失败，请重试"); }
+		};
+		return { speak, stop, phase, note };
+	}
 
-		const active = preview && preview.previewActive;
-		const inFlow = status && ["local_preview", "awaiting_platform", "stream_established", "live_confirmed", "self_check"].includes(status.liveStatus);
-		return h("div", { className: "dfy-grid" },
-			h("section", { className: "dfy-card", style: { gridColumn: "1/-1" } },
-				h("div", { className: "dfy-card-h" }, h("h3", null, "本地预览（浏览器渲染画布）"), h(Badge, { tone: active ? "ok" : "idle", text: active ? "预览中" : "未预览" })),
-				h("div", { className: "dfy-split" },
-					h(PreviewCanvas, { preview: preview }),
-					h("div", { style: { display: "grid", gap: 10, alignContent: "start" } },
-						h(Row, { label: "当前状态", value: preview ? preview.liveDisplay : "—" }),
-						h(Row, { label: "角色档案", value: preview && preview.persona ? preview.persona.name + (preview.persona.enName ? " / " + preview.persona.enName : "") : "—" }),
-						preview && preview.persona && preview.persona.tagline ? h(Row, { label: "#人设", value: preview.persona.tagline }) : null,
-						h(Row, { label: "AI 标识", value: preview && preview.persona ? preview.persona.aiLabelText : "—" }),
-						h("div", { className: "dfy-actions" },
-							h(Btn, { tone: "primary", disabled: busy || active, onClick: async () => { await act("preview/start", {}, "进入本地预览"); load(); } }, active ? "预览中" : "进入本地预览"),
-							h(Btn, { disabled: busy || !inFlow || (status && status.liveStatus === "live_confirmed"), onClick: async () => { await act("preview/stop", {}, "退出预览"); load(); } }, "退出预览"),
-							h(Btn, { tone: "ghost", onClick: load }, "刷新")),
-						h("p", { className: "dfy-caption", style: { margin: 0 } }, "本地预览 ≠ 已开播：预览不推流。确认形象、声音与 AI 标识正常后再开始直播。")))),
-			preview && preview.liveStatus === "awaiting_platform" ? h(Card, { title: "平台状态待确认" },
-				h("p", { style: { margin: 0 } }, "官方客户端（直播伴侣）完成开播后回来自行同步状态："),
-				h("div", { className: "dfy-actions" },
-					h("a", { className: "dfy-link", href: preview.officialClientUrl, target: "_blank", rel: "noreferrer" }, "打开直播伴侣说明"),
-					h(Btn, { tone: "primary", disabled: busy, onClick: () => act("live/operator-confirm", {}, "我已在官方客户端开播") }, "我已在官方客户端开播"))) : null);
+	function useLocalRecognition(onTranscript) {
+		const capture = useRef(null);
+		const [phase, setPhase] = useState("idle");
+		const [note, setNote] = useState("");
+		useEffect(() => () => {
+			const session = capture.current;
+			capture.current = null;
+			if (session?.started) session.recognition.abort();
+		}, []);
+		const start = async () => {
+			if (capture.current) return;
+			const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+			let recognition;
+			try { recognition = Recognition && new Recognition(); } catch { /* 受限的宿主可能不允许构造识别器 */ }
+			if (!recognition || !("processLocally" in recognition)) {
+				setNote("当前浏览器不支持本地语音识别，可直接输入文字");
+				return;
+			}
+			const session = { recognition, started: false };
+			capture.current = session;
+			setPhase("checking");
+			setNote("检查中文离线识别…");
+			const finish = (message) => {
+				if (capture.current !== session) return;
+				capture.current = null;
+				setPhase("idle");
+				setNote(message);
+			};
+			try {
+				recognition.lang = "zh-CN";
+				recognition.processLocally = true;
+				recognition.continuous = false;
+				recognition.interimResults = false;
+				if (Recognition.available) {
+					const availability = await Recognition.available({ langs: ["zh-CN"], processLocally: true });
+					if (capture.current !== session) return;
+					if (availability !== "available") {
+						finish(availability === "downloadable" || availability === "downloading"
+							? "简体中文离线语言包未就绪，请安装后重试，或直接输入文字"
+							: "简体中文离线识别不可用，可直接输入文字");
+						return;
+					}
+				}
+				recognition.onstart = () => {
+					if (capture.current !== session) return;
+					setPhase("listening");
+					setNote("正在听…");
+				};
+				let transcript = "";
+				recognition.onresult = (event) => {
+					if (capture.current !== session) return;
+					for (let i = event.resultIndex; i < event.results.length; i++) {
+						if (event.results[i].isFinal) transcript += event.results[i][0].transcript;
+					}
+					if (transcript.trim()) onTranscript(transcript.trim().slice(0, 500));
+				};
+				recognition.onerror = (event) => finish({
+					"not-allowed": "麦克风权限未开启，可直接输入文字",
+					"service-not-allowed": "浏览器未允许本地识别，可直接输入文字",
+					"audio-capture": "未找到可用的麦克风",
+					"language-not-supported": "简体中文离线语言包不可用",
+					"no-speech": "没有听到语音，请重试",
+				}[event.error] || "语音识别未完成，可直接输入文字");
+				recognition.onend = () => finish(transcript.trim() ? "转写完成，可编辑后发送" : "语音识别已结束");
+				session.started = true;
+				recognition.start();
+			} catch {
+				finish("无法启动本地语音识别，可直接输入文字");
+			}
+		};
+		const stop = () => {
+			const session = capture.current;
+			if (!session) return;
+			if (session.started) {
+				setPhase("stopping");
+				setNote("正在结束识别…");
+				session.recognition.stop();
+			} else {
+				capture.current = null;
+				setPhase("idle");
+				setNote("已取消识别");
+			}
+		};
+		return { start, stop, phase, note };
+	}
+
+	const ROLE_BROWSER_VOICES = {
+		xiaxia: { name: "Sandy", index: 0, rate: 1.02, pitch: 1.12 },
+		lubai: { name: "Tingting", index: 1, rate: 0.88, pitch: 0.86 },
+		guyu: { name: "Flo", index: 2, rate: 0.94, pitch: 0.97 },
+		beila: { name: "Shelley", index: 3, rate: 1.15, pitch: 1.03 },
+	};
+
+	// Read PCM samples at the playback position without routing sound through a second audio device.
+	function wavMouthLevel(bytes) {
+		const wav = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+		let sampleRate = 0, channels = 0;
+		for (let offset = 12; offset + 8 <= wav.byteLength;) {
+			const chunk = wav.getUint32(offset);
+			const length = wav.getUint32(offset + 4, true);
+			const payload = offset + 8;
+			if (payload + length > wav.byteLength) break;
+			if (chunk === 0x666d7420 && length >= 16) {
+				if (wav.getUint16(payload, true) !== 1 || wav.getUint16(payload + 14, true) !== 16) break;
+				channels = wav.getUint16(payload + 2, true);
+				sampleRate = wav.getUint32(payload + 4, true);
+			}
+			if (chunk === 0x64617461 && sampleRate && channels) {
+				const stride = 2 * channels;
+				const total = Math.floor(length / stride);
+				return (time) => {
+					const center = Math.floor(time * sampleRate);
+					const start = Math.max(0, center - Math.floor(sampleRate * 0.012));
+					const end = Math.min(total, center + Math.ceil(sampleRate * 0.012));
+					let energy = 0, count = 0;
+					for (let i = start; i < end; i += 3) {
+						const sample = wav.getInt16(payload + i * stride, true) / 32768;
+						energy += sample * sample;
+						count++;
+					}
+					return count ? Math.min(1, Math.max(0, (Math.sqrt(energy / count) - 0.009) * 12)) : 0;
+				};
+			}
+			offset = payload + length + length % 2;
+		}
+		return () => 0;
+	}
+
+	async function playRoleStream(response, playing, onStart) {
+		const context = playing.context;
+		const reader = response.body.getReader();
+		const decode = new TextDecoder();
+		let pending = "";
+		let next = 0;
+		let ended = false;
+		let last;
+		const analyser = playing.analyser = context.createAnalyser();
+		analyser.fftSize = 512;
+		playing.samples = new Float32Array(analyser.fftSize);
+		analyser.connect(context.destination);
+		const signal = playing.controller.signal;
+		const aborted = () => reader.cancel().catch(() => {});
+		signal.addEventListener("abort", aborted, { once: true });
+		function consume(line) {
+			if (!line) return;
+			const message = JSON.parse(line);
+			if (message.type === "end") { ended = true; return; }
+			if (message.type === "error") throw new Error(message.error || "角色语音播放中断");
+			if (message.type !== "audio" || ended) throw new Error("角色语音数据有误");
+			const bytes = decodeAsset(message.pcm);
+			const pcm = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+			const buffer = context.createBuffer(1, Math.floor(bytes.byteLength / 2), message.sampleRate);
+			const data = buffer.getChannelData(0);
+			for (let i = 0; i < data.length; i++) data[i] = pcm.getInt16(i * 2, true) / 32768;
+			const source = context.createBufferSource();
+			source.buffer = buffer;
+			source.connect(analyser);
+			const initial = !last;
+			const start = Math.max(next, context.currentTime + (initial ? 0.085 : 0.025));
+			next = start + buffer.duration;
+			last = new Promise((resolve) => { source.onended = resolve; });
+			source.start(start);
+			if (initial) {
+				playing.startTimer = setTimeout(() => {
+					if (!signal.aborted && context.state === "running") onStart(message.voiceName);
+				}, Math.max(0, (start - context.currentTime) * 1000));
+			}
+		}
+		try {
+			while (!signal.aborted) {
+				const { value, done } = await reader.read();
+				if (done || signal.aborted) break;
+				pending += decode.decode(value, { stream: true });
+				const lines = pending.split("\n");
+				pending = lines.pop();
+				for (const line of lines) consume(line);
+			}
+			signal.throwIfAborted();
+			if (pending.trim()) consume(pending);
+			if (!ended || !last) throw new Error("角色语音播放中断");
+			await new Promise((resolve) => {
+				if (signal.aborted) { resolve(); return; }
+				signal.addEventListener("abort", resolve, { once: true });
+				last.then(() => {
+					signal.removeEventListener("abort", resolve);
+					resolve();
+				});
+			});
+		} finally {
+			signal.removeEventListener("abort", aborted);
+			await reader.cancel().catch(() => {});
+		}
+	}
+
+	function useRoleSpeech(profileId) {
+		const browser = useLocalSpeech(ROLE_BROWSER_VOICES[profileId]);
+		const [phase, setPhase] = useState("idle");
+		const [note, setNote] = useState("");
+		const active = useRef(null);
+		const usingBrowser = useRef(false);
+		const cancelAudio = useCallback(() => {
+			const playing = active.current;
+			active.current = null;
+			if (!playing) return;
+			playing.controller.abort();
+			clearTimeout(playing.startTimer);
+			playing.context?.close().catch(() => {});
+			if (playing.audio) {
+				playing.audio.pause();
+				playing.audio.removeAttribute("src");
+				playing.audio.load();
+			}
+			if (playing.url) URL.revokeObjectURL(playing.url);
+		}, []);
+		useEffect(() => {
+			cancelAudio();
+			usingBrowser.current = false;
+			setPhase("idle");
+			setNote("");
+			return cancelAudio;
+		}, [cancelAudio, profileId]);
+		const stop = () => {
+			cancelAudio();
+			browser.stop();
+			usingBrowser.current = false;
+			setPhase("idle");
+			setNote("已停止朗读");
+		};
+		const level = useCallback(() => {
+			const playing = active.current;
+			if (playing?.analyser) {
+				playing.analyser.getFloatTimeDomainData(playing.samples);
+				let energy = 0;
+				for (const sample of playing.samples) energy += sample * sample;
+				return Math.min(1, Math.max(0, (Math.sqrt(energy / playing.samples.length) - 0.009) * 12));
+			}
+			if (!playing?.audio || playing.audio.paused) {
+				return usingBrowser.current ? 0.12 + 0.45 * Math.abs(Math.sin(performance.now() / 75)) : 0;
+			}
+			return playing.sampleLevel(playing.audio.currentTime);
+		}, []);
+		const speak = async (text, voiceId) => {
+			cancelAudio();
+			browser.stop();
+			usingBrowser.current = false;
+			if (!ROLE_BROWSER_VOICES[profileId]) {
+				usingBrowser.current = true;
+				browser.speak(text, voiceId);
+				return;
+			}
+			const playing = { controller: new AbortController() };
+			if (window.AudioContext) {
+				try {
+					playing.context = new AudioContext();
+					playing.context.resume().catch(() => {});
+				} catch { /* Use the existing WAV playback path. */ }
+			}
+			active.current = playing;
+			setPhase("pending");
+			setNote("正在生成角色语音…");
+			const finish = (message) => {
+				if (active.current !== playing) return;
+				cancelAudio();
+				setPhase("idle");
+				setNote(message);
+			};
+			try {
+				const response = await fetch("/api/dafeiyu/preview/role-speech", {
+					method: "POST", headers: { "content-type": "application/json" },
+					body: JSON.stringify({ profileId, text: text.slice(0, 500), stream: !!playing.context }), signal: playing.controller.signal,
+				});
+				if (response.headers.get("content-type")?.includes("application/x-ndjson")) {
+					playing.streaming = true;
+					const context = playing.context;
+					if (context.state !== "running") {
+						await Promise.race([context.resume(), new Promise((_, reject) =>
+							setTimeout(() => reject(new Error("请点击朗读以播放语音")), 700))]);
+					}
+					await playRoleStream(response, playing, (name) => {
+						if (active.current !== playing) return;
+						setPhase("speaking");
+						setNote("正在朗读 · " + name + "（本地参考音色）");
+					});
+					finish("朗读完成");
+					return;
+				}
+				const result = await response.json();
+				if (active.current !== playing) return;
+				if (!result.ok) throw Object.assign(new Error(result.error || "角色音色暂不可用"), { status: response.status, fallback: result.fallback });
+				const bytes = decodeAsset(result.result.audioBase64);
+				playing.sampleLevel = wavMouthLevel(bytes);
+				playing.url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+				const audio = playing.audio = new Audio(playing.url);
+				audio.onplaying = () => {
+					if (active.current !== playing) return;
+					setPhase("speaking");
+					setNote("正在朗读 · " + result.result.voiceName +
+						(result.result.source === "reference" ? "（本地参考音色）" : "（系统音色）"));
+				};
+				audio.onended = () => finish("朗读完成");
+				audio.onerror = () => finish("角色语音播放失败");
+				await audio.play();
+			} catch (error) {
+				if (active.current !== playing) return;
+				if (playing.streaming) {
+					finish(error.message || "角色语音播放中断");
+					return;
+				}
+				if (playing.audio) {
+					finish(error.name === "NotAllowedError" ? "请点击朗读以播放语音" : "角色语音播放失败");
+					return;
+				}
+				cancelAudio();
+				setPhase("idle");
+				setNote(error.message);
+				if (error.fallback === true || error.status === 404 || (!error.status && (error instanceof TypeError || error.name === "SyntaxError"))) {
+					usingBrowser.current = true;
+					browser.speak(text, voiceId);
+				}
+			}
+		};
+		return { speak, stop, phase: usingBrowser.current ? browser.phase : phase,
+			note: usingBrowser.current ? browser.note : note, level };
+	}
+
+	function PreviewConversation({ voiceId, publish, persona, samplePhrase, ensurePreview, readReplies, setReadReplies }) {
+		const [text, setText] = useState("");
+		const [reply, setReply] = useState(null);
+		const [notice, setNotice] = useState("");
+		const [pending, setPending] = useState(false);
+		const inFlight = useRef(null);
+		const speech = useRoleSpeech(persona?.profileId);
+		const mic = useLocalRecognition(setText);
+		const sample = useRef(null);
+		const [sampleError, setSampleError] = useState(false);
+		const sampleLine = (samplePhrase || "").trim() || "你好呀，这是我的互动声线，用这句话来试听本地生成的声音。";
+		useEffect(() => () => {
+			inFlight.current?.abort();
+			inFlight.current = null;
+			publish({ speaking: false, subtitle: "" });
+		}, [publish]);
+		useEffect(() => {
+			publish({ speaking: speech.phase === "speaking", subtitle: reply?.text || "", mouthLevel: speech.level });
+		}, [publish, reply, speech.phase, speech.level]);
+		const send = async (event) => {
+			event.preventDefault();
+			if (!text.trim() || inFlight.current || mic.phase !== "idle") return;
+			const controller = new AbortController();
+			inFlight.current = controller;
+			if (speech.phase !== "idle") speech.stop();
+			sample.current?.pause();
+			setPending(true);
+			setNotice("正在等待本地模型回复…");
+			try {
+				await ensurePreview(controller.signal);
+				controller.signal.throwIfAborted();
+				const response = await fetch("/api/dafeiyu/preview/chat", {
+					method: "POST", headers: { "content-type": "application/json" },
+					body: JSON.stringify({ text: text.trim() }), signal: controller.signal,
+				});
+				const result = await response.json();
+				if (controller.signal.aborted) return;
+				if (!result.ok) throw new Error(result.error || "回复失败");
+				setReply(result.result);
+				setText("");
+				if (readReplies) speech.speak(result.result.text, voiceId);
+				setNotice(result.result.route === "fallback" ? "使用预设回复 · " + ({
+					LOCAL_UNAVAILABLE: "本地模型不可用", LOCAL_TIMEOUT: "本地模型响应超时",
+					POLICY_BLOCKED: "内容受到限制",
+				}[result.result.reasonCode] || "本地模型未生成可用回复") : "本地模型回复");
+			} catch (error) {
+				if (!controller.signal.aborted) setNotice(error.message || "回复失败，请重试");
+			} finally {
+				if (!controller.signal.aborted) {
+					inFlight.current = null;
+					setPending(false);
+				}
+			}
+		};
+		return h("div", { className: "dfy-preview-conversation" },
+			persona?.media ? h("div", { className: "dfy-role-audio" },
+				h("span", { className: "dfy-caption" }, "官方录音（原声参考）"),
+				mic.phase === "idle" && !pending ? h("audio", { ref: sample, controls: true, preload: "none", src: persona.media.sampleAudioUrl,
+					"aria-label": persona.name + "的官方录音（原声参考）", onPlay: () => { if (speech.phase !== "idle") speech.stop(); },
+					onError: () => setSampleError(true) }) : null,
+				sampleError ? h("p", { className: "dfy-caption", role: "status" }, "官方录音暂不可用") : null) : null,
+			h("div", { className: "dfy-role-audio" },
+				h("span", { className: "dfy-caption" }, "本地互动声线"),
+				h(Btn, { disabled: pending || (speech.phase === "idle" && mic.phase !== "idle"),
+					onClick: speech.phase === "idle" ? () => { sample.current?.pause(); speech.speak(sampleLine, voiceId); } : speech.stop },
+					speech.phase === "idle" ? "试听互动声线" : "停止朗读"),
+				!reply && speech.note ? h("p", { className: "dfy-caption", role: "status" }, speech.note) : null),
+			h("form", { onSubmit: send, "aria-busy": pending },
+				h(Field, { label: "对话输入" }, h("textarea", { rows: 2, maxLength: 500, value: text, disabled: pending,
+					onChange: (event) => setText(event.target.value), placeholder: "输入文字，或点麦克风转写" })),
+				h("div", { className: "dfy-desk-speak-options dfy-actions" },
+					h("button", { type: "submit", className: "dfy-btn dfy-btn-pri", disabled: !text.trim() || pending || mic.phase !== "idle" }, "发送"),
+					mic.phase === "idle"
+						? h(Btn, { disabled: pending || speech.phase !== "idle", onClick: () => { sample.current?.pause(); mic.start(); } }, "麦克风")
+						: h(Btn, { disabled: mic.phase === "stopping", onClick: mic.stop }, mic.phase === "checking" ? "取消识别" : "结束识别"),
+					h("label", null, h("input", { type: "checkbox", checked: readReplies, disabled: pending,
+						onChange: (event) => setReadReplies(event.target.checked) }), "自动朗读")),
+				h("p", { className: "dfy-caption", role: "status" }, mic.note)),
+			h("p", { className: "dfy-caption", role: "status" }, notice),
+			reply ? h("div", null,
+				h("p", { className: "dfy-preview-reply" }, reply.text),
+				speech.phase === "idle" ? h(Btn, { disabled: pending || mic.phase !== "idle",
+					onClick: () => { sample.current?.pause(); speech.speak(reply.text, voiceId); } }, "朗读回复") : null,
+				h("p", { className: "dfy-caption", role: "status" }, speech.note)) : null);
+	}
+
+	function Workbench({ status, act, busy, pending, settings, refresh, goTab, connected, emergency }) {
+		const [preview, setPreview] = useState(null);
+		const [catalog, setCatalog] = useState(null);
+		const [selection, setSelection] = useState(null);
+		const [modelNote, setModelNote] = useState("");
+		const [caption, setCaption] = useState({ speaking: false, subtitle: "" });
+		const [readReplies, setReadReplies] = useState(false);
+		const request = useRef(0);
+		const saving = useRef(false);
+		const loadCatalog = useCallback(async () => {
+			try {
+				const result = await api("avatar/catalog");
+				setCatalog(result.ok ? result.catalog : null);
+			} catch { setCatalog(null); }
+		}, []);
+		useEffect(() => { loadCatalog(); }, [loadCatalog]);
+		const load = useCallback(async () => {
+			const ticket = ++request.current;
+			try {
+				const result = await api("preview");
+				if (ticket === request.current && result.ok) setPreview(result.preview);
+				return result.ok ? result.preview : null;
+			} catch { return null; }
+		}, []);
+		const selected = settings?.persona;
+		useEffect(() => {
+			if (status?.personaReady && selected?.profileId && ROLE_BROWSER_VOICES[selected.profileId]) {
+				api("preview/role-speech/warm", {}).catch(() => {});
+			}
+		}, [selected?.profileId, status?.personaReady]);
+		useEffect(() => {
+			load();
+			return () => { request.current++; };
+		}, [load, status?.liveStatus, selected?.profileId, selected?.avatarId, selected?.voiceId,
+			selected?.live2dModelId, selected?.aiLabelText, settings?.scene?.background, settings?.scene?.title,
+			settings?.scene?.danmakuOverlay, settings?.scene?.resolution, settings?.platform?.officialClientUrl]);
+
+		const persona = selection || preview?.persona;
+		const profiles = settings?.catalogs?.profiles || [];
+		const models = catalog?.models || [];
+		const roleMedia = persona?.media;
+		const sceneUrl = roleMedia && catalog?.scenes?.includes(roleMedia.modelId)
+			? "/api/dafeiyu/avatar/scene?id=" + encodeURIComponent(roleMedia.modelId) : undefined;
+		const petModels = models.filter((model) => !model.id.startsWith("eciyuan-") || model.id === persona?.live2dModelId);
+		const installed = roleMedia ? models.find((model) => model.id === roleMedia.modelId) :
+			persona?.live2dModelId === undefined ? petModels[0] : petModels.find((model) => model.id === persona.live2dModelId);
+		const runtimeReady = catalog && Object.values(catalog.vendors).every(Boolean);
+		const entry = runtimeReady ? installed : null;
+		const modelEnabled = roleMedia || persona?.live2dModelId !== null;
+		const fallback = !modelEnabled ? "" : !catalog ? "本地模型目录暂不可用" :
+			!installed ? (roleMedia ? "未安装该角色的 Live2D 模型" : "未找到本地模型 · 内置大肥鱼") :
+			!runtimeReady ? "Live2D 运行时缺失" : "";
+		const locked = ["self_check", "awaiting_platform", "stream_established", "live_confirmed", "ending"].includes(status?.liveStatus);
+		const safe = emergency || status?.liveStatus === "safe_scene";
+		const editable = connected && !!status && !locked && !pending.startsWith("live/") && pending !== "preview/stop" && !safe;
+		const active = preview?.conversationEnabled && status?.liveStatus === "local_preview";
+		const save = async (patch, next) => {
+			if (saving.current || !editable) return;
+			saving.current = true;
+			setModelNote("");
+			setSelection(next);
+			try {
+				const result = await api("settings/persona", patch);
+				if (!result.ok) throw new Error(result.error);
+				setPreview((current) => current ? { ...current, persona: next } : current);
+				await Promise.all([load(), refresh()]);
+			} catch (error) {
+				setModelNote(error.message || "保存失败，已恢复上次选择");
+			} finally {
+				saving.current = false;
+				setSelection(null);
+			}
+		};
+		const selectProfile = (id) => {
+			const profile = profiles.find((item) => item.id === id);
+			if (!profile) return;
+			save({ profileId: id, personaName: profile.name }, { ...persona, ...profile, profileId: id, media: profile.media || null });
+		};
+		const selectModel = (value) => {
+			const id = value || null;
+			save({ live2dModelId: id }, { ...persona, live2dModelId: id });
+		};
+		const ensurePreview = async (signal) => {
+			if (!editable || selection || saving.current || !status.personaReady) throw new Error("请先完成角色配置");
+			if (active) return;
+			const response = await fetch("/api/dafeiyu/preview/start", { method: "POST", credentials: "same-origin", signal });
+			const result = await response.json();
+			signal.throwIfAborted();
+			if (!result.ok || result.status?.liveStatus !== "local_preview") throw new Error(result.error || "当前无法进入本地预览");
+			// The shared status refresh runs independently of the reply.
+			load();
+			refresh(true);
+		};
+		const officialUrl = preview?.officialClientUrl || settings?.platform?.officialClientUrl;
+
+		return h("div", { className: "dfy-workbench" },
+			h("section", { className: "dfy-desk-preview", "aria-label": "实时预览" },
+				h("div", { className: "dfy-desk-stage-head" },
+					h("h3", null, "实时预览"),
+					active && !safe ? h(Btn, { tone: "ghost", disabled: busy,
+						onClick: () => act("preview/stop", {}, "结束本地对话") }, "结束本地对话") :
+						h(Badge, { tone: "idle", text: "本地画面" })),
+				h("div", { className: "dfy-desk-selectors" },
+					profiles.length && persona ? h(Field, { label: "角色" },
+						h("select", { value: persona.profileId, "aria-label": "角色", disabled: !editable || !!selection,
+							onChange: (event) => selectProfile(event.target.value) },
+							profiles.map((profile) => h("option", { key: profile.id, value: profile.id }, profile.name)))) : null,
+					!roleMedia && isDeskpetId(persona?.avatarId) ? h(Field, { label: "形象" },
+						h("select", { value: persona.live2dModelId === undefined ? "auto:" : persona.live2dModelId ?? "",
+							"aria-label": "形象", disabled: !editable || !!selection || !catalog, onChange: (event) => selectModel(event.target.value) },
+							persona.live2dModelId === undefined ? h("option", { value: "auto:", disabled: true }, "自动选择本地模型") : null,
+							h("option", { value: "" }, "内置大肥鱼"),
+							persona.live2dModelId && !installed ? h("option", { value: persona.live2dModelId, disabled: true }, "缺少模型：" + persona.live2dModelId) : null,
+							petModels.map((model) => h("option", { key: model.id, value: model.id }, model.name)))) : null,
+					h(Btn, { tone: "ghost", onClick: loadCatalog }, "刷新模型")),
+				selection || modelNote ? h("p", { className: "dfy-desk-inline", role: "status" }, modelNote || "正在保存…") : null,
+				safe ? h("div", { className: "dfy-desk-safe" },
+					h("strong", { role: "status" }, "安全场景"), h("span", null, "预览语音和动作已停止"),
+					!emergency && connected && status.personaReady ? h(Btn, { onClick: () => act("preview/start", { resume: true }, "恢复本地预览") }, "恢复本地预览") : null,
+					h("span", { className: "dfy-pet-ai" }, persona?.aiLabelText || "AI 生成内容")) :
+					persona ? h(PreviewCanvas, { preview: { ...preview, persona }, entry, sceneUrl, fallback, ...caption }) :
+						h("div", { className: "dfy-desk-safe", role: "status" }, "正在加载预览…"),
+				editable && !selection && status.personaReady ? h(PreviewConversation, {
+					key: persona?.profileId, persona, voiceId: persona?.voiceId, samplePhrase: selected?.samplePhrase, publish: setCaption,
+					ensurePreview, readReplies, setReadReplies,
+				}) : editable && !selection && !status.personaReady ? h("div", { className: "dfy-desk-inline" },
+					h(Btn, { onClick: () => goTab("wizard") }, "配置角色与声音")) : null),
+			h(WorkbenchControls, { status, act, busy: busy || !!selection, goTab, officialUrl, connected }));
 	}
 
 	// ------------------------------------------------------------------ 训练与学习
@@ -646,15 +1589,19 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			const r = await api("training/progress");
 			if (r.ok) setData(r);
 		}, []);
-		useEffect(() => { load() }, [load]);
+		useEffect(() => {
+			load();
+			const timer = setInterval(() => { if (!document.hidden) load(); }, 2500);
+			return () => clearInterval(timer);
+		}, [load]);
 		return h("div", { className: "dfy-grid" },
-			h(Card, { title: "一键训练（训练完成 ≠ 发布）" },
+			h(Card, { title: "训练记录" },
 				h(Row, { label: "训练机会", value: data ? (data.opportunity.admit ? "样本/资源/政策门通过" : data.opportunity.detail) : "—" }),
 				h(Row, { label: "学习状态", value: status ? (status.learningPaused ? "已暂停" : "观察学习中") : "—" }),
 				data && data.lastEntry ? h(Row, { label: "上次训练", value: (TRAIN_STATUS[data.lastEntry.status] || data.lastEntry.status) + "：" + data.lastEntry.detail }) : null,
 				data && data.latestRun ? h(Row, { label: "最近窗口", value: (RUN_STATUS[data.latestRun.status] || data.latestRun.status) + " · " + data.latestRun.optimizer_steps + " 步" }) : null,
 				h("div", { className: "dfy-actions" },
-					h(Btn, { tone: "primary", disabled: busy || !status || !status.trainingEligible || status.learningPaused, onClick: async () => { await act("training/train-once", {}, "训练一次"); load(); } }, "训练一次"),
+					h(Btn, { tone: "primary", disabled: busy || !status || !status.trainingEligible || status.learningPaused, onClick: async () => { await act("training/train-once", {}, "运行训练演练"); load(); } }, "运行训练演练"),
 					h(Btn, { disabled: busy || !status, onClick: async () => { await act(status && status.learningPaused ? "learning/resume" : "learning/pause", {}, "切换学习状态"); load(); } }, status && status.learningPaused ? "恢复学习" : "暂停学习"),
 					h(Btn, { tone: "ghost", onClick: load }, "刷新"))),
 			h(Card, { title: "训练语义" },
@@ -922,11 +1869,9 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 	// ------------------------------------------------------------------ 面板外壳
 
-	const TABS = [
-		{ id: "home", label: "首页", render: (ctx) => h(HomeTab, ctx) },
-		{ id: "wizard", label: "首次配置", render: (ctx) => h(WizardTab, { onSaved: ctx.refresh }) },
-		{ id: "preview", label: "直播预览", render: (ctx) => h(PreviewTab, ctx) },
-		{ id: "training", label: "训练与学习", render: (ctx) => h(TrainingTab, ctx) },
+	const MANAGE_TABS = [
+		{ id: "wizard", label: "配置", render: (ctx) => h(WizardTab, { onSaved: ctx.refresh }) },
+		{ id: "training", label: "训练记录", render: (ctx) => h(TrainingTab, ctx) },
 		{ id: "interact", label: "互动与账本", render: () => h(InteractTab) },
 		{ id: "audience", label: "观众", render: () => h(AudienceTab) },
 		{ id: "gov", label: "治理", render: (ctx) => h(GovernanceTab, ctx) },
@@ -937,72 +1882,112 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const [tab, setTab] = useState("home");
 		const [status, setStatus] = useState(null);
 		const [settings, setSettings] = useState(null);
-		const [note, setNote] = useState("");
-		const [busy, setBusy] = useState(false);
+		const [notice, setNotice] = useState("");
+		const [pending, setPending] = useState("");
+		const [emergency, setEmergency] = useState(false);
+		const [connected, setConnected] = useState(true);
+		const statusTicket = useRef(0);
+		const settingsTicket = useRef(0);
+		const action = useRef(null);
+		const emergencyAction = useRef(false);
 
-		const refresh = useCallback(async () => {
-			try {
-				const r = await api("status");
-				if (r.ok) setStatus(r.status);
-			} catch { /* 面板离线时保留上次状态 */ }
-			try {
-				const s = await api("settings");
-				if (s.ok) setSettings(s.settings);
-			} catch { /* 面板离线时保留上次设置 */ }
+		const refresh = useCallback(async (statusOnly = false) => {
+			const ticket = ++statusTicket.current;
+			const statusRequest = api("status").then((result) => {
+				if (!result.ok) throw new Error(result.error);
+				if (ticket === statusTicket.current) { setStatus(result.status); setConnected(true); }
+			}).catch(() => { if (ticket === statusTicket.current) setConnected(false); });
+			if (statusOnly) return statusRequest;
+			const configTicket = ++settingsTicket.current;
+			await Promise.all([statusRequest, api("settings").then((result) => {
+				if (configTicket === settingsTicket.current && result.ok) setSettings(result.settings);
+			}).catch(() => {})]);
 		}, []);
 
 		useEffect(() => {
+			let disposed = false;
+			let timer;
+			let ticks = 0;
 			refresh();
-			const t = setInterval(refresh, 5000);
-			return () => clearInterval(t);
-		}, [refresh]);
+			const poll = async () => {
+				if (!document.hidden) await refresh(tab === "home" && ++ticks % 5 !== 0);
+				if (!disposed) timer = setTimeout(poll, tab === "home" ? 1200 : 4000);
+			};
+			timer = setTimeout(poll, 1200);
+			const visible = () => { if (!document.hidden) refresh(); };
+			document.addEventListener("visibilitychange", visible);
+			return () => {
+				disposed = true;
+				clearTimeout(timer);
+				statusTicket.current++;
+				settingsTicket.current++;
+				document.removeEventListener("visibilitychange", visible);
+			};
+		}, [refresh, tab]);
 
 		const act = async (path, body, label) => {
-			setBusy(true); setNote(label + "…");
+			const urgent = path === "live/emergency-stop";
+			if (urgent ? emergencyAction.current : action.current || emergencyAction.current) return;
+			const operation = { superseded: false };
+			if (urgent) {
+				emergencyAction.current = true;
+				if (action.current) action.current.superseded = true;
+				setEmergency(true);
+			} else {
+				action.current = operation;
+				setPending(path);
+			}
+			setNotice(label + "…");
 			try {
-				const r = await api(path, body || {});
-				if (r.ok && r.result && typeof r.result === "object" && r.result.reason) setNote(label + "未通过：" + r.result.reason);
-				else setNote(label + (r.ok ? " 完成" : " 失败：" + (r.error || "未知错误")));
-				if (r.ok && r.status) setStatus(r.status); else await refresh();
-			} catch (e) { setNote(label + " 请求失败：" + e.message); }
-			setBusy(false);
+				const args = path === "live/start" ? { idempotencyKey: crypto.randomUUID?.() || String(Date.now()), ...body } : body || {};
+				const result = await api(path, args);
+				if (operation.superseded) return;
+				if (!result.ok) throw new Error(result.error || "操作失败");
+				if (result.status) {
+					statusTicket.current++;
+					setStatus(result.status);
+					setConnected(true);
+				}
+				const detail = result.result?.reason || result.result?.detail;
+				setNotice(detail ? label + " · " + detail :
+					urgent && status?.liveStatus === "live_confirmed" ? "已停止本地输出，请在直播伴侣停止推流" : label + "完成");
+			} catch (error) {
+				if (!operation.superseded) setNotice(label + "失败 · " + error.message);
+			} finally {
+				if (urgent) {
+					emergencyAction.current = false;
+					setEmergency(false);
+				} else {
+					action.current = null;
+					setPending("");
+				}
+				if (!operation.superseded) refresh(true);
+			}
 		};
-
-		const ctx = { status: status, settings: settings, act: act, busy: busy, refresh: refresh, goTab: setTab };
-		const current = TABS.find((t) => t.id === tab) || TABS[0];
-		const live = status && status.liveStatus === "live_confirmed";
-		const starting = status && ["self_check", "local_preview", "awaiting_platform", "stream_established"].includes(status.liveStatus);
-		const headTone = live ? "ok" : starting ? "warn" : "idle";
-
-		return h("div", { className: "dfy-root" },
-			h("header", { className: "dfy-head" },
+		const current = MANAGE_TABS.find((item) => item.id === tab);
+		const live = status?.liveStatus === "live_confirmed";
+		const ctx = { status, settings, act, pending, busy: !!pending || emergency, connected, emergency, refresh, goTab: setTab };
+		return h("div", { className: "dfy-root dfy-desk-root" },
+			h("header", { className: "dfy-head dfy-desk-header" },
 				h(FishIcon, { size: 26 }),
-				h("div", { className: "dfy-head-t" },
-					h("h2", null, "大肥鱼直播"),
-					h("p", { className: "dfy-caption" }, "本地优先 · 自学习直播 · 平台未确认不显示直播中")),
-				h("div", { className: "dfy-head-x" },
-					h(Badge, { tone: headTone, dot: live, text: status ? status.liveDisplay : "连接中…" }),
-					status ? h(Badge, { tone: status.personaReady && status.platformReady ? "ok" : "err", text: status.personaReady && status.platformReady ? "配置就绪" : "待配置" }) : null)),
-			h("nav", { className: "dfy-tabs", role: "tablist", "aria-label": "面板页签",
-				onKeyDown: (e) => {
-					if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-					e.preventDefault();
-					const i = TABS.findIndex((t) => t.id === tab);
-					const next = e.key === "ArrowRight" ? (i + 1) % TABS.length : (i - 1 + TABS.length) % TABS.length;
-					setTab(TABS[next].id);
-				} },
-				TABS.map((t) => h("button", {
-					key: t.id, type: "button", role: "tab", "aria-selected": tab === t.id,
-					tabIndex: tab === t.id ? 0 : -1,
-					className: "dfy-tab" + (tab === t.id ? " dfy-tab-on" : ""),
-					onClick: () => setTab(t.id),
-				}, t.label))),
-			h("div", { className: "dfy-body" },
-				current.render(ctx),
-				h(Toast, { note: note })),
-			h("footer", { className: "dfy-foot" },
-				h("span", { className: "dfy-caption" }, "紧急停止立即进入安全场景（停语音与动作）；与「暂停学习」不同。"),
-				h(Btn, { tone: "danger", disabled: busy || !status, onClick: () => act("live/emergency-stop", {}, "紧急停止播出") }, "紧急停止播出")));
+				h("h2", null, "大肥鱼直播"),
+				h("nav", { className: "dfy-desk-nav", "aria-label": "页面" },
+					h("button", { type: "button", className: "dfy-tab" + (!current ? " dfy-tab-on" : ""),
+						"aria-current": !current ? "page" : undefined, onClick: () => setTab("home") }, "工作台"),
+					h("button", { type: "button", className: "dfy-tab" + (current ? " dfy-tab-on" : ""),
+						"aria-current": current ? "page" : undefined, onClick: () => setTab(current?.id || "wizard") }, "管理")),
+				h("div", { className: "dfy-head-x" }, h(Badge, { tone: !connected ? "err" : live ? "ok" : "idle", dot: live && connected,
+					text: !connected ? "连接中断" : status?.liveDisplay || "连接中…" }))),
+			h("main", { className: "dfy-body dfy-desk-body" },
+				current ? h("div", { className: "dfy-manage" },
+					h("nav", { className: "dfy-manage-nav", "aria-label": "管理分类" },
+						MANAGE_TABS.map((item) => h("button", { key: item.id, type: "button", className: "dfy-tab" + (item.id === tab ? " dfy-tab-on" : ""),
+							"aria-current": item.id === tab ? "page" : undefined, onClick: () => setTab(item.id) }, item.label))),
+					h("div", { className: "dfy-manage-content" }, current.render(ctx))) : h(Workbench, ctx)),
+			h("footer", { className: "dfy-foot dfy-desk-foot" },
+				h("span", { className: "dfy-caption", role: "status" }, notice || (!connected ? "正在重新连接…" : "")),
+				h(Btn, { tone: "danger", disabled: emergency, onClick: () => act("live/emergency-stop", {}, "紧急停止播出") },
+					emergency ? "正在停止…" : "紧急停止播出")));
 	}
 
 	const apply = (ctx) => {

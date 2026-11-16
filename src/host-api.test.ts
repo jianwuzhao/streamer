@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createPlugin } from './index.ts'
@@ -106,6 +106,8 @@ test('host-api：状态/四主操作/紧急停止路由；非本插件路径放�
     // 紧急停止 → 安全场景
     const p4 = await call(handler, 'POST', '/api/dafeiyu/live/emergency-stop')
     assert.equal(p4.payload.status.liveStatus, 'safe_scene')
+    assert.equal((await call(handler, 'POST', '/api/dafeiyu/preview/start')).code, 409)
+    assert.equal((await call(handler, 'POST', '/api/dafeiyu/preview/start', { resume: true })).payload.status.liveStatus, 'local_preview')
 
     // 训练一次（null 预算 → learning gate 如实报告）
     const p5 = await call(handler, 'POST', '/api/dafeiyu/training/train-once')
@@ -382,6 +384,220 @@ test('host-api：观众画像管理（列表/详情/纠错/退出个性化/删�
     const aud = await call(handler, 'GET', '/api/dafeiyu/governance/audit')
     assert.ok(aud.payload.audits.some((a: { action: string }) => a.action === 'profile_deletion'))
     assert.ok(aud.payload.notes.length >= 1)
+  } finally {
+    plugin.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('host-api：Live2D 桌宠资产路由（catalog/vendor/model-file 与安全防护）', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-avatar-api-'))
+  // 临时模型包与 vendor 目录（不依赖仓库内真实资产）
+  const modelsDir = join(dataDir, 'models')
+  const vendorDir = join(dataDir, 'vendor')
+  mkdirSync(join(modelsDir, 'hiyori'), { recursive: true })
+  mkdirSync(vendorDir, { recursive: true })
+  writeFileSync(join(modelsDir, 'hiyori', 'hiyori.model3.json'), JSON.stringify({ Version: 3, FileReferences: { Moc: 'hiyori.moc3' } }))
+  writeFileSync(join(modelsDir, 'hiyori', 'hiyori.moc3'), 'MOC3FAKE')
+  writeFileSync(join(vendorDir, 'live2dcubismcore.min.js'), '// core')
+  writeFileSync(join(vendorDir, 'pixi.min.js'), '// pixi')
+  writeFileSync(join(vendorDir, 'pixi-live2d-display.min.js'), '// ext')
+  process.env.DAFEIYU_VENDOR_DIR = vendorDir
+  try {
+    const plugin = createPlugin({ dataDir, log: () => {} })
+    const handler = createRequestHandler(plugin)
+
+    const cat = await call(handler, 'GET', '/api/dafeiyu/avatar/catalog')
+    assert.equal(cat.payload.ok, true)
+    assert.deepEqual(cat.payload.catalog.vendors, { core: true, pixi: true, extension: true })
+    assert.equal(cat.payload.catalog.models.length, 1)
+    assert.equal(cat.payload.catalog.models[0].entry, 'hiyori.model3.json')
+
+    const v = await call(handler, 'GET', '/api/dafeiyu/avatar/vendor?name=core')
+    assert.equal(v.payload.ok, true)
+    assert.equal(v.payload.vendor.text, '// core')
+    const bad = await call(handler, 'GET', '/api/dafeiyu/avatar/vendor?name=evil')
+    assert.equal(bad.code, 400)
+
+    const f = await call(handler, 'GET', '/api/dafeiyu/avatar/model-file?id=hiyori&path=hiyori.moc3')
+    assert.equal(f.payload.ok, true)
+    assert.equal(Buffer.from(f.payload.file.base64, 'base64').toString(), 'MOC3FAKE')
+    const escape = await call(handler, 'GET', '/api/dafeiyu/avatar/model-file?id=hiyori&path=../vendor/pixi.min.js')
+    assert.equal(escape.code, 400)
+  } finally {
+    delete process.env.DAFEIYU_VENDOR_DIR
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('本地预览对话仅在预览期间有效，不登记直播回复，晚到的回复被丢弃', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-preview-'))
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  try {
+    const handler = createRequestHandler(plugin)
+    const path = '/api/dafeiyu/preview/chat'
+    const message = { text: '  大肥鱼你好  ' }
+    const originalRoute = plugin.router.route.bind(plugin.router)
+    let finishRoute: (() => void) | undefined
+    plugin.router.route = async (request, context) => {
+      assert.equal(request.text, '大肥鱼你好')
+      assert.equal(context.localOnly, true)
+      assert.equal(context.previewCharacter, '大肥鱼')
+      await new Promise<void>((resolve) => { finishRoute = resolve })
+      return { requestId: request.requestId, playbackKey: request.requestId, text: '你好！',
+        route: 'local_gpu', latencyMs: 0, usageId: null }
+    }
+
+    assert.equal((await call(handler, 'POST', path, message)).code, 409)
+    await configureWizardBasics(handler)
+    await call(handler, 'POST', '/api/dafeiyu/preview/start')
+    assert.equal((await call(handler, 'POST', path, { text: ' '.repeat(2) })).code, 400)
+    assert.equal((await call(handler, 'POST', path, { text: '中'.repeat(501) })).code, 400)
+    assert.equal((await call(handler, 'POST', path, { text: '中'.repeat(3000) })).code, 413)
+    const valid = call(handler, 'POST', path, message)
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal((await call(handler, 'POST', path, message)).code, 409)
+    assert.ok(finishRoute)
+    finishRoute()
+    assert.equal((await valid).payload.result.text, '你好！')
+    assert.equal(plugin.db.prepare('SELECT COUNT(*) AS count FROM reply_log').get()?.count, 0)
+
+    const late = call(handler, 'POST', path, message)
+    await new Promise((resolve) => setImmediate(resolve))
+    await call(handler, 'POST', '/api/dafeiyu/preview/stop')
+    await call(handler, 'POST', '/api/dafeiyu/preview/start')
+    finishRoute()
+    assert.equal((await late).code, 409)
+    plugin.router.route = originalRoute
+  } finally {
+    plugin.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('本地预览描述符保留旧设置，并回传保存的桌宠模型与朗读风格', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-preview-model-'))
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  try {
+    const handler = createRequestHandler(plugin)
+    const path = '/api/dafeiyu/preview'
+    assert.equal((await call(handler, 'GET', path)).payload.preview.persona.live2dModelId, undefined)
+    for (const id of ['Hiyori', null]) {
+      assert.equal((await call(handler, 'POST', '/api/dafeiyu/settings/persona',
+        { live2dModelId: id, voiceId: 'tong-qu' })).code, 200)
+      const { persona } = (await call(handler, 'GET', path)).payload.preview
+      assert.equal(persona.live2dModelId, id)
+      assert.equal(persona.voiceId, 'tong-qu')
+    }
+    assert.equal((await call(handler, 'POST', '/api/dafeiyu/settings/persona', { live2dModelId: '../x' })).code, 400)
+    const audition = await call(handler, 'POST', path + '/voice-test', { phrase: '  测试你好  ', voiceId: 'chen-lang' })
+    assert.equal(audition.payload.result.phrase, '测试你好')
+    assert.equal(audition.payload.result.voice.id, 'chen-lang')
+    assert.equal(plugin.settings.getPersona().voiceId, 'tong-qu')
+  } finally {
+    plugin.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('四位鹅次元角色分别暴露官方立绘、试听和本地模型目录', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-preview-roles-'))
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  try {
+    const handler = createRequestHandler(plugin)
+    const preview = '/api/dafeiyu/preview'
+    assert.equal((await call(handler, 'GET', preview)).payload.preview.persona.media, null)
+    for (const [id, slug, name] of [
+      ['xiaxia', 'xiaxia', '夏夏'],
+      ['lubai', 'shenlubai', '沈露白'],
+      ['guyu', 'guyu', '谷雨'],
+      ['beila', 'beila', '贝拉'],
+    ]) {
+      const saved = await call(handler, 'POST', '/api/dafeiyu/settings/persona', { profileId: id })
+      assert.equal(saved.code, 200)
+      const { persona } = (await call(handler, 'GET', preview)).payload.preview
+      assert.equal(persona.name, name)
+      assert.equal(persona.media.modelId, `eciyuan-${id}`)
+      assert.ok(persona.media.portraitUrl.endsWith(`/images/roles/${slug}/pc-cover.jpg`))
+      assert.ok(persona.media.sampleAudioUrl.endsWith(`/audio/${slug}.wav`))
+    }
+  } finally {
+    plugin.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('角色动态形象通过本地目录和受限视频接口提供，支持浏览器范围请求', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-scene-'))
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  try {
+    const dir = join(dataDir, 'models', 'eciyuan-xiaxia')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'scene.mp4'), '0123456789')
+    const handler = createRequestHandler(plugin)
+    const catalog = await call(handler, 'GET', '/api/dafeiyu/avatar/catalog')
+    assert.deepEqual(catalog.payload.catalog.scenes, ['eciyuan-xiaxia'])
+    assert.deepEqual(catalog.payload.catalog.models, [])
+    const path = '/api/dafeiyu/avatar/scene?id=eciyuan-xiaxia'
+    const res = makeRes()
+    await handler({ ...makeReq('GET', path), headers: { range: 'bytes=2-5' } }, res, async () => {})
+    assert.equal(res.statusCode, 206)
+    assert.equal(res.headers['content-type'], 'video/mp4')
+    assert.equal(res.headers['content-range'], 'bytes 2-5/10')
+    assert.equal(String(res.body), '2345')
+    const invalid = makeRes()
+    await handler({ ...makeReq('GET', path), headers: { range: 'bytes=20-' } }, invalid, async () => {})
+    assert.equal(invalid.statusCode, 416)
+    assert.equal((await call(handler, 'GET', '/api/dafeiyu/avatar/scene?id=../outside')).code, 404)
+    assert.equal((await call(handler, 'GET', '/api/dafeiyu/avatar/model-file?id=eciyuan-xiaxia&path=scene.mp4')).code, 400)
+  } finally {
+    plugin.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('角色语音请求校验授权、当前角色与文本边界', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-role-voice-'))
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  try {
+    const handler = createRequestHandler(plugin)
+    const path = '/api/dafeiyu/preview/role-speech'
+    assert.equal((await call(handler, 'POST', path, { profileId: 'xiaxia', text: '你好' })).code, 400)
+    plugin.settings.savePersona({ profileId: 'xiaxia', usageRightConfirmed: true })
+    assert.equal((await call(handler, 'POST', path, { profileId: 'beila', text: '你好' })).code, 409)
+    assert.equal((await call(handler, 'POST', path, { profileId: 'xiaxia', text: '你'.repeat(501) })).code, 400)
+    assert.equal((await call(handler, 'POST', path, { profileId: 'xiaxia', text: '你'.repeat(3000) })).code, 413)
+  } finally {
+    plugin.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('流式角色语音先下发音频分块，再结束响应', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-role-stream-'))
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  try {
+    plugin.settings.savePersona({ profileId: 'xiaxia', usageRightConfirmed: true })
+    const chunks: string[] = []
+    let finish!: () => void
+    plugin.referenceVoiceStream.speak = async (profile, text, receive) => {
+      assert.equal(profile, 'xiaxia')
+      assert.equal(text, '你好')
+      receive({ sampleRate: 24000, pcm: 'AAABAA==' })
+      await new Promise<void>((resolve) => { finish = resolve })
+      return true
+    }
+    const response = Object.assign(makeRes(), { write(chunk: string) { chunks.push(chunk) } })
+    const handler = createRequestHandler(plugin)
+    const request = handler(makeReq('POST', '/api/dafeiyu/preview/role-speech',
+      JSON.stringify({ profileId: 'xiaxia', text: '你好', stream: true })), response, async () => {})
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(response.headers['content-type'], 'application/x-ndjson; charset=utf-8')
+    assert.equal(JSON.parse(chunks[0]!).type, 'audio')
+    assert.equal(response.body, '')
+    finish()
+    await request
+    assert.equal(JSON.parse(response.body).type, 'end')
   } finally {
     plugin.dispose()
     rmSync(dataDir, { recursive: true, force: true })

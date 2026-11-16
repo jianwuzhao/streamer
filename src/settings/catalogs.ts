@@ -20,6 +20,20 @@ export interface VoiceOption {
 }
 
 /**
+ * 官方媒体档案：鹅次元官网公开素材（封面 / 试听音频）+ 本插件本地 Live2D 包 id。
+ * - 两个 URL 均为官网公开静态资源（无鉴权），仅用于预览展示与试听；
+ * - `modelId` 为确定性本地包 id（不依赖运行时目录探测），前端按需加载。
+ */
+export interface ProfileMedia {
+  /** 官方公开立绘/封面图 */
+  readonly portraitUrl: string
+  /** 官方公开试听音频 */
+  readonly sampleAudioUrl: string
+  /** 本地 Live2D 模型包 id（确定性映射） */
+  readonly modelId: string
+}
+
+/**
  * 角色档案（参照腾讯《鹅次元》官网 eciyuan.qq.com 的 CHARACTERS 角色介绍：
  * 中文名 / 英文名 / # 一句人设标签 / 年龄·身高·星座·性格 MBTI 信息列表）。
  * 「主播信息」由这些档案驱动，不再是一串自由输入的表单字段。
@@ -46,10 +60,24 @@ export interface ProfileOption {
   readonly bio: string
   /** 档案卡主题色（预览画布/卡片用） */
   readonly theme: { readonly bg: string; readonly primary: string; readonly accent: string }
+  /** 官方媒体档案（仅官网角色携带；插件内桌宠角色无官方素材，保持缺省） */
+  readonly media?: ProfileMedia
   /** 来源：官网角色 / 本插件内角色 */
   readonly source: 'eciyuan' | 'plugin'
   /** 桌宠形象（dsh-pet）标记 */
   readonly style: 'classic' | 'deskpet'
+}
+
+/** 鹅次元官网公开静态资源基址（官方站点 JS 引用的封面/音频所在域名）。 */
+const ECIYUAN_MEDIA_BASE = 'https://upage.imtt.qq.com/m_imtt/gamebuddy'
+
+/** 由官网角色 slug 与本地模型包 id 组装媒体档案（封面/音频路径为官网既定约定）。 */
+function eciyuanMedia(slug: string, modelId: string): ProfileMedia {
+  return {
+    portraitUrl: `${ECIYUAN_MEDIA_BASE}/images/roles/${slug}/pc-cover.jpg`,
+    sampleAudioUrl: `${ECIYUAN_MEDIA_BASE}/audio/${slug}.wav`,
+    modelId,
+  }
 }
 
 export const BUILTIN_PROFILES: readonly ProfileOption[] = [
@@ -78,6 +106,7 @@ export const BUILTIN_PROFILES: readonly ProfileOption[] = [
     mbti: 'ENFP',
     bio: '元气满满的校园搭子，懂梗、爱聊天，情绪价值永远在线。',
     theme: { bg: '#3a2440', primary: '#7b4b8a', accent: '#ffd6ec' },
+    media: eciyuanMedia('xiaxia', 'eciyuan-xiaxia'),
     source: 'eciyuan',
     style: 'classic',
   },
@@ -92,6 +121,7 @@ export const BUILTIN_PROFILES: readonly ProfileOption[] = [
     mbti: 'INTP',
     bio: '冷静犀利的战术脑，游戏理解在线，讲解向陪玩首选。',
     theme: { bg: '#10243a', primary: '#2b5c8a', accent: '#9fdcff' },
+    media: eciyuanMedia('shenlubai', 'eciyuan-lubai'),
     source: 'eciyuan',
     style: 'classic',
   },
@@ -106,6 +136,7 @@ export const BUILTIN_PROFILES: readonly ProfileOption[] = [
     mbti: 'INFJ',
     bio: '温和细致的生活家，把每一场陪伴都料理得妥帖。',
     theme: { bg: '#3a2a12', primary: '#8a6a1f', accent: '#ffe3a3' },
+    media: eciyuanMedia('guyu', 'eciyuan-guyu'),
     source: 'eciyuan',
     style: 'classic',
   },
@@ -120,6 +151,7 @@ export const BUILTIN_PROFILES: readonly ProfileOption[] = [
     mbti: 'ESTP',
     bio: '风一样利落的竞技搭子，节奏快、反应更快。',
     theme: { bg: '#3a1420', primary: '#8a2b45', accent: '#ffb3c6' },
+    media: eciyuanMedia('beila', 'eciyuan-beila'),
     source: 'eciyuan',
     style: 'classic',
   },
@@ -162,6 +194,45 @@ export const BUILTIN_AVATARS: readonly AvatarOption[] = [
     style: 'classic',
   },
 ]
+
+/**
+ * 云端服务商预设（OpenAI 兼容端点）：向导第 4 步的快捷选项。
+ * - 预设只固化「端点 baseURL + 建议模型名」这类公开信息，不涉及任何凭据；
+ *   API Key 仍只走环境变量 DAFEIYU_CLOUD_API_KEY（不落库）。
+ * - baseURL 解析优先级：DAFEIYU_CLOUD_BASE_URL 环境变量 > 预设内置值 > 不可路由占位。
+ *   自定义服务商（不在预设内）保持原行为：必须用环境变量提供端点。
+ */
+export interface CloudProviderPreset {
+  /** 写入 settings.cloud.provider 的标识（也是预设匹配键） */
+  readonly id: string
+  readonly label: string
+  readonly baseUrl: string
+  readonly models: readonly string[]
+  readonly note: string
+}
+
+export const CLOUD_PROVIDER_PRESETS: readonly CloudProviderPreset[] = [
+  {
+    id: 'tencent-hunyuan',
+    label: '腾讯云混元',
+    baseUrl: 'https://api.hunyuan.cloud.tencent.com/v1',
+    models: ['hunyuan-lite', 'hunyuan-standard', 'hunyuan-pro', 'hunyuan-turbo', 'hunyuan-t1'],
+    note: '腾讯混元官方 OpenAI 兼容端点；API Key 为腾讯云密钥（仅设 DAFEIYU_CLOUD_API_KEY），模型名以腾讯云控制台为准。',
+  },
+  {
+    id: 'deepseek',
+    label: 'DeepSeek 官方',
+    baseUrl: 'https://api.deepseek.com/v1',
+    models: ['deepseek-chat', 'deepseek-reasoner'],
+    note: 'DeepSeek 官方 OpenAI 兼容端点；API Key 仅经 DAFEIYU_CLOUD_API_KEY 提供。',
+  },
+]
+
+/** 按服务商名解析预设端点；未命中返回 null（自定义服务商需环境变量提供端点）。 */
+export function resolveCloudBaseUrl(provider: string): string | null {
+  const hit = CLOUD_PROVIDER_PRESETS.find((p) => p.id === provider.trim())
+  return hit ? hit.baseUrl : null
+}
 
 export const BUILTIN_VOICES: readonly VoiceOption[] = [
   { id: 'qing-wan', label: '清婉（女声）', lang: 'zh-CN', style: '温和亲切，日常闲聊' },

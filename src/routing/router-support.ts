@@ -38,6 +38,9 @@ export interface RouterDeps {
 }
 
 export interface RouteContext {
+  readonly localOnly?: boolean
+  readonly previewCharacter?: string
+  readonly previewDescription?: string
   /** 近期已播出回复（重复检测） */
   readonly recentReplies: readonly string[]
   /** 请求结构化输出时提供 */

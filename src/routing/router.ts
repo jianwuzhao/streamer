@@ -32,6 +32,14 @@ export class RequestRouter {
     this.registry = deps.registry ?? new GenerationRegistry()
   }
 
+  async routePreview(request: LiveRequest, character: string, description?: string): Promise<AnswerReceipt> {
+    try {
+      return await this.route(request, { recentReplies: [], localOnly: true, previewCharacter: character, ...(description ? { previewDescription: description } : {}) })
+    } finally {
+      this.registry.cleanup(request.requestId)
+    }
+  }
+
   async route(request: LiveRequest, ctx: RouteContext): Promise<AnswerReceipt> {
     const t0 = this.now()
     const budget = new RequestBudget(budgetSpecFromConfig(this.deps.config), () => this.now()).start()
@@ -85,7 +93,7 @@ export class RequestRouter {
 
     // 2. 第三方一次：能力不足/质量门失败/本地不可用均允许升级；
     //    POLICY_BLOCKED 已在上面短路；预算不足或未配置不调用（§18 注）。
-    if (this.deps.cloud !== undefined && this.deps.featureGates.cloudCallsEnabled) {
+    if (!ctx.localOnly && this.deps.cloud !== undefined && this.deps.featureGates.cloudCallsEnabled) {
       if (budget.availableForGenerationMs() > 0) {
         const outcome = await this.attemptAdapter(request, this.deps.cloud, ctx, budget, t0)
         if (outcome.delivered && outcome.receipt) {
@@ -132,7 +140,7 @@ export class RequestRouter {
     try {
       result = await adapter.generate(
         {
-          messages: this.buildMessages(request),
+          messages: this.buildMessages(request, ctx),
           maxOutputTokens: this.deps.config.models.local.maxOutputTokens,
           ...(ctx.responseSchema !== undefined ? { responseSchema: ctx.responseSchema } : {}),
         },
@@ -190,7 +198,7 @@ export class RequestRouter {
       const result = await adapter.generate(
         {
           messages: [
-            ...this.buildMessages(request),
+            ...this.buildMessages(request, ctx),
             { role: 'assistant', text: badOutput },
             {
               role: 'user',
@@ -279,11 +287,14 @@ export class RequestRouter {
     }
   }
 
-  private buildMessages(request: LiveRequest) {
+  private buildMessages(request: LiveRequest, ctx: RouteContext) {
+    const instruction = ctx.previewCharacter === undefined
+      ? `你是直播角色「${this.deps.config.scope.characterId}」，用简短、口语化的中文回复弹幕，单条回复不超过两句话。`
+      : `你是「${ctx.previewCharacter}」，正在本地预览中与操作者对话。${ctx.previewDescription ? `角色设定：${ctx.previewDescription}。` : ''}用简短、口语化的中文回答，单条回复不超过两句话。`
     return [
       {
         role: 'system' as const,
-        text: `你是直播角色「${this.deps.config.scope.characterId}」，用简短、口语化的中文回复弹幕，单条回复不超过两句话。`,
+        text: instruction,
       },
       { role: 'user' as const, text: request.text },
     ]

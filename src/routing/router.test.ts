@@ -255,3 +255,13 @@ test('云端未配置（provider=configure_before_acceptance）：跳过云端�
   assert.equal(receipt.route, 'fallback')
   assert.equal(cloud.calls, 0)
 })
+
+test('本地预览：本地推理不可用时使用预设回复，跳过已配置的云端模型', async () => {
+  const gpu = new FakeAdapter('gpu', 'local_gpu', 'local', [new ModelCallError('LOCAL_UNAVAILABLE', 'offline')])
+  const cloud = new FakeAdapter('cloud', 'cloud', 'cloud', [ok('来自云端')])
+  const { router } = makeRouter({ config: cloudEnabledConfig(), localGpu: gpu, cloud })
+  const receipt = await router.route(makeReq('preview'), { recentReplies: [], localOnly: true })
+  assert.equal(receipt.route, 'fallback')
+  assert.equal(gpu.calls, 1)
+  assert.equal(cloud.calls, 0)
+})

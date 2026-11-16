@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { migrate, openDatabase } from '../storage/db.ts'
-import { BUILTIN_AVATARS, BUILTIN_VOICES, BUILTIN_PROFILES, resolveProfile } from './catalogs.ts'
+import { BUILTIN_AVATARS, BUILTIN_VOICES, BUILTIN_PROFILES, resolveProfile, CLOUD_PROVIDER_PRESETS, resolveCloudBaseUrl } from './catalogs.ts'
 import { SettingsStore, SettingsValidationError } from './store.ts'
 
 function makeStore() {
@@ -184,4 +184,17 @@ test('settings：切换 role profile 后 getPersonaProfile 跟随选中档案且
     db.close()
     rmSync(dataDir, { recursive: true, force: true })
   }
+})
+
+test('catalogs：云端服务商预设——混元/DeepSeek 端点解析与未命中回落', () => {
+  // 预设含腾讯云混元（OpenAI 兼容端点），模型名非空
+  const hunyuan = CLOUD_PROVIDER_PRESETS.find((p) => p.id === 'tencent-hunyuan')
+  assert.ok(hunyuan !== undefined, '应内置腾讯云混元预设')
+  assert.equal(hunyuan?.baseUrl, 'https://api.hunyuan.cloud.tencent.com/v1')
+  assert.ok((hunyuan?.models.length ?? 0) > 0)
+  // 预设命中 → 内置端点；未命中（自定义）→ null（仍需环境变量提供端点）
+  assert.equal(resolveCloudBaseUrl('tencent-hunyuan'), 'https://api.hunyuan.cloud.tencent.com/v1')
+  assert.equal(resolveCloudBaseUrl(' deepseek '), 'https://api.deepseek.com/v1')
+  assert.equal(resolveCloudBaseUrl('my-own-gateway'), null)
+  assert.equal(resolveCloudBaseUrl(''), null)
 })
