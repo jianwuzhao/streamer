@@ -3,7 +3,8 @@ import { test } from 'node:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createPlugin } from './index.ts'
+import { loadConfig } from './config.ts'
+import { createPlugin, packageDir } from './index.ts'
 import { buildStatus, createRequestHandler } from './host-api.ts'
 
 function makeRes() {
@@ -598,6 +599,299 @@ test('流式角色语音先下发音频分块，再结束响应', async () => {
     finish()
     await request
     assert.equal(JSON.parse(response.body).type, 'end')
+  } finally {
+    plugin.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('host-api：云端密钥界面维护——明文永不回传，env 优先展示', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-key-'))
+  const previous = process.env.DAFEIYU_CLOUD_API_KEY
+  delete process.env.DAFEIYU_CLOUD_API_KEY
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  try {
+    const handler = createRequestHandler(plugin)
+    // 空密钥被拒
+    const bad = await call(handler, 'POST', '/api/dafeiyu/settings/cloud/key', { apiKey: '   ' })
+    assert.equal(bad.code, 400)
+    // 保存 → 只回掩码状态
+    const saved = await call(handler, 'POST', '/api/dafeiyu/settings/cloud/key', { apiKey: 'sk-panel-abcd9999' })
+    assert.equal(saved.payload.ok, true)
+    assert.equal(saved.payload.cloudKey.source, 'ui')
+    assert.equal(saved.payload.cloudKey.masked, 'sk-••••9999')
+    // settings GET 带 cloudKey 状态且不含明文
+    const settings = await call(handler, 'GET', '/api/dafeiyu/settings')
+    const raw = JSON.stringify(settings.payload)
+    assert.ok(!raw.includes('sk-panel-abcd9999'), 'settings 响应不得包含密钥明文')
+    assert.equal(settings.payload.settings.cloudKey.masked, 'sk-••••9999')
+    // 环境变量优先
+    process.env.DAFEIYU_CLOUD_API_KEY = 'env-aaaaaaaaaa'
+    const envFirst = await call(handler, 'GET', '/api/dafeiyu/settings')
+    assert.equal(envFirst.payload.settings.cloudKey.source, 'env')
+    // 清除只清界面值
+    const cleared = await call(handler, 'POST', '/api/dafeiyu/settings/cloud/key', { clear: true })
+    assert.equal(cleared.payload.cloudKey.source, 'env')
+    delete process.env.DAFEIYU_CLOUD_API_KEY
+    const afterClear = await call(handler, 'GET', '/api/dafeiyu/settings')
+    assert.equal(afterClear.payload.settings.cloudKey.source, 'none')
+  } finally {
+    if (previous === undefined) delete process.env.DAFEIYU_CLOUD_API_KEY
+    else process.env.DAFEIYU_CLOUD_API_KEY = previous
+    plugin.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('host-api：云端配置连接测试——成功/密钥无效/端点缺失（不写入设置）', async (t) => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-cloudtest-'))
+  const previous = { ...process.env }
+  delete process.env.DAFEIYU_CLOUD_API_KEY
+  delete process.env.DAFEIYU_CLOUD_BASE_URL
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  const handler = createRequestHandler(plugin)
+  try {
+    // 自定义服务商且无环境端点 → 400（表单可直接显示原因）
+    const noBase = await call(handler, 'POST', '/api/dafeiyu/settings/cloud/test', { provider: 'my-gw', model: 'm' })
+    assert.equal(noBase.code, 400)
+    // 缺密钥 → 400
+    const noKey = await call(handler, 'POST', '/api/dafeiyu/settings/cloud/test', { provider: 'deepseek', model: 'deepseek-chat' })
+    assert.equal(noKey.code, 400)
+    assert.ok(noKey.payload.error.includes('API Key'))
+    // 服务商 401 → ok:false 带状态提示
+    t.mock.method(globalThis, 'fetch', async () => new Response('unauthorized', { status: 401 }))
+    const denied = await call(handler, 'POST', '/api/dafeiyu/settings/cloud/test', {
+      provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-bad',
+    })
+    assert.equal(denied.code, 200)
+    assert.equal(denied.payload.ok, false)
+    assert.ok(String(denied.payload.error).includes('401'))
+    assert.ok(String(denied.payload.error).includes('密钥无效'))
+    assert.equal(denied.payload.keySource, 'form')
+    // 成功 → ok:true + 模型回复摘要；不写入任何设置
+    t.mock.method(globalThis, 'fetch', async () =>
+      Response.json({ choices: [{ message: { content: '连接成功' } }] }))
+    const ok = await call(handler, 'POST', '/api/dafeiyu/settings/cloud/test', {
+      provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-good',
+    })
+    assert.equal(ok.payload.ok, true)
+    assert.equal(ok.payload.detail, '连接成功')
+    assert.equal(ok.payload.baseURL, 'https://api.deepseek.com/v1')
+    const settings = await call(handler, 'GET', '/api/dafeiyu/settings')
+    assert.ok(!JSON.stringify(settings.payload).includes('sk-good'), '测试不得写入密钥')
+    assert.equal(settings.payload.settings.cloud.provider, '')
+  } finally {
+    for (const key of ['DAFEIYU_CLOUD_API_KEY', 'DAFEIYU_CLOUD_BASE_URL']) {
+      if (previous[key] === undefined) delete process.env[key]
+      else process.env[key] = previous[key]
+    }
+    plugin.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('host-api：模型额度查询——DeepSeek 余额 / billing 风格 / 未配置与不支持', async (t) => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-quota-'))
+  const previous = { ...process.env }
+  delete process.env.DAFEIYU_CLOUD_API_KEY
+  delete process.env.DAFEIYU_CLOUD_BASE_URL
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  const handler = createRequestHandler(plugin)
+  try {
+    // 未配置服务商 → 明确原因
+    const unconfigured = await call(handler, 'GET', '/api/dafeiyu/cloud/quota')
+    assert.equal(unconfigured.payload.ok, false)
+    assert.ok(String(unconfigured.payload.error).includes('未配置'))
+
+    // 配置 DeepSeek + 密钥（保存即生效）→ /user/balance 解析余额
+    await call(handler, 'POST', '/api/dafeiyu/settings/cloud', { enabled: true, provider: 'deepseek', model: 'deepseek-chat', dailyBudgetCny: 5 })
+    await call(handler, 'POST', '/api/dafeiyu/settings/cloud/key', { apiKey: 'sk-quota-test' })
+    t.mock.method(globalThis, 'fetch', async (url: unknown) => {
+      assert.ok(String(url).endsWith('/user/balance'), 'DeepSeek 余额应查源站根 /user/balance')
+      return Response.json({
+        is_available: true,
+        balance_infos: [{ currency: 'CNY', total_balance: '110.00', granted_balance: '10.00', tipped_balance: '100.00' }],
+      })
+    })
+    const deepseek = await call(handler, 'GET', '/api/dafeiyu/cloud/quota')
+    assert.equal(deepseek.payload.ok, true)
+    assert.equal(deepseek.payload.supported, true)
+    assert.equal(deepseek.payload.source, 'deepseek')
+    assert.equal(deepseek.payload.quota.availableText, 'CNY 110.00')
+    assert.equal(deepseek.payload.quota.details.length, 3)
+
+    // 自定义网关（one-api 风格 billing）：订阅额度 + 本年用量 → 可用余额
+    process.env.DAFEIYU_CLOUD_BASE_URL = 'http://stub-gw/v1'
+    t.mock.method(globalThis, 'fetch', async (url: unknown) => {
+      if (String(url).includes('/dashboard/billing/subscription')) {
+        return Response.json({ hard_limit_usd: 20 })
+      }
+      if (String(url).includes('/dashboard/billing/usage')) {
+        return Response.json({ total_usage: 150 })
+      }
+      throw new Error('unexpected url ' + String(url))
+    })
+    const billing = await call(handler, 'GET', '/api/dafeiyu/cloud/quota')
+    assert.equal(billing.payload.ok, true)
+    assert.equal(billing.payload.source, 'openai_billing')
+    assert.equal(billing.payload.quota.availableText, '$18.50')
+    assert.ok(billing.payload.quota.details.some((d: { label: string }) => d.label === '本年已用'))
+
+    // 端点不提供 billing（404）→ supported:false 如实标注，不编造数值
+    t.mock.method(globalThis, 'fetch', async () => new Response('', { status: 404 }))
+    const unsupported = await call(handler, 'GET', '/api/dafeiyu/cloud/quota')
+    assert.equal(unsupported.payload.ok, true)
+    assert.equal(unsupported.payload.supported, false)
+    assert.ok(String(unsupported.payload.note).includes('控制台'))
+  } finally {
+    for (const key of ['DAFEIYU_CLOUD_API_KEY', 'DAFEIYU_CLOUD_BASE_URL']) {
+      if (previous[key] === undefined) delete process.env[key]
+      else process.env[key] = previous[key]
+    }
+    plugin.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('host-api：自定义网关接入（TokenHub hy4）——表单端点测试 + 推理模型空正文 + 额度如实标注', async (t) => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-custom-gw-'))
+  const previous = { ...process.env }
+  delete process.env.DAFEIYU_CLOUD_API_KEY
+  delete process.env.DAFEIYU_CLOUD_BASE_URL
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  const handler = createRequestHandler(plugin)
+  const urls: string[] = []
+  try {
+    // 表单端点测试：无预设、无环境变量也能接入自定义网关；推理模型空正文视为端点验证通过
+    t.mock.method(globalThis, 'fetch', async (url: unknown) => {
+      const href = String(url)
+      urls.push(href)
+      if (href.includes('/dashboard/billing/subscription')) return new Response('', { status: 404 })
+      return Response.json({
+        choices: [{ message: { content: '', reasoning_content: '思考…' }, finish_reason: 'length' }],
+      })
+    })
+    const tested = await call(handler, 'POST', '/api/dafeiyu/settings/cloud/test', {
+      provider: 'TokenHub', model: 'hy4', baseUrl: 'https://tokenhub.tencentmaas.com/v1', apiKey: 'sk-gw',
+    })
+    assert.equal(tested.payload.ok, true, '推理模型空正文应视为端点验证通过')
+    assert.ok(String(tested.payload.detail).includes('推理模型'))
+    assert.equal(tested.payload.baseURL, 'https://tokenhub.tencentmaas.com/v1')
+    assert.ok(urls[0]!.endsWith('/chat/completions'))
+
+    // 保存后：额度路由按界面端点探测（TokenHub 无 billing → 如实标注不支持）
+    await call(handler, 'POST', '/api/dafeiyu/settings/cloud', {
+      enabled: true, provider: 'TokenHub', model: 'hy4',
+      baseUrl: 'https://tokenhub.tencentmaas.com/v1', dailyBudgetCny: 5,
+    })
+    await call(handler, 'POST', '/api/dafeiyu/settings/cloud/key', { apiKey: 'sk-gw' })
+    const quota = await call(handler, 'GET', '/api/dafeiyu/cloud/quota')
+    assert.equal(quota.payload.ok, true)
+    assert.equal(quota.payload.supported, false, 'TokenHub 无 billing 接口应如实标注')
+    assert.ok(urls.some((u) => u.includes('tokenhub.tencentmaas.com/v1/dashboard/billing/subscription')))
+  } finally {
+    for (const key of ['DAFEIYU_CLOUD_API_KEY', 'DAFEIYU_CLOUD_BASE_URL']) {
+      if (previous[key] === undefined) delete process.env[key]
+      else process.env[key] = previous[key]
+    }
+    plugin.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、回复和语音', async (t) => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-interaction-'))
+  const configPath = join(dataDir, 'config.json')
+  const config = loadConfig(join(packageDir(), 'config/default.yaml'))
+  config.models.cloud = { ...config.models.cloud, provider: 'custom', model: 'test-chat', dailyBudgetCny: 1 }
+  writeFileSync(configPath, JSON.stringify(config))
+  for (const [key, value] of Object.entries({
+    DAFEIYU_OLLAMA_URL: 'http://127.0.0.1:1',
+    DAFEIYU_OLLAMA_CPU_URL: 'http://127.0.0.1:1',
+    DAFEIYU_CLOUD_BASE_URL: 'http://127.0.0.1:2/v1',
+    DAFEIYU_CLOUD_API_KEY: 'test-key',
+    DAFEIYU_DANMAKU_ROOM_ID: 'room-a',
+    DAFEIYU_DANMAKU_URL: '',
+  })) {
+    const previous = process.env[key]
+    process.env[key] = value
+    t.after(() => {
+      if (previous === undefined) delete process.env[key]
+      else process.env[key] = previous
+    })
+  }
+
+  const plugin = createPlugin({ dataDir, configPath })
+  const api = createRequestHandler(plugin)
+  const post = (path: string, body?: unknown) => call(api, 'POST', '/api/dafeiyu/' + path, body)
+  const state = async () => (await call(api, 'GET', '/api/dafeiyu/interaction')).payload
+  const requests: { url: string; messages: { role: string; content: string }[] }[] = []
+  let localAvailable = true
+  let waitingForAnswer: Promise<void> | undefined
+  const answer = '草莓种在向阳处吧。浇水后咱们再去看看。'
+  t.mock.method(globalThis, 'fetch', async (url: string, options: RequestInit) => {
+    const { messages } = JSON.parse(String(options.body))
+    requests.push({ url, messages })
+    if (url.endsWith('/api/chat')) {
+      if (waitingForAnswer) await waitingForAnswer
+      return localAvailable ? Response.json({ message: { content: answer } }) : new Response('', { status: 404 })
+    }
+    assert.ok(url.endsWith('/chat/completions'))
+    return Response.json({ choices: [{ message: { content: answer } }] })
+  })
+  const settle = () => new Promise<void>((resolve) => setImmediate(resolve))
+
+  try {
+    await configureWizardBasics(api)
+    const date = new Date(Date.now() + 86_400_000).toISOString()
+    const memory = '草莓的本地参考资料是温室东侧的种植记录。'
+    plugin.db.prepare(`INSERT INTO learned_stable
+      (id, revision, layer, claim, scope, source_consolidation, review_at, valid_until)
+      VALUES ('strawberry', 1, 'L1', ?, 'dafeiyu/garden', 'test', ?, ?)`).run(memory, date, date)
+    await post('preview/start')
+    const first = await post('interaction/send', { text: '草莓怎么种？' })
+    assert.equal(first.code, 202)
+    await settle()
+    assert.equal((await state()).turns[0].memoryUsed, 1)
+    assert.match(requests[0]!.messages[0]!.content, /温室东侧/)
+    assert.ok(!requests[0]!.messages[0]!.content.includes('不超过两句'))
+
+    localAvailable = false
+    await post('interaction/send', { text: '草莓要不要晒太阳？' })
+    await settle()
+    assert.equal((await state()).turns[1].answer.route, 'cloud')
+    assert.equal(requests.at(-1)?.messages.length, 2)
+    assert.ok(!requests.at(-1)?.messages[0]?.content.includes('温室东侧'))
+    assert.ok(requests.at(-2)?.messages.some(({ content }) => content === '草莓怎么种？'))
+
+    await post('live/start')
+    await post('live/operator-confirm')
+    const live = await state()
+    assert.equal(live.mode, 'live')
+    assert.deepEqual(live.turns, [])
+    const event = { id: 'm1', roomId: 'room-a', text: '你好主播', viewerId: 'viewer-a', sentAt: new Date().toISOString() }
+    assert.equal(plugin.live.conversation.receive({ ...event, roomId: 'room-b' }), false)
+    assert.equal(plugin.live.conversation.receive(event), true)
+    assert.equal(plugin.live.conversation.receive(event), false)
+    const viewerTurn = (await state()).turns[0]
+    assert.equal(viewerTurn.status, 'waiting')
+    const before = requests.length
+    await post('interaction/reply', { id: viewerTurn.id })
+    await settle()
+    assert.equal(requests.length, before + 1, '访客数据只进入本地模型')
+    assert.equal((await state()).turns[0].answer.route, 'fallback')
+
+    let release!: () => void
+    waitingForAnswer = new Promise((resolve) => { release = resolve })
+    await post('interaction/send', { text: '正在生成时停播' })
+    await settle()
+    await post('live/emergency-stop')
+    release()
+    await settle()
+    assert.equal((await state()).id, null)
+    assert.equal(plugin.live.conversation.receive({ ...event, id: 'm2' }), false)
+    assert.equal((await post('preview/role-speech', { profileId: 'dsh-pet', text: answer, interactionId: live.id })).code, 409)
+    assert.equal(plugin.db.prepare('SELECT COUNT(*) AS n FROM reply_log WHERE question_text = ?').get('正在生成时停播')?.n, 0)
   } finally {
     plugin.dispose()
     rmSync(dataDir, { recursive: true, force: true })

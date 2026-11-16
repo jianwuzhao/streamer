@@ -18,6 +18,7 @@ import { FeedbackStore } from './feedback/feedback-store.ts'
 import { GiftAckService } from './gifts/ack.ts'
 import { GiftLedger } from './gifts/ledger.ts'
 import { OllamaEmbeddingProvider } from './retrieval/embedding.ts'
+import { Bm25Index } from './retrieval/bm25.ts'
 import { GraphStore } from './retrieval/graph.ts'
 import { RetrievalIndexer } from './retrieval/indexer.ts'
 import { RetrievalService } from './retrieval/retrieval.ts'
@@ -28,13 +29,16 @@ import { TrainingSamplePipeline } from './training/samples.ts'
 import { TrainingScheduler } from './training/scheduler.ts'
 import { createRequestHandler } from './host-api.ts'
 import { DouyinAssistedAdapter } from './platform/adapter.ts'
+import { DanmakuFeed } from './platform/danmaku-feed.ts'
 import { loadPolicyPack } from './platform/policy-pack.ts'
 import { LiveSession } from './live/session.ts'
+import { HostConversation } from './live/conversation.ts'
 import { TrainingEntry } from './live/training-entry.ts'
 import { SettingsStore } from './settings/store.ts'
 import { resolveCloudBaseUrl } from './settings/catalogs.ts'
 import { ReferenceVoiceStream } from './avatar/reference-stream.ts'
 import { AvatarAssetStore } from './avatar/model-store.ts'
+import { LocalModelDeployer } from './model-deploy.ts'
 import { MemoryStore } from './memory/l2-store.ts'
 import { PolicyService } from './governance/policy-decision.ts'
 import { EventDedup } from './perception/dedup.ts'
@@ -81,6 +85,8 @@ export interface DafeiyuPluginHandle {
   /** Live2D 桌宠资产（vendor 运行时 + 本地模型包；host-api/avatar 下发） */
   readonly avatar: AvatarAssetStore
   readonly referenceVoiceStream: ReferenceVoiceStream
+  /** 一键部署本地模型（Ollama 安装/拉取/验证；host-api model/deploy） */
+  readonly modelDeploy: LocalModelDeployer
   readonly router: RequestRouter
   readonly runtime: LearningRuntime
   readonly blackboard: BlackboardStore
@@ -98,6 +104,8 @@ export interface DafeiyuPluginHandle {
     readonly session: LiveSession
     readonly trainingEntry: TrainingEntry
     readonly platform: DouyinAssistedAdapter
+    readonly conversation: HostConversation
+    readonly danmaku: DanmakuFeed
   }
   readonly memory: MemoryStore
   readonly audience: {
@@ -147,15 +155,36 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
 
   const referenceVoiceStream = new ReferenceVoiceStream(dataDir)
 
-  // 2.5 操作员设置（§24.1 向导输入的持久化）：云端覆盖重启生效；密钥仍走环境变量
+  // 2.5 操作员设置（§24.1 向导输入的持久化）。
+  // 云端实时视图（0.15.1）：面板保存的 provider/model/预算/API Key 即时生效（无需重载插件）——
+  // 每次读取都把 settings.cloud 覆盖进 baseConfig；密钥解析 env 优先、界面维护值兜底。
   const settings = new SettingsStore(db)
-  const config = applyCloudOverrides(baseConfig, settings.getCloud())
+  const liveCloudConfig = (): DafeiyuConfigType => applyCloudOverrides(baseConfig, settings.getCloud())
+  const cloudApiKey = (): string => process.env.DAFEIYU_CLOUD_API_KEY?.trim() || settings.getCloudSecretRaw()
+  const config = liveCloudConfig()
   // Live2D 桌宠资产：vendor 随插件（client/vendor），模型包在数据目录（data/models，不入库）
   const avatar = new AvatarAssetStore({
     modelsDir: join(dataDir, 'models'),
     vendorDir: process.env.DAFEIYU_VENDOR_DIR ?? join(packageDir(), 'client', 'vendor'),
   })
-  const featureGates = getFeatureGates(config)
+  const configuredGates = getFeatureGates(config)
+  // 门禁实时化（0.15.1）：路由/面板每次决策读取的都是当前值（密钥或云端设置保存后立即反映）
+  const cloudGatesNow = (): FeatureGates => {
+    const gates = getFeatureGates(liveCloudConfig())
+    if (gates.cloudCallsEnabled && cloudApiKey() === '') {
+      return {
+        ...gates,
+        cloudCallsEnabled: false,
+        cloudDisabledReasons: ['云端模型密钥未配置（环境变量 DAFEIYU_CLOUD_API_KEY 或面板「模型与云端」维护）'],
+      }
+    }
+    return gates
+  }
+  const featureGates: FeatureGates = {
+    ...configuredGates,
+    get cloudCallsEnabled() { return cloudGatesNow().cloudCallsEnabled },
+    get cloudDisabledReasons() { return cloudGatesNow().cloudDisabledReasons },
+  }
   if (!featureGates.cloudCallsEnabled) {
     log(ctx, `第三方调用禁用：${featureGates.cloudDisabledReasons.join('; ')}`)
   }
@@ -165,33 +194,51 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
 
   // 3. 模型适配器（本地优先：GPU → CPU 回退 → 第三方一次）
   const localBase = process.env.DAFEIYU_OLLAMA_URL ?? 'http://127.0.0.1:11434'
+  const cpuBase = process.env.DAFEIYU_OLLAMA_CPU_URL ?? localBase
+  const localModel = process.env.DAFEIYU_OLLAMA_MODEL?.trim() || config.models.local.baseModel
   const localGpu = new OllamaAdapter({
     baseURL: localBase,
-    model: config.models.local.baseModel,
+    model: localModel,
     route: 'local_gpu',
     maxOutputTokens: config.models.local.maxOutputTokens,
   })
-  const localCpu = config.models.local.cpuFallbackEnabled
+  const localCpu = config.models.local.cpuFallbackEnabled && cpuBase !== localBase
     ? new OllamaAdapter({
-        baseURL: process.env.DAFEIYU_OLLAMA_CPU_URL ?? localBase,
-        model: config.models.local.baseModel,
+        baseURL: cpuBase,
+        model: localModel,
         route: 'local_cpu',
         maxOutputTokens: config.models.local.maxOutputTokens,
       })
     : undefined
 
-  const providerConfigured = config.models.cloud.provider !== 'configure_before_acceptance'
+  // 一键部署本地模型（向导「模型与云端」）：复用 scripts/setup-ollama.mjs，输出经环形日志缓冲下发面板
+  const modelDeploy = new LocalModelDeployer({
+    packageDir: packageDir(),
+    dataDir,
+    ollamaUrl: localBase,
+    model: localModel,
+  })
+
   const cloud = new OpenAICompatCloudAdapter({
-    // 端点解析优先级：环境变量 > 服务商预设（腾讯云混元 / DeepSeek 官方）> 不可路由占位
-    baseURL:
-      process.env.DAFEIYU_CLOUD_BASE_URL ??
-      resolveCloudBaseUrl(config.models.cloud.provider) ??
-      'http://127.0.0.1:9/v1',
-    model: config.models.cloud.model === 'configure_before_acceptance' ? 'unset' : config.models.cloud.model,
-    apiKey: process.env.DAFEIYU_CLOUD_API_KEY ?? '',
-    enabled: config.models.cloud.enabled,
-    providerConfigured,
-    dailyBudgetCny: config.models.cloud.dailyBudgetCny,
+    // 0.15.1：resolve 每次调用时读取实时云端配置（界面保存即时生效，无需重载插件）
+    resolve: () => {
+      const live = liveCloudConfig()
+      // 端点解析优先级：环境变量 > 界面自定义端点 > 服务商预设（腾讯云混元 / DeepSeek 官方）> 不可路由占位
+      const settingsBaseUrl = settings.getCloud().baseUrl
+      const baseURL =
+        process.env.DAFEIYU_CLOUD_BASE_URL ??
+        (settingsBaseUrl !== ''
+          ? settingsBaseUrl
+          : (resolveCloudBaseUrl(live.models.cloud.provider) ?? 'http://127.0.0.1:9/v1'))
+      return {
+        baseURL,
+        model: live.models.cloud.model === 'configure_before_acceptance' ? 'unset' : live.models.cloud.model,
+        apiKey: cloudApiKey(),
+        enabled: live.models.cloud.enabled,
+        providerConfigured: live.models.cloud.provider !== 'configure_before_acceptance',
+        dailyBudgetCny: live.models.cloud.dailyBudgetCny,
+      }
+    },
     costTracker: sqliteCostTracker(db),
   })
 
@@ -295,8 +342,30 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
     consolidation: consolidationService,
   })
 
-  // 6.5 第一次模拟开播服务已随演练子系统移除（v0.13.0）：
-  // 现实链路 = 首次配置向导 → 本地预览（LiveSession）→ 真实开播。
+  const platform = new DouyinAssistedAdapter()
+  const rulesPath = join(packageDir(), 'policy-packs/douyin/rules.json')
+  const session = new LiveSession(platform, existsSync(rulesPath) ? loadPolicyPack(rulesPath) : null, config.platform.id)
+  const roomId = process.env.DAFEIYU_DANMAKU_ROOM_ID?.trim()
+  const conversation = new HostConversation({ session, settings, router, runtime, ...(roomId ? { roomId } : {}),
+    recall: async (text, profileId) => {
+      const characterId = profileId === 'dsh-pet' ? config.scope.characterId : profileId
+      const { memories } = await retrievalService.retrieve({ text, characterId },
+        { routes: { vector: false, lexical: config.retrieval.lexicalEnabled, graph: config.retrieval.graphEnabled } })
+      const matched = memories.map((entry) => entry.text)
+      if (!config.retrieval.lexicalEnabled) return matched
+      // 已固化的记忆可从权威存储直接召回，包括还未建立向量索引的条目。
+      const prefix = `${characterId}/`
+      const stable = consolidationService.activeStable(prefix).filter((entry) => entry.scope.startsWith(prefix))
+      const byId = new Map(stable.map((entry) => [entry.id, entry.claim]))
+      const index = new Bm25Index()
+      index.rebuild(stable.map((entry) => ({ id: entry.id, text: entry.claim })))
+      const prioritized = index.search(text, config.retrieval.memoryTopK).map(({ id }) => byId.get(id)!)
+      return [...new Set([...prioritized, ...matched])].slice(0, config.retrieval.memoryTopK).map((claim) => claim.slice(0, 240))
+    },
+  })
+  const danmaku = new DanmakuFeed(conversation, {
+    roomId, url: process.env.DAFEIYU_DANMAKU_URL, token: process.env.DAFEIYU_DANMAKU_TOKEN,
+  })
 
   return {
     config,
@@ -307,6 +376,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
     db,
     avatar,
     referenceVoiceStream,
+    modelDeploy,
     router,
     runtime,
     blackboard,
@@ -344,22 +414,17 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
       consolidation: consolidationService,
     },
     live: {
-      // 平台规则包随安装版本固定；缺包时开播 fail-closed（§23.2）
-      session: new LiveSession(
-        new DouyinAssistedAdapter(),
-        existsSync(join(packageDir(), 'policy-packs/douyin/rules.json'))
-          ? loadPolicyPack(join(packageDir(), 'policy-packs/douyin/rules.json'))
-          : null,
-        config.platform.id,
-      ),
+      session, platform, conversation, danmaku,
       trainingEntry: new TrainingEntry(trainingScheduler),
-      platform: new DouyinAssistedAdapter(),
     },
     training: {
       samples: trainingSamples,
       scheduler: trainingScheduler,
     },
     dispose() {
+      danmaku.stop()
+      conversation.reset()
+      modelDeploy.dispose()
       referenceVoiceStream.dispose()
       arbiter.stop()
       db.close()

@@ -11,6 +11,11 @@
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 0.15.3 | 2026-11-16 | 自定义网关接入（TokenHub 混元 hy4 实测）+ 推理模型兼容：①**端点 URL 字段**——`CloudSettings` 新增 `baseUrl`，「模型与云端」新增「端点 URL（自定义网关）」输入框；解析优先级 env `DAFEIYU_CLOUD_BASE_URL` > 界面端点 > 服务商预设，自定义网关（如腾讯 TokenHub `https://tokenhub.tencentmaas.com/v1` + hy4）无需任何环境变量即可接入、测试与保存；额度路由同链路（TokenHub 无 billing 接口 → 如实标注「以控制台为准」）。②**推理模型兼容**——测试请求 max_tokens 提到 512，`content` 空但 `reasoning_content` 非空视为端点验证通过（hy4/R1 系思考先消耗预算）；云端适配器在 `finish_reason=length` 且正文为空时单次补足 ≥1024 tokens 重试（仍属同一次逻辑生成）；TS 198 例全过 |
+| 0.15.2 | 2026-11-16 | 额度/可用余额展示：新增 `GET cloud/quota`——按已保存的生效配置（env 优先）尽力查询：**DeepSeek 官方**走源站 `/user/balance`（总余额/赠送/充值三行 + 可用徽章，is_available=false 时标注停用）；**其余 OpenAI 兼容端点**（one-api/new-api 系）走 `dashboard/billing`（总额度/本年已用/可用余额，USD）；不支持的服务商（如腾讯混元）`supported:false` 如实标注「以控制台为准」，不编造数值。面板「模型与云端」新增「额度 / 可用余额」区块：进入页面自动查询、保存后自动刷新、可手动刷新；密钥未配置时提示先配置 |
+| 0.15.1 | 2026-11-16 | 云端配置即时生效 + 连接测试门禁：①**保存即生效**——`OpenAICompatCloudAdapter` 改为 `resolve()` 实时视图（每次调用读取 env > 面板保存值），`featureGates` 云端门禁用 getter 包装：API Key / 服务商 / 模型 / 预算保存后**无需重载插件**立即生效；②**连接测试**——新增 `POST settings/cloud/test`：按「表单当前值 + 已填密钥」发起一次最小 chat 请求（不写入设置；端点/密钥解析与真实调用一致，env 优先），面板「模型与云端」新增「测试连接」按钮，**测试通过后「保存」才可点击**（任何字段改动重置测试状态），测试结果回显服务商返回文本或 HTTP 错误（401/403/404 带中文提示）；③部署卡加固——状态接口异常显式红字报错（旧后端场景提示重载插件），无快照时按钮可点击 POST 兜底，install 探测改后台刷新不阻塞响应 |
+| 0.15.0 | 2026-11-16 | API Key 界面维护 + 国内镜像部署（ModelScope）：①**API Key 界面维护**——「模型与云端」新增密钥栏：保存/清除/掩码回显（首3+••••+尾4）与来源徽章（环境变量/界面维护/未配置），密钥存 `operator_settings` 的 `cloud_secret` 节（审计摘要不含值），任何读取路径明文永不回传；环境变量 `DAFEIYU_CLOUD_API_KEY` 仍优先，保存后重启插件生效；新增 `POST settings/cloud/key` 端点。②**ModelScope 国内直连**——`setup-ollama.mjs` 默认 `DAFEIYU_OLLAMA_SOURCE=modelscope`：从 ModelScope 直连下载 GGUF（断点续传 + 60s 停滞看门狗 + 百分比进度日志），经 `/api/blobs` + `/api/create` 导入为目标模型名并清理原始权重，全程无需代理；`registry` 可切回官方仓库（需代理）。③**未安装提示与进度条**——GET `model/deploy` 附带 `install` 探测（Ollama 服务/目标模型是否就绪，10s 缓存，running 期间不探测），部署卡显示「Ollama 服务/模型」状态徽章与未安装琥珀提示，按钮变「一键安装（ModelScope 直连）」；部署中显示百分比进度条（aria progressbar），curl `--progress-bar` 输出按 CR 独立成行进日志 |
+| 0.14.1 | 2026-11-16 | 模型配置页白屏修复 + 一键部署本地模型：①**白屏修复**——向导「模型与云端」点击混元/DeepSeek 等预设即整页白屏，根因是 `<datalist>` 被挂成 `<input>`（void 元素）的 children，React 抛 `#137` 后卸载整棵树；现改为兄弟节点挂载，并对预设缺失 `models` 字段做防御；面板根新增 `PanelErrorBoundary`，渲染错误收敛为错误卡片（可重试）不再白屏。②**一键部署本地模型**——新增 `model/deploy` 端点（GET 状态轮询 / POST 幂等启动）与 `LocalModelDeployer`：子进程运行 `scripts/setup-ollama.mjs`（安装 Ollama → 拉取 qwen3:4b → 试运行验证），进度日志实时回显面板（running 期间 2s 轮询），Electron 宿主经 `ELECTRON_RUN_AS_NODE` 运行脚本，已就绪部分自动跳过 |
 | 0.14.0 | 2026-11-13 | 形象与云端两步升级（对齐鹅次元的**形象层**架构、以官方 API 取其**底层智能**）：①**Live2D 桌宠渲染**——vendor 运行时随插件分发（Cubism Core + pixi.js 7 + pixi-live2d-display，`client/vendor/` + VENDOR-LICENSES.md），模型包按「数据目录 + manifest」管理（`data/models/<id>/`，不入仓库；`scripts/fetch-live2d-samples.sh` 一键安装 Live2D 官方示例角色，多 CDN 镜像回退）；新增 `src/avatar/model-store.ts`（扩展名白名单/路径穿越防护/24MB 单文件上限）与 host-api GET `avatar/catalog`、`avatar/vendor`、`avatar/model-file`（模型文件 base64 下发，客户端重写 FileReferences 为 blob URL）；桌宠小窗自动升级 Live2D 渲染（待机动作自动播放 / TapBody 点击互动 / 系统朗读期间按语音状态估算口型 / ResizeObserver 自适应），未安装或失败自动回退 CSS 大肥鱼；②**云端服务商预设**——内置 `CLOUD_PROVIDER_PRESETS`（腾讯云混元 `https://api.hunyuan.cloud.tencent.com/v1`、DeepSeek 官方），向导第 4 步预设选卡 + 模型名 datalist，端点解析优先级 env `DAFEIYU_CLOUD_BASE_URL` > 预设 > 不可路由占位（自定义服务商行为不变）；新增 env `DAFEIYU_VENDOR_DIR`；③**本地预览对话**——可保存所选模型，使用浏览器本地麦克风识别或键盘输入，由 Ollama 生成回复，可本地朗读并联动字幕和口型；④**本地角色声线**——`scripts/setup-role-voices.sh` / `synthesize-role-voice.py`（Qwen3-TTS 离线合成，Apple Silicon；参考录音 + 同名逐字稿 `.txt` 辅助模仿语气，详见 quick-start）；TS 173 例全过 |
 | 0.13.0 | 2026-11-13 | 现实使用收敛重构：**删除「模拟开播」演练子系统**（服务/SQLite 双表写入/面板页签/simulation×7 API/CLI 脚本/演练报告文档；迁移 010 保留不回收）；移除语音互动死配置（`voiceInteractionEnabled` 与向导勾选，浏览器试听保留）；**环境变量前缀修正 `DAFEIFYU_*` → `DAFEIYU_*`**（原代码拼写与文档不一致，按文档设置会全部失效）；embedding 测试桩（哈希伪向量/语义映射桩）移出生产代码至 `src/testing/`，生产恒为 Ollama 真实语义模型、测试经 `createPlugin({ embeddingProvider })` 显式注入；`UnknownGpuProbe` 恒返回 RAM 样本（删重复的 `*_PROBE_RAM_ONLY` 内部钩子）；开播 preflight `stableReleaseAvailable` 由发布链如实派生（active 版本或钉住基线）；仓库清理：`.agents/`（4.6MB 无关设计技能）与 `training-worker/__pycache__` 解除 git 跟踪并 gitignore、本地运行时 `data/*.db` 清理；面板九页签 → 八页签；文件行数收敛（`settings/catalogs.ts`（内置目录）与 `index-wiring.ts`（装配辅助）拆出，`index.ts` 385 行 / `store.ts` 251 行 / `host-api.test.ts` 389 行；`migrations.ts` 为追加式迁移历史不拆、`client.js` 为宿主单入口无构建客户端半部，从 1289 行减至 1019 行）；TS 153 例全过 |
 | 0.12.0 | 2026-11-13 | 主播信息改版为「角色档案卡」（参照 [腾讯《鹅次元》官网](https://eciyuan.qq.com/) 的 CHARACTERS 角色介绍）：新增 `BUILTIN_PROFILES` 目录——夏夏 / 沈露白 / 谷雨 / 贝拉 四个鹅次元角色 + 一个 **dsh-pet（插件中）** 桌宠角色，每份档案含中文名 / 英文名 / #人设标签 / 年龄·身高·星座·MBTI / 简介 / 主题色；`PersonaSettings` 新增 `profileId`（默认 `dsh-pet`，播出展示名跟随档案中文名）、`SettingsStore.getPersonaProfile()`；`settings` payload 与 `preview.persona` 带出 `profile` / `catalogs.profiles`、模拟开播 state/报告带出档案；首次配置第 3 步「主播形象」表单改为「角色档案」档案卡选择 + 展示，首页新增「主播信息 · 角色档案」卡；AI 标识 / 使用授权 / 音色 / 试听 / 语音互动与既有合规字段与状态机文案保持不变；TS 165 例全过 |
@@ -28,7 +33,7 @@
 | 0.2.0 | 2026-11-11 | 阶段 B（完整数据层）：L2/L4 记忆生命周期与矛盾处理、全量观众画像（伪名化身份/字段版本链/删除墓碑）、技能库（manifest/受控执行/示例技能包）、反馈状态机、礼物幂等账本与合并答谢；累计 103 项测试 |
 | 0.1.0 | 2026-11-11 | 阶段 A（基础与资源）：插件骨架、统一配置、SQLite 存储基座、感知/黑板、本地优先路由、模型适配器、资源仲裁、政策授权骨架；70 项测试 |
 
-## 当前状态（阶段 A–I + 0.12.0 角色档案 + 0.13.0 收敛 + 0.14.0 Live2D 桌宠与云端预设，代码交付完成）
+## 当前状态（阶段 A–I + 0.12.0 角色档案 + 0.13.0 收敛 + 0.14.0 Live2D 桌宠与云端预设 + 0.14.1 模型页白屏修复与一键部署本地模型 + 0.15.0 API Key 界面维护与 ModelScope 国内部署，代码交付完成）
 
 按方案 §20.1 的 A–G 七阶段 + 阶段 H（面板与操作员设置，§24）+ 阶段 I（观众与治理面板，§6.4/§24.2）+ 0.12.0（主播信息改版为 eciyuan.qq.com 式角色档案卡，含 dsh-pet 插件中档案）：**代码全部交付**（G 含自检/诊断/集成测试/宿主适配层与文档；H 含操作员设置域/本地预览/多页签面板；I 含观众画像管理与治理审计面板；实机项——真实推理/QLoRA/两小时试运行/新用户实测——按方案在目标机与宿主安装环节验收）：
 
@@ -54,6 +59,7 @@
 | 观众画像管理与治理面板（§6.4/§24.2，I） | ✅ | 观众伪名化概览/详情隔离读取/纠错/退出个性化/删除两步流（墓碑优先）；技能库全版本、记忆候选生命周期、发布链灰度、审计与决策；反馈状态推进 |
 | 大肥鱼桌宠形象（J，语音互动与模拟开播已于 0.13.0 移除） | ✅ | 内置形象目录含 2 款桌宠（默认选中，旧经典形象保留可回退）；本地预览渲染桌宠小窗（气泡字幕/悬浮动画/AI 标识常显）；音色试听用浏览器本机 TTS（录音不上传，最终音色以直播伴侣音轨为准） |
 | Live2D 桌宠渲染（0.14.0，对齐鹅次元形象层） | ✅ | vendor 运行时（Cubism Core/pixi/pixi-live2d-display）随插件分发；模型包本地数据目录管理（官方示例一键安装 `scripts/fetch-live2d-samples.sh`，限本地/学习用途）；待机动作/点击互动/说话期口型驱动；未安装或失败自动回退 CSS 桌宠；资产经 host-api `avatar/*` 下发（base64 + blob URL，客户端保持单文件契约） |
+| 一键部署本地模型（0.14.1） | ✅ | 向导「模型与云端」一键安装并验证 Ollama + 本地模型（`model/deploy` 端点 + `LocalModelDeployer` 子进程复用 `scripts/setup-ollama.mjs`，幂等可重入），进度日志实时回显；命令行 `pnpm setup:ollama` 等价 |
 | 云端服务商预设（0.14.0） | ✅ | 内置腾讯云混元 / DeepSeek 官方 OpenAI 兼容端点预设（向导选卡即填，端点免环境变量）；自定义服务商仍走 `DAFEIYU_CLOUD_BASE_URL`；密钥永不落库 |
 | 工作台与管理（§24.2–24.4） | ✅ | 工作台常驻实时预览、直播控制、学习、待处理与费用；管理含配置、训练记录、互动账本、观众、治理和诊断 |
 
@@ -63,7 +69,8 @@
 
 ```bash
 pnpm install
-pnpm test        # 153 个单元/契约/集成测试（node:test）
+pnpm setup:ollama # 安装或复用 Ollama，下载 qwen3:4b 并验证推理
+pnpm test        # 198 个单元/契约/集成测试（node:test）
 pnpm test:worker # Python worker 11 例（unittest，纯标准库）
 pnpm typecheck   # tsc --noEmit（strict + exactOptionalPropertyTypes）
 pnpm build       # tsdown → lib/index.js（ESM，宿主插件规范）
@@ -116,13 +123,14 @@ installer/                 # G 阶段
 - `client/client.js`（原生 React、无构建步）：侧边栏「大肥鱼直播」打开工作台；「管理」集中配置、训练记录、互动与账本、观众、治理和诊断。
 - 界面适配 DSH 主界面：样式经注入的 `<style>` 类（`dfy-*` 前缀）全部引用宿主 `design-platform` 的 `--dsw-*` 设计变量并带降级值——亮/暗主题随宿主 `body[data-ds-dark-theme]` 自动切换；侧边栏图标为单色剪影（`currentColor` 随宿主导航色）+ DeepSeek 蓝气泡，与宿主品牌视觉（鲸鱼剪影 logo）同语言
 - 工作台：开播/下播、训练演练、暂停/恢复学习、恢复稳定版本；紧急停止常显。状态自动更新，切换角色和形象即时预览并自动保存。
-- 首次配置（§24.1 五步）：①数据与自检（逐项 ok/原因/修复动作）→ ②直播接入（运行模式/内容类别/官方客户端入口/操作员登录声明）→ ③**角色档案（主播信息，参照 eciyuan.qq.com CHARACTERS）**：档案卡网格选择（夏夏 / 沈露白 / 谷雨 / 贝拉 四个鹅次元角色 + dsh-pet 插件中桌宠），每卡展示中文名 / 英文名 / #人设标签 / 年龄·身高·星座·MBTI，选中档案中文名即播出展示名；另含音色 / 试听 / 使用授权；AI 标识固定常显 → ④模型与云端（本地预设只读；**服务商预设选卡**：腾讯云混元 / DeepSeek 官方 / 自定义，预设自动填端点与模型名建议，云端覆盖重启生效）→ ⑤运行模式与数据用途确认
-- 实时预览：同屏切换角色、查看 Live2D 或官方立绘、文字/麦克风对话与可选自动朗读。首次发送自动进入本地预览。公开开播和下播按直播伴侣提示完成。
+- 首次配置（§24.1 五步）：①数据与自检（逐项 ok/原因/修复动作）→ ②直播接入（运行模式/内容类别/官方客户端入口/操作员登录声明）→ ③**角色档案（主播信息，参照 eciyuan.qq.com CHARACTERS）**：档案卡网格选择（夏夏 / 沈露白 / 谷雨 / 贝拉 四个鹅次元角色 + dsh-pet 插件中桌宠），每卡展示中文名 / 英文名 / #人设标签 / 年龄·身高·星座·MBTI，选中档案中文名即播出展示名；另含音色 / 试听 / 使用授权；AI 标识固定常显 → ④模型与云端（**一键部署本地模型**：安装 Ollama、默认经 ModelScope 国内镜像直连下载权重并导入（无需代理）后试运行验证；未安装时界面琥珀提示并可一键安装，进度条 + 进程输出实时回显，已就绪部分自动跳过；**API Key 界面维护**：保存/清除/掩码回显与来源徽章，环境变量优先，明文永不回传，保存即时生效；「测试连接」通过后才能保存云端配置；**额度/可用余额**区块自动查询 DeepSeek 余额或 OpenAI 兼容 billing（不支持的服务商如实标注）；**服务商预设选卡**：腾讯云混元 / DeepSeek 官方 / 自定义，预设自动填端点与模型名建议，云端覆盖重启生效；面板根带渲染错误边界，组件异常显示错误卡而非白屏）→ ⑤运行模式与数据用途确认
+- 主播互动：工作台在本地预览和开播确认后均可发送文字，立即显示问题，按顺序生成和朗读。支持多轮上下文、本地记忆、本地模型优先及为操作员配置云端兜底。直播中可从授权弹幕源接收观众消息，点选回复或开启自动回复。接入格式见[快速开始](docs/quick-start.md#直播弹幕接入)。
+- 实时预览：同屏切换角色和形象。Live2D 使用实际播放音频驱动口型。预录视频用于待机，语音回复时使用角色立绘与字幕。
 - 互动与账本：最近回复（50 条）逐条四类反馈（有用/答错/不像大肥鱼/响应太慢）+ 纠正说法；反馈状态列表（已收到/核实中/已修复/证据不足）与操作员核实推进；礼物账本汇总（收到/待结算/已结算/退款/未验证）与答谢点名开关
 - 观众（§6.4 管理入口）：伪名化观众概览（墓碑计数/权利请求）；画像详情（隔离读取、来源/置信/用途、互动可重放聚合）；观众纠错（viewer_stated 覆盖推测留审计链）、退出个性化、删除两步流（申请→验证后执行，未验证不删）
 - 治理（§24.2 高级设置）：技能库全版本（状态/权限数）、记忆候选（L2/L4 生命周期、正反证据数、复核时间）、发布链（灰度进度/active 标记/恢复稳定版本）、审计与政策决策最近记录
 - 诊断：向导同款自检重跑；脱敏诊断报告生成预览 + JSON 导出（导出前展示包含内容说明）
-- 后端：`/api/dafeiyu/*` 经宿主 `connection/request`（同源认证共享 API；`src/host-api.ts`）——status、settings（六节读写 + `profile` 当前档案 + `catalogs.profiles`/`catalogs.cloudProviders` 目录）、preview（start/stop/chat/voice-test；`preview.persona` 带档案中文名/英文名/#标签）、avatar（catalog/vendor/model-file——Live2D 桌宠资产）、selfcheck、diagnostics、replies、feedback（+advance）、gifts/summary、training/progress、costs、audience（overview/profile/correction/personalization-off/deletion 两步流）、governance（skills/memory/releases/audit）与四主操作端点
+- 后端：`/api/dafeiyu/*` 经宿主 `connection/request`（同源认证共享 API；`src/host-api.ts`）——status、settings（六节读写 + `cloudKey` 密钥掩码状态 + `settings/cloud/key` 密钥维护 + `profile` 当前档案 + `catalogs.profiles`/`catalogs.cloudProviders` 目录）、preview（start/stop/chat/voice-test；`preview.persona` 带档案中文名/英文名/#标签）、avatar（catalog/vendor/model-file——Live2D 桌宠资产）、selfcheck、model/deploy（GET 部署状态轮询，附 `install` 安装探测 / POST 幂等启动）、diagnostics、replies、feedback（+advance）、gifts/summary、training/progress、costs、audience（overview/profile/correction/personalization-off/deletion 两步流）、governance（skills/memory/releases/audit）与四主操作端点
 - 面板变更需浏览器页刷新后生效；后端改动需 `pnpm build` 后重载宿主插件（本机 profile 以 `link:` 软链仓库，构建产物 `lib/index.js` 立即生效）
 
 ## 关键运行语义（已实现并测试）
@@ -154,9 +162,14 @@ installer/                 # G 阶段
 | --- | --- | --- |
 | `DAFEIYU_DATA_DIR` | 数据目录（SQLite） | `./data` |
 | `DAFEIYU_OLLAMA_URL` | GPU 本地推理端点 | `http://127.0.0.1:11434` |
+| `DAFEIYU_OLLAMA_MODEL` | 覆盖本地对话模型名 | `qwen3:4b` |
 | `DAFEIYU_OLLAMA_CPU_URL` | CPU 接答实例端点（训练窗口） | 同上 |
-| `DAFEIYU_CLOUD_BASE_URL` / `DAFEIYU_CLOUD_API_KEY` | 第三方端点/密钥（仅引用，不入库）；服务商选内置预设（腾讯云混元/DeepSeek）时端点可省 | 未设置 ⇒ 云端禁用 |
+| `DAFEIYU_CLOUD_BASE_URL` / `DAFEIYU_CLOUD_API_KEY` | 第三方端点/密钥；密钥与自定义端点均可在面板「模型与云端」维护（环境变量优先，界面只回掩码）；选内置预设（腾讯云混元/DeepSeek）或填「端点 URL」（如 TokenHub）时端点可省环境变量 | 未设置且界面未维护 ⇒ 云端禁用 |
+| `DAFEIYU_OLLAMA_SOURCE` | 模型权重来源：`modelscope`（国内镜像直连，无需代理）/ `registry`（官方仓库，通常需代理） | `modelscope` |
+| `DAFEIYU_MODELSCOPE_REPO` / `DAFEIYU_MODELSCOPE_FILE` | 自定义 ModelScope GGUF 仓库与文件名（需同时设置；默认按模型名内置映射，如 qwen3:4b → Qwen/Qwen3-4B-GGUF 的 Q4_K_M） | 内置映射 |
+| `DAFEIYU_MODELSCOPE_BASE` | ModelScope 站点基址（自建镜像用） | `https://modelscope.cn` |
 | `DAFEIYU_PROBE` | 资源探测：`auto`（nvidia-smi）/ `ram-only` | `auto` |
 | `DAFEIYU_VENDOR_DIR` | Live2D vendor 运行时目录（Cubism Core/pixi/pixi-live2d-display） | `<包根>/client/vendor` |
+| `DAFEIYU_DANMAKU_URL` / `DAFEIYU_DANMAKU_ROOM_ID` / `DAFEIYU_DANMAKU_TOKEN` | 授权弹幕转发服务地址、房间 ID 与访问令牌 | 未设置时工作台显示弹幕未配置 |
 
-> 本仓库为代码交付（阶段 A–I + 0.12.0 角色档案 + 0.13.0 现实使用收敛 + 0.14.0 Live2D 桌宠与云端预设），不代表插件已安装、平台权限已取得、在线训练已验证或一键开播可用；实机项按方案 §20 在目标机与宿主安装环节验收。Live2D 官方示例模型（data/models/）与 vendor 运行时（client/vendor/）的许可均限本地/学习用途，商用或公开分发前自行核对 Live2D 条款。
+> 本仓库为代码交付（阶段 A–I + 0.12.0 角色档案 + 0.13.0 现实使用收敛 + 0.14.0 Live2D 桌宠与云端预设 + 0.14.1 模型页白屏修复与一键部署本地模型 + 0.15.0 API Key 界面维护与 ModelScope 国内部署），不代表插件已安装、平台权限已取得、在线训练已验证或一键开播可用；实机项按方案 §20 在目标机与宿主安装环节验收。Live2D 官方示例模型（data/models/）与 vendor 运行时（client/vendor/）的许可均限本地/学习用途，商用或公开分发前自行核对 Live2D 条款。

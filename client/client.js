@@ -171,10 +171,13 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-preview-conversation{border-top:1px solid var(--dsw-alias-border-l1,#d8e2e0);padding-top:8px}
 .dfy-preview-conversation .dfy-actions{margin-top:6px}
 .dfy-preview-conversation .dfy-caption:empty{display:none}
-.dfy-preview-reply{overflow-wrap:anywhere;white-space:pre-wrap}
 .dfy-role-preview{border:.5px solid var(--dsw-alias-border-l2,#d8e2e0);border-radius:14px;overflow:hidden;background:var(--dsw-alias-bg-layer-1,#fff)}
 .dfy-role-stage{position:relative;display:grid;place-items:center;min-height:220px;aspect-ratio:16/10;overflow:hidden}
-.dfy-scene-mouth{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.dfy-role-stage .dfy-idle-video-hidden{visibility:hidden}
+.dfy-stage-voice{position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:8px;border-radius:7px;padding:5px 8px;background:#17303c;color:#fff;font-size:12px}
+.dfy-speech-meter{width:38px;height:4px;border-radius:4px;background:#54616a;overflow:hidden}
+.dfy-speech-meter i{display:block;width:100%;height:100%;background:#94e2d9;transform:scaleX(.05);transform-origin:left}
+.dfy-stage-message{position:absolute;z-index:4;left:12px;right:12px;bottom:12px;margin:0;padding:7px 9px;background:#17303c;color:#fff;border-radius:7px;font-size:12px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .dfy-role-stage :is(img,video){display:block;width:100%;height:100%;position:absolute;inset:0;object-fit:cover;object-position:center}
 .dfy-role-initial{font-size:28px;font-weight:700}
 .dfy-role-caption{padding:10px 12px;display:grid;gap:4px}
@@ -213,7 +216,17 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-desk-preview .dfy-role-audio audio{width:min(320px,100%)}
 .dfy-desk-preview .dfy-pet-model-caption,.dfy-desk-preview .dfy-role-caption{min-height:0}
 .dfy-desk-speak-options{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
-.dfy-desk-speak-options label{display:flex;align-items:center;gap:4px;margin-left:auto;font-size:12px;color:var(--desk-muted)}
+.dfy-desk-speak-options label,.dfy-interaction-head label{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--desk-muted)}
+.dfy-interaction-head,.dfy-turn-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:7px}
+.dfy-interaction-head h4{margin:0;font-size:14px}
+.dfy-turns{list-style:none;margin:8px 0;padding:5px 8px;min-height:62px;max-height:260px;overflow:auto;overscroll-behavior:contain;border:1px solid var(--desk-line);border-radius:9px;background:var(--desk-bg)}
+.dfy-turns li{padding:8px 3px;min-width:0}
+.dfy-turns li+li{border-top:1px solid var(--desk-line)}
+.dfy-turn-head time{margin-left:auto;color:var(--desk-muted);font-size:11px}
+.dfy-turn-text,.dfy-turn-answer{margin:4px 0;overflow-wrap:anywhere;white-space:pre-wrap}
+.dfy-turn-answer{border-left:2px solid var(--desk-accent);padding:4px 8px;background:var(--desk-sheet);border-radius:0 6px 6px 0}
+.dfy-turn-meta{font-size:11px;color:var(--desk-muted)}
+.dfy-canvas-subtitle{position:absolute;top:34px;left:12px;right:12px;color:#fff;font-size:12px;margin:0;overflow-wrap:anywhere}
 .dfy-desk-safe{position:relative;min-height:205px;border-radius:12px;background:#142821;color:#e8f2ec;display:grid;align-content:center;justify-items:center;gap:8px}
 .dfy-desk-safe strong{font-size:20px}
 .dfy-desk-inline{margin:0;color:var(--desk-muted)}
@@ -322,14 +335,14 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 	// ------------------------------------------------------------------ 图标（画布彩色鱼 / 导航单色剪影+蓝气泡）
 
-	const FishIcon = ({ size = 16, theme }) => {
+	const FishIcon = ({ size = 16, theme, mouth }) => {
 		if (theme) {
 			return h("svg", { width: size, height: size, viewBox: "0 0 64 64", "aria-hidden": true },
 				h("rect", { x: 2, y: 2, width: 60, height: 60, rx: 14, fill: theme.primary }),
 				h("ellipse", { cx: 30, cy: 34, rx: 20, ry: 12, fill: theme.accent }),
 				h("path", { d: "M46 28 L58 22 L54 34 L58 46 L46 40 Z", fill: theme.accent }),
 				h("circle", { cx: 20, cy: 30, r: 3, fill: "#17303c" }),
-				h("path", { d: "M14 40 Q26 48 38 40", stroke: "#17303c", strokeWidth: 2.5, fill: "none", strokeLinecap: "round" }),
+				h("path", { ref: mouth, d: "M14 40 Q26 48 38 40", stroke: "#17303c", strokeWidth: 2.5, fill: "none", strokeLinecap: "round" }),
 				h("circle", { cx: 44, cy: 14, r: 5, fill: "#4ecdc4", opacity: 0.85 }));
 		}
 		return h("svg", { width: size, height: size, viewBox: "0 0 64 64", "aria-hidden": true, style: { color: "inherit", flex: "0 0 auto" } },
@@ -490,8 +503,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					internal.on("beforeModelUpdate", () => {
 						const speech = speechRef.current;
 						const speakingNow = speech.speaking;
-						const desired = speakingNow ? (speech.mouthLevel?.() ?? 0.2 + 0.65 * Math.abs(Math.sin(performance.now() / 75))) : 0;
-						opening += (desired - opening) * 0.3;
+						const desired = speakingNow ? (speech.mouthLevel?.() || 0) : 0;
+						opening += (desired - opening) * (desired > opening ? 0.55 : 0.27);
 						if (speakingNow || opening > 0.01) {
 							for (const id of mouthIds) internal.coreModel.setParameterValueById(id, opening);
 						}
@@ -539,7 +552,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 	 * 0.14.0：数据目录装有 Live2D 模型包时优先渲染 Live2D（待机动作/口型/点击互动），
 	 * 未安装或加载失败自动回退 CSS 胖鱼；speaking 时气泡高亮；字幕容器 role=status。
 	 */
-	function DeskPet({ persona, speaking, subtitle, entry, fallback, mouthLevel }) {
+	function DeskPet({ persona, speaking, subtitle, entry, fallback, mouthLevel, message }) {
 		const p = persona || {};
 		const theme = p.theme || AVATAR_THEME[p.avatarId] || AVATAR_THEME["fish-deskpet"];
 		const name = p.name || "大肥鱼";
@@ -549,6 +562,24 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const [loadError, setLoadError] = useState("");
 		const model = loadError ? null : entry;
 		const detail = loadError ? "Live2D 加载失败：" + loadError : fallback;
+		const mouth = useRef(null);
+		useEffect(() => {
+			if (!speaking || model || !mouth.current) return;
+			const path = mouth.current;
+			let frame;
+			const tick = () => {
+				const open = (mouthLevel?.() || 0) * 9;
+				path.setAttribute("d", "M14 40 Q26 " + (38 - open / 2) + " 38 40 Q26 " + (46 + open) + " 14 40 Z");
+				frame = requestAnimationFrame(tick);
+			};
+			path.setAttribute("fill", "#17303c");
+			tick();
+			return () => {
+				cancelAnimationFrame(frame);
+				path.setAttribute("fill", "none");
+				path.setAttribute("d", "M14 40 Q26 48 38 40");
+			};
+		}, [speaking, model, mouthLevel]);
 		return h("div", { className: "dfy-pet-wrap" },
 			h("div", { className: "dfy-pet-window" + (model ? " dfy-pet-window-model" : "") },
 				h("div", { className: "dfy-pet-title" },
@@ -561,89 +592,31 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					!model ? h("div", { className: "dfy-pet-bubble" + (speaking ? " dfy-pet-bubble-on" : ""), role: "status" }, text) : null,
 					model ? h(Live2DScene, { entry: model, speaking, mouthLevel, onFail: setLoadError })
 						: h("div", { className: "dfy-pet-fish" },
-							h("span", { className: "dfy-pet-sway" }, h(FishIcon, { size: 116, theme: theme })))),
+							h("span", { className: "dfy-pet-sway" }, h(FishIcon, { size: 116, theme, mouth }))),
+					h(StageMessage, { message })),
 			model ? h("p", { className: "dfy-pet-model-caption" + (speaking ? " dfy-pet-model-caption-on" : ""), role: "status" }, text) : null,
 			h("div", { className: "dfy-pet-status" },
 				h("span", { title: detail || undefined }, detail || (model ? model.name : "内置大肥鱼")),
 					h("span", null, speaking ? "● 正在说话" : "○ 待机中"))));
 	}
 
-	function SceneMouth({ video, level, sceneUrl }) {
-		const overlay = useRef(null);
+	function SpeechMeter({ level }) {
+		const bar = useRef(null);
 		useEffect(() => {
-			const source = video.current;
-			const canvas = overlay.current;
-			const context = canvas?.getContext("2d");
-			if (!source || !context || !level) return;
-			const controller = new AbortController();
-			const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
-			let raf = 0;
-			let track;
-			let opening = 0;
-			const draw = () => {
-				raf = requestAnimationFrame(draw);
-				const width = canvas.clientWidth, height = canvas.clientHeight;
-				if (canvas.width !== width || canvas.height !== height) {
-					canvas.width = width;
-					canvas.height = height;
-				}
-				context.clearRect(0, 0, width, height);
-				opening += (level() - opening) * 0.46;
-				if (opening < 0.025 || !track || source.readyState < 2 || source.paused || motion.matches) return;
-
-				// Map the tracked lips through the same cover crop as the scene video.
-				const time = source.currentTime;
-				const nextIndex = track.findIndex((frame) => frame[0] >= time);
-				const before = track[nextIndex < 0 ? track.length - 1 : Math.max(0, nextIndex - 1)];
-				const after = track[nextIndex < 0 ? track.length - 1 : nextIndex];
-				const span = after[0] - before[0];
-				if (span > 0.4 || Math.abs(before[0] - time) > 0.4) return;
-				const blend = span ? Math.min(1, Math.max(0, (time - before[0]) / span)) : 0;
-				const [lx, ly, rx, ry, lipHeight] = before.slice(1).map((value, index) =>
-					value + (after[index + 1] - value) * blend);
-				const sw = source.videoWidth, sh = source.videoHeight;
-				const scale = Math.max(width / sw, height / sh);
-				const offsetX = (width - sw * scale) / 2;
-				const offsetY = (height - sh * scale) * 0.42;
-				const sx = (lx + rx) * sw / 2, sy = (ly + ry) * sh / 2;
-				const mouthWidth = (rx - lx) * sw;
-				const halfWidth = mouthWidth * 0.82;
-				const halfHeight = Math.max(lipHeight * sh * 0.93, mouthWidth * 0.29);
-				if (halfWidth < 2 || halfHeight < 2 || sx - halfWidth < 0 || sx + halfWidth > sw ||
-					sy - halfHeight < 0 || sy + halfHeight > sh) return;
-				const dx = sx * scale + offsetX, dy = sy * scale + offsetY;
-				const stride = 2 * halfWidth / 30;
-				for (let i = 0; i < 30; i++) {
-					const x = -halfWidth + i * stride;
-					const weight = Math.sin(Math.PI * (i + 0.5) / 30) ** 2;
-					const change = opening * halfHeight * 0.5 * weight;
-					const band = halfHeight * 0.30;
-					const left = dx + x * scale;
-					context.drawImage(source, sx + x, sy - halfHeight, stride, halfHeight - band,
-						left, dy - halfHeight * scale, stride * scale + 0.15, (halfHeight - band - change) * scale);
-					context.drawImage(source, sx + x, sy - band, stride, 2 * band,
-						left, dy - (band + change) * scale, stride * scale + 0.15, 2 * (band + change) * scale);
-					context.drawImage(source, sx + x, sy + band, stride, halfHeight - band,
-						left, dy + (band + change) * scale, stride * scale + 0.15, (halfHeight - band - change) * scale);
-				}
+			let frame;
+			const tick = () => {
+				const el = bar.current;
+				if (!el) return;
+				el.style.transform = "scaleX(" + Math.max(0.05, level?.() || 0) + ")";
+				frame = requestAnimationFrame(tick);
 			};
-			fetch(sceneUrl.replace("/scene?", "/mouth-track?"), { signal: controller.signal })
-				.then((response) => response.json()).then(({ frames }) => {
-					if (!controller.signal.aborted && frames?.length) {
-						track = frames;
-						draw();
-					}
-				}).catch(() => {});
-			return () => {
-				controller.abort();
-				cancelAnimationFrame(raf);
-				context.clearRect(0, 0, canvas.width, canvas.height);
-			};
-		}, [video, level, sceneUrl]);
-		return h("canvas", { className: "dfy-scene-mouth", ref: overlay, "aria-hidden": true });
+			tick();
+			return () => cancelAnimationFrame(frame);
+		}, [level]);
+		return h("span", { className: "dfy-speech-meter", "aria-hidden": true }, h("i", { ref: bar }));
 	}
 
-	function EciyuanPreview({ persona, entry, sceneUrl, fallback, speaking, subtitle, compact, mouthLevel }) {
+	function EciyuanPreview({ persona, entry, sceneUrl, fallback, speaking, subtitle, compact, mouthLevel, message }) {
 		const [failure, setFailure] = useState("");
 		const [sceneFailed, setSceneFailed] = useState(false);
 		const [portraitUnavailable, setPortraitUnavailable] = useState(false);
@@ -655,7 +628,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			const element = video.current;
 			const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
 			const update = () => {
-				if (document.hidden || motion.matches) element.pause();
+				if (document.hidden || motion.matches || speaking) element.pause();
 				else element.play().catch(() => {});
 			};
 			update();
@@ -666,35 +639,43 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				document.removeEventListener("visibilitychange", update);
 				motion.removeEventListener("change", update);
 			};
-		}, [scene]);
+		}, [scene, speaking]);
 		return h("div", { className: "dfy-role-preview" },
 			h("div", { className: "dfy-role-stage", style: { background: persona.theme?.bg, color: persona.theme?.accent } },
 				h("span", { className: "dfy-pet-ai" }, persona.aiLabelText || "AI 生成内容"),
 				model ? h(Live2DScene, { entry, speaking, mouthLevel, onFail: setFailure }) :
-					scene ? h("video", { ref: video, src: sceneUrl, muted: true, playsInline: true, loop: true,
-						poster: persona.media.portraitUrl, "aria-label": persona.name + "的动态形象",
-						onError: () => setSceneFailed(true) }) :
-					portraitUnavailable ? h("span", { className: "dfy-role-initial" }, persona.name) :
-						h("img", { src: persona.media.portraitUrl, alt: persona.name + "的官方立绘", onError: () => setPortraitUnavailable(true) }),
-				scene && speaking && mouthLevel ? h(SceneMouth, { video, level: mouthLevel, sceneUrl }) : null),
+					h(react.Fragment, null,
+						portraitUnavailable ? h("span", { className: "dfy-role-initial" }, persona.name) :
+							h("img", { src: persona.media.portraitUrl, alt: persona.name + "的官方立绘", onError: () => setPortraitUnavailable(true) }),
+						scene ? h("video", { ref: video, src: sceneUrl, muted: true, playsInline: true, loop: true,
+							className: speaking ? "dfy-idle-video-hidden" : undefined,
+							"aria-label": persona.name + "的待机动画", "aria-hidden": speaking || undefined,
+							onError: () => setSceneFailed(true) }) : null),
+				speaking && !model ? h("span", { className: "dfy-stage-voice" }, "正在说话", h(SpeechMeter, { level: mouthLevel })) : null,
+				h(StageMessage, { message })),
 			h("div", { className: "dfy-role-caption" + (speaking ? " dfy-role-caption-speaking" : "") },
 				h("strong", null, persona.name),
 				subtitle ? h("p", { role: "status" }, subtitle) : null,
 				!compact ? h("p", { className: "dfy-caption" },
-					model ? "Live2D · " + entry.name : scene ? "鹅次元动态形象" : (portraitUnavailable ? "官方立绘暂不可用" : "鹅次元官方立绘") +
+					model ? "Live2D · " + entry.name : scene ? "待机视频 · 语音回复时显示立绘" : (portraitUnavailable ? "官方立绘暂不可用" : "鹅次元官方立绘") +
 						(failure ? " · 本地模型加载失败" : fallback ? " · " + fallback : "")) : null));
 	}
 
-	function PreviewCanvas({ preview, compact, entry, sceneUrl, fallback, speaking, subtitle, mouthLevel }) {
+	function StageMessage({ message }) {
+		return message ? h("p", { className: "dfy-stage-message" }, message.author + " · " + message.text) : null;
+	}
+
+	function PreviewCanvas({ preview, compact, entry, sceneUrl, fallback, speaking, subtitle, mouthLevel, message }) {
 		const p = preview || {};
+		const onStage = !compact && p.scene?.danmakuOverlay !== false ? message : null;
 		const persona = p.persona || { name: "大肥鱼", avatarId: "fish-classic", aiLabelText: "AI 生成内容" };
-		if (persona.media) return h(EciyuanPreview, { key: persona.profileId + ":" + (entry?.id || "") + ":" + (sceneUrl || ""), persona, entry, sceneUrl, fallback, speaking, subtitle, compact, mouthLevel });
+		if (persona.media) return h(EciyuanPreview, { key: persona.profileId + ":" + (entry?.id || "") + ":" + (sceneUrl || ""), persona, entry, sceneUrl, fallback, speaking, subtitle, compact, mouthLevel, message: onStage });
 		const scene = p.scene || { title: "大肥鱼的直播间", danmakuOverlay: true };
 		const theme = AVATAR_THEME[persona.avatarId] || AVATAR_THEME["fish-classic"];
 		const bg = SCENE_BG[scene.background || "teal"] || SCENE_BG.teal;
 		// 桌宠形象：改用桌面小组件窗口（compact 同样正常显示），不再用 16:9 全屏画布
 		if (isDeskpetId(persona.avatarId)) {
-			return h(DeskPet, { key: entry?.id || "builtin", persona, speaking, subtitle, entry, fallback, mouthLevel });
+			return h(DeskPet, { key: entry?.id || "builtin", persona, speaking, subtitle, entry, fallback, mouthLevel, message: onStage });
 		}
 		return h("div", {
 			className: "dfy-canvas",
@@ -702,14 +683,11 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		},
 		h("div", { style: { position: "absolute", top: compact ? 8 : 12, left: compact ? 10 : 14, color: "#dfeeea", fontSize: compact ? 11.5 : 14, fontWeight: 700, textShadow: "0 1px 3px rgba(0,0,0,.45)", maxWidth: "70%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, scene.title),
 		h("span", { style: { position: "absolute", top: compact ? 8 : 12, right: compact ? 10 : 14, fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: "rgba(192,57,43,.92)", color: "#fff" } }, persona.aiLabelText || "AI 生成内容"),
-		h("div", { style: { position: "absolute", left: 0, right: 0, bottom: compact ? 6 : 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 } },
+		h("div", { style: { position: "absolute", left: 0, right: 0, bottom: compact ? 6 : onStage ? 48 : 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 } },
 			h(FishIcon, { size: compact ? 36 : 64, theme }),
 			h("span", { style: { color: theme.accent, fontSize: compact ? 12.5 : 17, fontWeight: 700, textShadow: "0 1px 4px rgba(0,0,0,.45)", maxWidth: "55%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, persona.name)),
-		scene.danmakuOverlay && !compact ? h("div", { style: { position: "absolute", top: 40, left: 14, right: 14, fontSize: 11, color: "rgba(255,255,255,.75)", display: "grid", gap: 3 } },
-			h("span", null, "「先把手上的事做完」"),
-			h("span", { style: { marginLeft: 36 } }, "「大肥鱼今天种什么？」")) : null,
-		h("span", { style: { position: "absolute", bottom: 6, left: 10, fontSize: 10, color: "rgba(255,255,255,.55)" } },
-			p.previewActive ? "本地预览（未推流） · AI 标识常显" : "未在预览"));
+		h(StageMessage, { message: onStage }),
+		subtitle && !compact ? h("p", { className: "dfy-canvas-subtitle" }, subtitle) : null);
 	}
 
 	// ------------------------------------------------------------------ 首页
@@ -789,7 +767,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			{ label: "数据与自检", hint: "环境逐项检查", state: selfcheck ? (selfcheck.allPassed ? "ok" : "warn") : null, body: h(SelfcheckStep, { report: selfcheck, run: runSelfcheck }) },
 			{ label: "直播接入", hint: "平台与官方客户端", state: platformOk ? "ok" : "err", body: h(PlatformStep, { settings: data, save: save }) },
 			{ label: "角色档案", hint: "主播信息 · 音色 · 授权", state: personaOk ? "ok" : "err", body: h(PersonaStep, { settings: data, save: save }) },
-			{ label: "模型与云端", hint: "本地优先，云端选填", state: null, body: h(CloudStep, { settings: data, save: save }) },
+			{ label: "模型与云端", hint: "本地优先，云端选填", state: null, body: h(CloudStep, { settings: data, save: save, reload: load }) },
 			{ label: "运行与数据用途", hint: "隐私下限确认", state: data.dataUsage.confirmed ? "ok" : "warn", body: h(DataUsageStep, { settings: data, save: save }) },
 		];
 		const done = personaOk && platformOk;
@@ -906,21 +884,164 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				h(Btn, { tone: "primary", onClick: () => save("persona", payload()) }, "保存角色档案与播出设置")));
 	}
 
-	function CloudStep({ settings, save }) {
+	/** 取日志中最后一个百分比（下载/导入进度条数据源；无百分比返回 null）。 */
+	const lastPercent = (log) => {
+		if (!Array.isArray(log)) return null;
+		for (let i = log.length - 1; i >= 0; i--) {
+			const m = String(log[i] || "").match(/(\d{1,3})\s*%/);
+			if (m) return Math.max(0, Math.min(100, Number(m[1])));
+		}
+		return null;
+	};
+
+	/**
+	 * 一键部署本地模型（0.15）：POST/GET /api/dafeiyu/model/deploy 轮询部署状态，
+	 * 展示 Ollama 安装/模型下载（ModelScope 直连）/导入/验证的进程输出与进度条；
+	 * GET 附带 install 探测（服务/模型是否就绪）用于「未安装提示」；running 期间 2s 轮询。
+	 */
+	function LocalModelDeployCard() {
+		const [deploy, setDeploy] = useState(null);
+		const [err, setErr] = useState("");
+		const latest = useRef(null);
+		latest.current = deploy;
+		useEffect(() => {
+			let stopped = false;
+			let timer;
+			const poll = async () => {
+				try {
+				const r = await api("model/deploy");
+				if (stopped) return;
+				// 状态接口异常必须显式报错（旧后端对未知路径回 ok:false），不允许静默停在「检查部署状态…」
+				if (r && r.ok && r.deploy) { setDeploy(r.deploy); setErr(""); }
+				else setErr((r && r.error) ? String(r.error) : "部署状态接口无响应");
+				} catch (e) {
+					if (!stopped) setErr("部署状态获取失败：" + (e && e.message ? e.message : "网络错误"));
+				}
+				if (!stopped) timer = setTimeout(poll, latest.current && latest.current.status === "running" ? 2000 : 8000);
+			};
+			poll();
+			return () => { stopped = true; clearTimeout(timer); };
+		}, []);
+		const start = async () => {
+			setErr("");
+			try {
+				const r = await api("model/deploy", {});
+				if (r && r.ok && r.deploy) { setDeploy(r.deploy); setErr(""); }
+				else setErr((r && r.error) ? String(r.error) : "启动失败");
+			} catch (e) {
+				setErr("启动请求失败：" + (e && e.message ? e.message : "网络错误"));
+			}
+		};
+		const d = deploy;
+		const running = d && d.status === "running";
+		const install = d && d.install;
+		const ready = !!(d && (d.status === "ok" || (install && install.ready)));
+		const needInstall = !running && !ready;
+		const pct = d && d.log ? lastPercent(d.log) : null;
+		const label = !d ? (err ? "重试连接" : "检查部署状态…") : running ? "部署中…" :
+			d.status === "failed" ? "重试部署" : needInstall ? "一键安装（ModelScope 直连）" : "重新验证";
+		const badge = !d ? null : h(Badge, {
+			tone: d.status === "ok" ? "ok" : d.status === "failed" ? "err" : running ? "warn" : "idle",
+			dot: running, text: d.status === "ok" ? "已就绪" : d.status === "failed" ? "失败" : running ? "进行中" : "未部署",
+		});
+		return h(Card, { title: "本地模型（本地优先推理）", extra: badge },
+			h("p", { className: "dfy-muted", style: { margin: 0 } },
+				"一键安装并验证：", h("code", null, "Ollama"), " + ", h("code", null, (d && d.model) || "qwen3:4b"),
+				"（", (d && d.ollamaUrl) || "http://127.0.0.1:11434", "）。模型权重默认经 ", h("code", null, "ModelScope"), " 国内镜像直连（无需代理）；已就绪部分自动跳过。"),
+			install && !running ? h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+				h(Badge, { tone: install.reachable ? "ok" : "err", text: "Ollama 服务 " + (install.reachable ? "已运行" : "未安装") }),
+				h(Badge, { tone: install.modelInstalled ? "ok" : "err", text: (install.model || "qwen3:4b") + (install.modelInstalled ? " 已就绪" : " 未安装") })) : null,
+			needInstall ? h("p", { className: "dfy-caption", style: { margin: 0, color: "var(--dsw-alias-state-warning-primary,#8a6d1f)" } },
+				"本地模型未安装：一键安装将从 ModelScope 国内镜像直连下载权重（无需代理），自动安装 Ollama、导入模型并验证。") : null,
+			running && pct !== null ? h("div", { role: "progressbar", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100, "aria-label": "部署进度", style: { height: 8, borderRadius: 999, background: "var(--dsw-alias-bg-layer-2,#e6eceb)", overflow: "hidden" } },
+				h("div", { style: { width: pct + "%", height: "100%", background: "var(--dsw-alias-state-business-primary,#0f5e57)", transition: "width .4s ease" } })) : null,
+			running ? h("p", { className: "dfy-caption", style: { margin: 0 }, role: "status" }, pct !== null ? "进行中 · " + pct + "%" : "进行中…") : null,
+			err ? h("p", { className: "dfy-caption", role: "alert", style: { margin: 0, color: "var(--dsw-alias-state-error-primary,#c0392b)" } },
+				"部署状态异常：" + err + (String(err).includes("未知路径")
+				? "。当前宿主加载的插件后端未包含该端点：请在 DeepSeek Harness 中重载大肥鱼插件，再刷新本页。"
+				: "")) : null,
+			h("div", { className: "dfy-actions" },
+				h(Btn, { tone: "primary", disabled: running, onClick: start }, label),
+				d && d.log && d.log.length ? h("span", { className: "dfy-caption", role: "status" }, "部署进程输出（最近 " + d.log.length + " 行）") : null),
+			d && d.log && d.log.length ? h("pre", {
+				tabIndex: 0, "aria-live": running ? "polite" : undefined,
+				style: { margin: 0, maxHeight: 132, overflow: "auto", fontSize: 11.5, fontFamily: "ui-monospace,SFMono-Regular,Menlo,monospace", whiteSpace: "pre-wrap", overflowWrap: "anywhere", padding: "8px 10px", borderRadius: 8, background: "var(--dsw-alias-bg-layer-2,#eef3f2)" },
+			}, d.log.slice(-14).join("\n")) : null,
+			d && d.status === "failed" && d.error ? h("p", { className: "dfy-caption", style: { margin: 0, color: "var(--dsw-alias-state-error-primary,#c0392b)" } }, d.error) : null,
+			h("p", { className: "dfy-caption", style: { margin: 0 } },
+				"命令行等价：项目目录运行 ", h("code", null, "pnpm setup:ollama"), "。", h("code", null, "DAFEIYU_OLLAMA_SOURCE=registry"), " 可切回官方仓库（需代理）；", h("code", null, "DAFEIYU_MODELSCOPE_REPO"), " / ", h("code", null, "DAFEIYU_MODELSCOPE_FILE"), " 可自定义 GGUF。部署完成后本地优先路由自动使用该端点，无需重启插件。"));
+	}
+
+	function CloudStep({ settings, save, reload }) {
 		const c = settings.cloud;
 		const presets = (settings.catalogs && settings.catalogs.cloudProviders) || [];
+		const key = settings.cloudKey || { source: "none", masked: null, updatedAt: null };
 		const [enabled, setEnabled] = useState(c.enabled);
 		const [provider, setProvider] = useState(c.provider);
 		const [model, setModel] = useState(c.model);
 		const [budget, setBudget] = useState(c.dailyBudgetCny === null ? "" : String(c.dailyBudgetCny));
+		const [baseUrl, setBaseUrl] = useState(c.baseUrl || "");
+		const [apiKey, setApiKey] = useState("");
+		const [keyNote, setKeyNote] = useState("");
+		const [test, setTest] = useState(null);
+		const [testing, setTesting] = useState(false);
+		const [quota, setQuota] = useState(null);
+		const [quotaLoading, setQuotaLoading] = useState(false);
+		// 额度/可用余额（0.15.2）：按已保存的生效配置查询（DeepSeek 余额 / OpenAI 兼容 billing；不支持则如实标注）
+		const loadQuota = async () => {
+			setQuotaLoading(true);
+			try {
+				const r = await api("cloud/quota");
+				setQuota(r && typeof r.ok === "boolean" ? r : { ok: false, error: "未知错误" });
+			} catch (e) { setQuota({ ok: false, error: (e && e.message) || "网络错误" }); }
+			setQuotaLoading(false);
+		};
+		useEffect(() => { if (key.source !== "none") loadQuota(); }, [key.source]);
+		const saveKey = async (body) => {
+			setKeyNote("密钥保存中…");
+			try {
+				const r = await api("settings/cloud/key", body);
+				setKeyNote(r.ok ? "已保存并即时生效" : "保存失败：" + (r.error || "未知错误"));
+				if (r.ok) { setApiKey(""); setQuota(null); if (reload) await reload(); }
+			} catch { setKeyNote("保存失败：网络错误"); }
+		};
+		// 连接测试（0.15.1）：按「表单当前值 + 已填密钥」测试，不写入设置；通过后才能保存
+		const runTest = async () => {
+			setTesting(true);
+			setTest(null);
+			try {
+				const r = await api("settings/cloud/test", {
+					provider: provider, model: model,
+					...(baseUrl.trim() !== "" ? { baseUrl: baseUrl.trim() } : {}),
+					...(apiKey.trim() !== "" ? { apiKey: apiKey.trim() } : {}),
+				});
+				setTest(r && typeof r.ok === "boolean" ? r : { ok: false, error: (r && r.error) || "未知错误" });
+			} catch (e) { setTest({ ok: false, error: (e && e.message) || "网络错误" }); }
+			setTesting(false);
+		};
+		const doSave = async () => {
+			if (apiKey.trim() !== "") {
+				setKeyNote("密钥保存中…");
+				const kr = await api("settings/cloud/key", { apiKey: apiKey.trim() });
+				if (!kr.ok) { setKeyNote("密钥保存失败：" + (kr.error || "未知错误")); return; }
+				setApiKey("");
+			}
+			await save("cloud", { enabled: enabled, provider: provider, model: model, baseUrl: baseUrl.trim(), dailyBudgetCny: budget === "" ? null : Number(budget) });
+			loadQuota();
+		};
 		const selPreset = presets.find((p) => p.id === provider) || null;
+		// 白屏修复（0.14.1）：预设目录缺 models 字段时不再抛错（React 未捕获异常会卸载整棵树导致白屏）
+		const selModels = Array.isArray(selPreset && selPreset.models) ? selPreset.models : [];
 		const pickPreset = (p) => {
-			setProvider(p.id);
-			if (!p.models.includes(model)) setModel(p.models[0] || "");
+			setProvider(p.id || "");
+			const models = Array.isArray(p.models) ? p.models : [];
+			if (!models.includes(model)) setModel(models[0] || "");
+			setBaseUrl("");
+			setTest(null);
 		};
 		return h("div", { style: { display: "grid", gap: 12 } },
 			h("p", { className: "dfy-muted", style: { margin: 0 } }, "本地优先：常规请求先走本地模型；未配置云端时不产生任何付费调用。云端仅作兜底，可全部留空。"),
-			h(Row, { label: "本地预设", value: "Ollama · Qwen3-4B-Instruct（随安装固定）" }),
+			h(LocalModelDeployCard),
 			presets.length > 0 ? h(Field, { label: "服务商预设（OpenAI 兼容端点）" },
 				h("div", { className: "dfy-choice" },
 					presets.map((p) => h("button", {
@@ -935,19 +1056,50 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 						onClick: () => setProvider(""),
 					}, "自定义"))) : null,
 			selPreset ? h("p", { className: "dfy-caption", style: { margin: 0 } },
-				"端点：" + selPreset.baseUrl + "（环境变量 DAFEIYU_CLOUD_BASE_URL 可覆盖）。" + selPreset.note) : h("p", { className: "dfy-caption", style: { margin: 0 } },
-				"自定义服务商：填写名称与模型，并以 DAFEIYU_CLOUD_BASE_URL 提供端点。"),
+				"端点：" + selPreset.baseUrl + "（下方「端点 URL」或环境变量 DAFEIYU_CLOUD_BASE_URL 可覆盖）。" + selPreset.note) : h("p", { className: "dfy-caption", style: { margin: 0 } },
+				"自定义网关：填写服务商名、模型名与「端点 URL」即可接入（OpenAI 兼容 /v1/chat/completions）。"),
 			h("label", { className: "dfy-check" },
-				h("input", { type: "checkbox", checked: enabled, onChange: (e) => setEnabled(e.target.checked) }),
+				h("input", { type: "checkbox", checked: enabled, onChange: (e) => { setEnabled(e.target.checked); setTest(null); } }),
 				h("span", null, "启用第三方兜底（OpenAI 兼容端点）")),
 			h("div", { style: { display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))" } },
-				h(Field, { label: "服务商" }, h("input", { className: "dfy-input", value: provider, placeholder: selPreset ? selPreset.id : "留空 = 不覆盖配置文件", onChange: (e) => setProvider(e.target.value) })),
-				h(Field, { label: "模型名" }, h("input", { className: "dfy-input", list: "dfy-cloud-models", value: model, placeholder: "如 hunyuan-lite", onChange: (e) => setModel(e.target.value) },
-					selPreset ? h("datalist", { id: "dfy-cloud-models" }, selPreset.models.map((m) => h("option", { key: m, value: m }))) : null)),
-				h(Field, { label: "每日费用上限（元）" }, h("input", { className: "dfy-input", value: budget, placeholder: "未设置 ⇒ 付费禁用", onChange: (e) => setBudget(e.target.value) }))),
-			h("p", { className: "dfy-caption", style: { margin: 0, color: "var(--dsw-alias-state-error-primary,#c0392b)" } }, "API Key 不在界面保存：以环境变量 DAFEIYU_CLOUD_API_KEY 提供（混元用腾讯云密钥）；覆盖在重启插件后生效。"),
-			h("div", { className: "dfy-actions" },
-				h(Btn, { tone: "primary", onClick: () => save("cloud", { enabled: enabled, provider: provider, model: model, dailyBudgetCny: budget === "" ? null : Number(budget) }) }, "保存")));
+				h(Field, { label: "服务商" }, h("input", { className: "dfy-input", value: provider, placeholder: selPreset ? selPreset.id : "留空 = 不覆盖配置文件", onChange: (e) => { setProvider(e.target.value); setTest(null); } })),
+				h(Field, { label: "模型名" },
+					h("div", { style: { display: "grid", gap: 4 } },
+						h("input", { className: "dfy-input", list: "dfy-cloud-models", value: model, placeholder: "如 hunyuan-lite", onChange: (e) => { setModel(e.target.value); setTest(null); } }),
+						// React 禁止 void 元素（input）携带 children：datalist 必须挂为兄弟节点（点击预设即白屏的根因）
+						selModels.length > 0 ? h("datalist", { id: "dfy-cloud-models" }, selModels.map((m) => h("option", { key: m, value: m }))) : null)),
+				h(Field, { label: "每日费用上限（元）" }, h("input", { className: "dfy-input", value: budget, placeholder: "未设置 ⇒ 付费禁用", onChange: (e) => { setBudget(e.target.value); setTest(null); } })),
+				h(Field, { label: "端点 URL（自定义网关）" }, h("input", { className: "dfy-input", value: baseUrl, placeholder: selPreset ? "留空 = 预设端点" : "如 https://tokenhub.example.com/v1", title: "OpenAI 兼容端点，解析优先级：环境变量 > 此处 > 预设", onChange: (e) => { setBaseUrl(e.target.value); setTest(null); } }))),
+			h(Field, { label: "API Key（云端兜底密钥）" },
+				h("div", { style: { display: "grid", gap: 6 } },
+					h("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } },
+						h("span", { className: "dfy-caption", style: { margin: 0 } },
+							key.source === "env" ? "环境变量 DAFEIYU_CLOUD_API_KEY 已配置（优先于界面值）"
+							: key.source === "ui" ? "界面维护中：" + (key.masked || "••••") + (key.updatedAt ? " · 更新于 " + key.updatedAt.slice(0, 16).replace("T", " ") : "")
+							: "未配置（云端兜底不可用；本地推理不受影响）"),
+						h(Badge, { tone: key.source === "none" ? "err" : "ok", text: key.source === "env" ? "环境变量" : key.source === "ui" ? "界面维护" : "未配置" })),
+					h("div", { style: { display: "grid", gap: 8, gridTemplateColumns: "minmax(0,1fr) auto auto auto" } },
+						h("input", { type: "password", className: "dfy-input", value: apiKey, placeholder: "sk-…（保存在本插件数据目录，界面只回掩码）", autoComplete: "new-password", onChange: (e) => { setApiKey(e.target.value); setTest(null); } }),
+						h(Btn, { disabled: testing, onClick: runTest, title: "按当前表单值与密钥发起一次最小测试请求（不保存）" }, testing ? "测试中…" : "测试连接"),
+						h(Btn, { tone: "primary", disabled: !(test && test.ok), title: test && test.ok ? "测试已通过，可保存" : "先「测试连接」通过后再保存", onClick: doSave }, "保存"),
+						key.source === "ui" ? h(Btn, { tone: "danger", title: "清除界面维护的密钥（不影响环境变量）", onClick: () => saveKey({ clear: true }) }, "清除密钥") : null),
+					test ? h("span", { className: "dfy-caption", role: "status", style: { margin: 0, color: test.ok ? "var(--dsw-alias-state-success-primary,#1c7a54)" : "var(--dsw-alias-state-error-primary,#c0392b)" } },
+						(test.ok ? "测试通过" : "测试失败") + (test.keySource === "env" ? "（使用环境变量密钥）" : "") + "：" + (test.ok ? test.detail || "模型已返回回复" : test.error || "未知错误")) : null,
+					keyNote ? h("span", { className: "dfy-caption", role: "status" }, keyNote) : null)),
+			h(Field, { label: "额度 / 可用余额（按已保存配置查询）" },
+				h("div", { style: { display: "grid", gap: 6 } },
+					h("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } },
+						key.source === "none" ? h("span", { className: "dfy-caption", style: { margin: 0 } }, "配置并保存 API Key 后可查询额度") :
+						quota && quota.ok && quota.supported ? h(Badge, { tone: "ok", text: "可用 " + ((quota.quota && quota.quota.availableText) || "—") }) :
+						quota && quota.ok && quota.supported === false ? h(Badge, { tone: "idle", text: "不支持余额查询" }) :
+						quota && quota.error ? h(Badge, { tone: "err", text: "查询失败" }) : h(Badge, { tone: "idle", text: "未查询" }),
+						key.source !== "none" ? h(Btn, { disabled: quotaLoading, onClick: loadQuota }, quotaLoading ? "查询中…" : "刷新额度") : null),
+					quota && quota.ok && quota.supported && quota.quota && quota.quota.details ? h("div", { style: { display: "grid", gap: 2 } },
+						quota.quota.details.map((d, i) => h("span", { key: i, className: "dfy-caption", style: { margin: 0 } }, d.label + "：" + d.value)),
+						quota.fetchedAt ? h("span", { className: "dfy-caption", style: { margin: 0 } }, "查询于 " + new Date(quota.fetchedAt).toLocaleTimeString()) : null) : null,
+					quota && quota.ok && quota.supported === false ? h("span", { className: "dfy-caption", style: { margin: 0 } }, quota.note || "额度以服务商控制台为准") : null,
+					quota && !quota.ok && quota.error ? h("span", { className: "dfy-caption", role: "alert", style: { margin: 0, color: "var(--dsw-alias-state-error-primary,#c0392b)" } }, quota.error) : null)),
+			h("p", { className: "dfy-caption", style: { margin: 0 } }, "密钥仅存本插件数据目录（SQLite），界面与接口只回掩码；环境变量 DAFEIYU_CLOUD_API_KEY 优先。测试通过后保存，保存后即时生效、无需重载插件（混元用腾讯云密钥）。"));
 	}
 
 	function DataUsageStep({ settings, save }) {
@@ -1267,19 +1419,14 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				return Math.min(1, Math.max(0, (Math.sqrt(energy / playing.samples.length) - 0.009) * 12));
 			}
 			if (!playing?.audio || playing.audio.paused) {
-				return usingBrowser.current ? 0.12 + 0.45 * Math.abs(Math.sin(performance.now() / 75)) : 0;
+				return 0;
 			}
 			return playing.sampleLevel(playing.audio.currentTime);
 		}, []);
-		const speak = async (text, voiceId) => {
+		const speak = async (text, voiceId, interactionId) => {
 			cancelAudio();
 			browser.stop();
 			usingBrowser.current = false;
-			if (!ROLE_BROWSER_VOICES[profileId]) {
-				usingBrowser.current = true;
-				browser.speak(text, voiceId);
-				return;
-			}
 			const playing = { controller: new AbortController() };
 			if (window.AudioContext) {
 				try {
@@ -1299,7 +1446,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			try {
 				const response = await fetch("/api/dafeiyu/preview/role-speech", {
 					method: "POST", headers: { "content-type": "application/json" },
-					body: JSON.stringify({ profileId, text: text.slice(0, 500), stream: !!playing.context }), signal: playing.controller.signal,
+					body: JSON.stringify({ profileId, text: text.slice(0, 500), interactionId, stream: !!playing.context }), signal: playing.controller.signal,
 				});
 				if (response.headers.get("content-type")?.includes("application/x-ndjson")) {
 					playing.streaming = true;
@@ -1355,90 +1502,214 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			note: usingBrowser.current ? browser.note : note, level };
 	}
 
-	function PreviewConversation({ voiceId, publish, persona, samplePhrase, ensurePreview, readReplies, setReadReplies }) {
+	const REPLY_SOURCE = { local_gpu: "本地模型", local_cpu: "本地模型（CPU）", cloud: "云端模型", fallback: "预设回复" };
+	const FALLBACK_REASON = {
+		LOCAL_UNAVAILABLE: "模型暂不可用", LOCAL_TIMEOUT: "模型响应超时", POLICY_BLOCKED: "内容受到限制",
+		QUALITY_GATE_FAILED: "模型没有生成可用回复",
+	};
+	const TURN_STATE = { waiting: "待回复", queued: "已排队", thinking: "正在组织回复…", expired: "已过期", error: "生成中断" };
+	const FEED_STATE = {
+		unconfigured: "直播弹幕未配置", invalid: "弹幕接入配置不完整",
+		waiting: "等待弹幕源连接…", connected: "弹幕源已连接", error: "弹幕源连接中断，正在重试",
+	};
+
+	function previewTurnLabel(turn) {
+		if (!turn.answer) return TURN_STATE[turn.status];
+		const source = REPLY_SOURCE[turn.answer.route] || turn.answer.route;
+		const detail = turn.answer.route === "fallback" ? FALLBACK_REASON[turn.answer.reasonCode] :
+			turn.memoryUsed ? "参考 " + turn.memoryUsed + " 条本地记忆" : "";
+		return [source, detail].filter(Boolean).join(" · ");
+	}
+
+	function PreviewConversation({ voiceId, publish, persona, samplePhrase, ensurePreview, readReplies, setReadReplies, live, running }) {
 		const [text, setText] = useState("");
-		const [reply, setReply] = useState(null);
+		const [state, setState] = useState(null);
 		const [notice, setNotice] = useState("");
-		const [pending, setPending] = useState(false);
-		const inFlight = useRef(null);
+		const [sending, setSending] = useState(false);
+		const [autoAnswer, setAutoAnswer] = useState(false);
+		const [spoken, setSpoken] = useState(null);
+		const sendingRef = useRef(false);
+		const request = useRef(0);
+		const answered = useRef(new Set());
+		const playback = useRef({ runId: undefined, seen: new Set() });
 		const speech = useRoleSpeech(persona?.profileId);
 		const mic = useLocalRecognition(setText);
 		const sample = useRef(null);
+		const scroll = useRef(null);
+		const follow = useRef(true);
 		const [sampleError, setSampleError] = useState(false);
-		const sampleLine = (samplePhrase || "").trim() || "你好呀，这是我的互动声线，用这句话来试听本地生成的声音。";
-		useEffect(() => () => {
-			inFlight.current?.abort();
-			inFlight.current = null;
-			publish({ speaking: false, subtitle: "" });
-		}, [publish]);
-		useEffect(() => {
-			publish({ speaking: speech.phase === "speaking", subtitle: reply?.text || "", mouthLevel: speech.level });
-		}, [publish, reply, speech.phase, speech.level]);
-		const send = async (event) => {
-			event.preventDefault();
-			if (!text.trim() || inFlight.current || mic.phase !== "idle") return;
-			const controller = new AbortController();
-			inFlight.current = controller;
-			if (speech.phase !== "idle") speech.stop();
-			sample.current?.pause();
-			setPending(true);
-			setNotice("正在等待本地模型回复…");
+		const sampleLine = (samplePhrase || "").trim() || "你好呀，这是我的互动声线。";
+		const load = useCallback(async () => {
+			const ticket = ++request.current;
 			try {
-				await ensurePreview(controller.signal);
-				controller.signal.throwIfAborted();
-				const response = await fetch("/api/dafeiyu/preview/chat", {
-					method: "POST", headers: { "content-type": "application/json" },
-					body: JSON.stringify({ text: text.trim() }), signal: controller.signal,
-				});
-				const result = await response.json();
-				if (controller.signal.aborted) return;
-				if (!result.ok) throw new Error(result.error || "回复失败");
-				setReply(result.result);
-				setText("");
-				if (readReplies) speech.speak(result.result.text, voiceId);
-				setNotice(result.result.route === "fallback" ? "使用预设回复 · " + ({
-					LOCAL_UNAVAILABLE: "本地模型不可用", LOCAL_TIMEOUT: "本地模型响应超时",
-					POLICY_BLOCKED: "内容受到限制",
-				}[result.result.reasonCode] || "本地模型未生成可用回复") : "本地模型回复");
-			} catch (error) {
-				if (!controller.signal.aborted) setNotice(error.message || "回复失败，请重试");
-			} finally {
-				if (!controller.signal.aborted) {
-					inFlight.current = null;
-					setPending(false);
+				const result = await api("interaction");
+				if (ticket !== request.current) return;
+				if (!result.ok) throw new Error(result.error);
+				setState(result);
+				setNotice((note) => note === "互动消息暂时无法读取，正在重试" ? "" : note);
+			} catch {
+				if (ticket === request.current) setNotice("互动消息暂时无法读取，正在重试");
+			}
+		}, []);
+		useEffect(() => {
+			let disposed = false;
+			let timer;
+			const poll = async () => {
+				await load();
+				if (!disposed) timer = setTimeout(poll, running ? 650 : 1600);
+			};
+			poll();
+			return () => { disposed = true; clearTimeout(timer); request.current++; };
+		}, [load, running]);
+		useEffect(() => () => publish({ speaking: false, subtitle: "", message: null }), [publish]);
+
+		const turns = state?.turns || [];
+		const latest = turns.at(-1);
+		const latestAnswer = turns.findLast((turn) => turn.answer);
+		const busyTurn = turns.find((turn) => turn.status === "thinking");
+		const activeTurn = speech.phase === "idle" ? busyTurn || latest : spoken;
+		const caption = activeTurn?.answer?.text || "";
+		useEffect(() => {
+			publish({ speaking: speech.phase === "speaking", subtitle: caption, mouthLevel: speech.level, message: activeTurn });
+		}, [publish, speech.phase, speech.level, caption, activeTurn?.id, activeTurn?.text, activeTurn?.author]);
+		useEffect(() => {
+			if (follow.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
+		}, [latest?.id, latestAnswer?.id, busyTurn?.id]);
+
+		const play = (turn) => {
+			playback.current.seen.add(turn.answer.playbackKey);
+			setSpoken(turn);
+			sample.current?.pause();
+			speech.speak(turn.answer.text, voiceId, state?.id || undefined);
+		};
+		useEffect(() => {
+			if (!state) return;
+			const queue = playback.current;
+			if (queue.runId !== state.id) {
+				if (queue.runId) {
+					speech.stop();
+					setSpoken(null);
+					setAutoAnswer(false);
 				}
+				const previous = queue.runId === undefined ? turns.flatMap((turn) => turn.answer ? [turn.answer.playbackKey] : []) : [];
+				playback.current = { runId: state.id, seen: new Set(previous) };
+				answered.current.clear();
+				if (queue.runId) return;
+			}
+			const seen = playback.current.seen;
+			const keys = new Set(turns.flatMap((turn) => turn.answer ? [turn.answer.playbackKey] : []));
+			for (const key of seen) if (!keys.has(key)) seen.delete(key);
+			if (!readReplies) {
+				for (const key of keys) seen.add(key);
+				return;
+			}
+			if (speech.phase !== "idle" || mic.phase !== "idle") return;
+			const next = turns.find((turn) => turn.answer && !seen.has(turn.answer.playbackKey));
+			if (next) play(next);
+		}, [state, readReplies, speech.phase, mic.phase]);
+
+		const reply = async (turn) => {
+			if (answered.current.has(turn.id)) return;
+			answered.current.add(turn.id);
+			try {
+				const result = await api("interaction/reply", { id: turn.id });
+				if (!result.ok) throw new Error(result.error || "无法回复弹幕");
+				setNotice("");
+				await load();
+			} catch (error) {
+				setNotice(error.message || "无法回复弹幕");
+			} finally {
+				answered.current.delete(turn.id);
 			}
 		};
-		return h("div", { className: "dfy-preview-conversation" },
-			persona?.media ? h("div", { className: "dfy-role-audio" },
-				h("span", { className: "dfy-caption" }, "官方录音（原声参考）"),
-				mic.phase === "idle" && !pending ? h("audio", { ref: sample, controls: true, preload: "none", src: persona.media.sampleAudioUrl,
-					"aria-label": persona.name + "的官方录音（原声参考）", onPlay: () => { if (speech.phase !== "idle") speech.stop(); },
-					onError: () => setSampleError(true) }) : null,
-				sampleError ? h("p", { className: "dfy-caption", role: "status" }, "官方录音暂不可用") : null) : null,
-			h("div", { className: "dfy-role-audio" },
-				h("span", { className: "dfy-caption" }, "本地互动声线"),
-				h(Btn, { disabled: pending || (speech.phase === "idle" && mic.phase !== "idle"),
-					onClick: speech.phase === "idle" ? () => { sample.current?.pause(); speech.speak(sampleLine, voiceId); } : speech.stop },
-					speech.phase === "idle" ? "试听互动声线" : "停止朗读"),
-				!reply && speech.note ? h("p", { className: "dfy-caption", role: "status" }, speech.note) : null),
-			h("form", { onSubmit: send, "aria-busy": pending },
-				h(Field, { label: "对话输入" }, h("textarea", { rows: 2, maxLength: 500, value: text, disabled: pending,
-					onChange: (event) => setText(event.target.value), placeholder: "输入文字，或点麦克风转写" })),
+		useEffect(() => {
+			if (!live || !autoAnswer || !state?.id || state.mode !== "live" || sending || busyTurn ||
+				speech.phase !== "idle" || mic.phase !== "idle") return;
+			if (turns.some((turn) => turn.status === "queued")) return;
+			const next = turns.find((turn) => turn.status === "waiting");
+			if (next) void reply(next);
+		}, [live, autoAnswer, state, sending, speech.phase, mic.phase]);
+
+		const send = async (event) => {
+			event.preventDefault();
+			const message = text.trim();
+			if (!message || sendingRef.current || mic.phase !== "idle") return;
+			sendingRef.current = true;
+			setSending(true);
+			setNotice("");
+			sample.current?.pause();
+			try {
+				await ensurePreview();
+				const result = await api("interaction/send", { text: message });
+				if (!result.ok) throw new Error(result.error || "发送失败");
+				setText((draft) => draft.trim() === message ? "" : draft);
+				follow.current = true;
+				await load();
+			} catch (error) {
+				setNotice(error.message || "发送失败，请重试");
+			} finally {
+				sendingRef.current = false;
+				setSending(false);
+			}
+		};
+
+		return h("section", { className: "dfy-preview-conversation", "aria-label": "主播互动" },
+			h("div", { className: "dfy-interaction-head" },
+				h("h4", null, "主播互动"),
+				live ? h("span", { className: "dfy-turn-meta", role: "status" }, FEED_STATE[state?.danmaku] || FEED_STATE.waiting) : null,
+				live && ["connected", "error"].includes(state?.danmaku) ? h("label", null,
+					h("input", { type: "checkbox", checked: autoAnswer, onChange: (event) => setAutoAnswer(event.target.checked) }),
+					"自动回复弹幕") : null),
+			h("ol", { className: "dfy-turns", ref: scroll, "aria-label": "消息与主播回复", tabIndex: 0,
+				onScroll: (event) => {
+					const el = event.currentTarget;
+					follow.current = el.scrollHeight - el.clientHeight - el.scrollTop < 25;
+				} },
+				!turns.length ? h("li", { className: "dfy-turn-meta" }, live ? "等待操作员消息或直播弹幕" : "发送一条消息，开始和主播对话") : null,
+				turns.map((turn) => h("li", { key: turn.id },
+					h("div", { className: "dfy-turn-head" },
+						h("strong", null, turn.author),
+						turn.source === "danmaku" ? h("span", { className: "dfy-turn-meta" }, "直播弹幕") : null,
+						h("time", { dateTime: turn.sentAt }, new Date(turn.sentAt).toLocaleTimeString("zh-CN"))),
+					h("p", { className: "dfy-turn-text" }, turn.text),
+					turn.answer ? h("div", { className: "dfy-turn-answer" },
+						h("span", { className: "dfy-turn-meta" }, (persona?.name || "主播") + " · " + previewTurnLabel(turn)),
+						h("p", { className: "dfy-turn-text" }, turn.answer.text),
+						h(Btn, { tone: "ghost", disabled: speech.phase !== "idle" || mic.phase !== "idle",
+							onClick: () => play(turn) }, "朗读回复")) :
+						h("div", { className: "dfy-turn-head" },
+							h("span", { className: "dfy-turn-meta" }, previewTurnLabel(turn)),
+							turn.status === "waiting" ? h(Btn, { tone: "ghost", onClick: () => reply(turn) }, "让主播回复") : null)))),
+			h("form", { onSubmit: send, "aria-busy": sending },
+				h(Field, { label: "发消息给主播" }, h("textarea", { rows: 2, maxLength: 500, value: text,
+					onChange: (event) => setText(event.target.value), placeholder: "输入文字，或点麦克风转写",
+					onKeyDown: (event) => {
+						if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229) return;
+						event.preventDefault();
+						event.currentTarget.form.requestSubmit();
+					} })),
 				h("div", { className: "dfy-desk-speak-options dfy-actions" },
-					h("button", { type: "submit", className: "dfy-btn dfy-btn-pri", disabled: !text.trim() || pending || mic.phase !== "idle" }, "发送"),
+					h("button", { type: "submit", className: "dfy-btn dfy-btn-pri", disabled: !text.trim() || sending || mic.phase !== "idle" },
+						sending ? "正在发送…" : "发送"),
 					mic.phase === "idle"
-						? h(Btn, { disabled: pending || speech.phase !== "idle", onClick: () => { sample.current?.pause(); mic.start(); } }, "麦克风")
+						? h(Btn, { disabled: speech.phase !== "idle", onClick: () => { sample.current?.pause(); mic.start(); } }, "麦克风")
 						: h(Btn, { disabled: mic.phase === "stopping", onClick: mic.stop }, mic.phase === "checking" ? "取消识别" : "结束识别"),
-					h("label", null, h("input", { type: "checkbox", checked: readReplies, disabled: pending,
-						onChange: (event) => setReadReplies(event.target.checked) }), "自动朗读")),
-				h("p", { className: "dfy-caption", role: "status" }, mic.note)),
-			h("p", { className: "dfy-caption", role: "status" }, notice),
-			reply ? h("div", null,
-				h("p", { className: "dfy-preview-reply" }, reply.text),
-				speech.phase === "idle" ? h(Btn, { disabled: pending || mic.phase !== "idle",
-					onClick: () => { sample.current?.pause(); speech.speak(reply.text, voiceId); } }, "朗读回复") : null,
-				h("p", { className: "dfy-caption", role: "status" }, speech.note)) : null);
+					h("label", null, h("input", { type: "checkbox", checked: readReplies,
+						onChange: (event) => {
+							setReadReplies(event.target.checked);
+							if (!event.target.checked && speech.phase !== "idle") speech.stop();
+						} }), "自动朗读"),
+					speech.phase !== "idle" ? h(Btn, { onClick: speech.stop }, "停止朗读") : null)),
+			h("p", { className: "dfy-caption", role: "status" }, notice || mic.note || speech.note || (busyTurn ? "主播正在组织回复…" : "")),
+			!live ? h("details", null, h("summary", { className: "dfy-turn-meta" }, "声音试听"),
+				persona?.media ? h("div", { className: "dfy-role-audio" },
+					h("span", { className: "dfy-caption" }, "官方录音"),
+					h("audio", { ref: sample, controls: true, preload: "none", src: persona.media.sampleAudioUrl,
+						"aria-label": persona.name + "的官方录音", onPlay: () => { if (speech.phase !== "idle") speech.stop(); },
+						onError: () => setSampleError(true) }),
+					sampleError ? h("p", { className: "dfy-caption", role: "status" }, "官方录音暂不可用") : null) : null,
+				h(Btn, { disabled: speech.phase !== "idle" || mic.phase !== "idle",
+					onClick: () => { sample.current?.pause(); setSpoken(null); speech.speak(sampleLine, voiceId); } }, "试听互动声线")) : null);
 	}
 
 	function Workbench({ status, act, busy, pending, settings, refresh, goTab, connected, emergency }) {
@@ -1447,7 +1718,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const [selection, setSelection] = useState(null);
 		const [modelNote, setModelNote] = useState("");
 		const [caption, setCaption] = useState({ speaking: false, subtitle: "" });
-		const [readReplies, setReadReplies] = useState(false);
+		const [readReplies, setReadReplies] = useState(true);
 		const request = useRef(0);
 		const saving = useRef(false);
 		const loadCatalog = useCallback(async () => {
@@ -1496,7 +1767,10 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const locked = ["self_check", "awaiting_platform", "stream_established", "live_confirmed", "ending"].includes(status?.liveStatus);
 		const safe = emergency || status?.liveStatus === "safe_scene";
 		const editable = connected && !!status && !locked && !pending.startsWith("live/") && pending !== "preview/stop" && !safe;
-		const active = preview?.conversationEnabled && status?.liveStatus === "local_preview";
+		const active = status?.liveStatus === "local_preview";
+		const live = status?.liveStatus === "live_confirmed";
+		const canInteract = connected && status?.personaReady && !safe && !selection && !pending.startsWith("live/") &&
+			pending !== "preview/stop" && (live || editable);
 		const save = async (patch, next) => {
 			if (saving.current || !editable) return;
 			saving.current = true;
@@ -1523,12 +1797,10 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			const id = value || null;
 			save({ live2dModelId: id }, { ...persona, live2dModelId: id });
 		};
-		const ensurePreview = async (signal) => {
+		const ensurePreview = async () => {
+			if (live || active) return;
 			if (!editable || selection || saving.current || !status.personaReady) throw new Error("请先完成角色配置");
-			if (active) return;
-			const response = await fetch("/api/dafeiyu/preview/start", { method: "POST", credentials: "same-origin", signal });
-			const result = await response.json();
-			signal.throwIfAborted();
+			const result = await api("preview/start", {});
 			if (!result.ok || result.status?.liveStatus !== "local_preview") throw new Error(result.error || "当前无法进入本地预览");
 			// The shared status refresh runs independently of the reply.
 			load();
@@ -1542,7 +1814,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					h("h3", null, "实时预览"),
 					active && !safe ? h(Btn, { tone: "ghost", disabled: busy,
 						onClick: () => act("preview/stop", {}, "结束本地对话") }, "结束本地对话") :
-						h(Badge, { tone: "idle", text: "本地画面" })),
+						h(Badge, { tone: live ? "ok" : "idle", text: live ? "直播互动" : "本地画面" })),
 				h("div", { className: "dfy-desk-selectors" },
 					profiles.length && persona ? h(Field, { label: "角色" },
 						h("select", { value: persona.profileId, "aria-label": "角色", disabled: !editable || !!selection,
@@ -1563,9 +1835,9 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					h("span", { className: "dfy-pet-ai" }, persona?.aiLabelText || "AI 生成内容")) :
 					persona ? h(PreviewCanvas, { preview: { ...preview, persona }, entry, sceneUrl, fallback, ...caption }) :
 						h("div", { className: "dfy-desk-safe", role: "status" }, "正在加载预览…"),
-				editable && !selection && status.personaReady ? h(PreviewConversation, {
+				canInteract && persona ? h(PreviewConversation, {
 					key: persona?.profileId, persona, voiceId: persona?.voiceId, samplePhrase: selected?.samplePhrase, publish: setCaption,
-					ensurePreview, readReplies, setReadReplies,
+					ensurePreview, readReplies, setReadReplies, live, running: live || active,
 				}) : editable && !selection && !status.personaReady ? h("div", { className: "dfy-desk-inline" },
 					h(Btn, { onClick: () => goTab("wizard") }, "配置角色与声音")) : null),
 			h(WorkbenchControls, { status, act, busy: busy || !!selection, goTab, officialUrl, connected }));
@@ -1878,6 +2150,29 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		{ id: "diag", label: "诊断", render: () => h(DiagTab) },
 	];
 
+	// 渲染错误兜底（0.14.1）：React 未捕获的渲染错误会卸载整棵树（白屏）；
+	// 边界把错误收敛成面板内错误卡并提供「重试渲染」，宿主 slot 层不再收到崩溃。
+	class PanelErrorBoundary extends react.Component {
+		constructor(props) {
+			super(props);
+			this.state = { error: null };
+		}
+		static getDerivedStateFromError(error) { return { error: error }; }
+		componentDidCatch(error) { console.error("[dafeiyu] 面板渲染错误:", error); }
+		render() {
+			if (!this.state.error) return this.props.children;
+			const message = String((this.state.error && this.state.error.message) || this.state.error);
+			return h("div", { className: "dfy-root dfy-desk-root" },
+				h("main", { className: "dfy-body dfy-desk-body" },
+					h("div", { className: "dfy-grid" },
+						h(Card, { title: "面板渲染出错（已阻止白屏）" },
+							h("p", { className: "dfy-mono", style: { margin: 0, overflowWrap: "anywhere" } }, message),
+							h("p", { className: "dfy-caption", style: { margin: 0 } }, "可点击重试渲染；若反复出现请把上方错误信息反馈给开发者。"),
+							h("div", { className: "dfy-actions" },
+							h(Btn, { tone: "primary", onClick: () => this.setState({ error: null }) }, "重试渲染"))))));
+		}
+	}
+
 	function Panel() {
 		const [tab, setTab] = useState("home");
 		const [status, setStatus] = useState(null);
@@ -1997,7 +2292,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			(owner = {}) => h(FishIcon, { size: owner.size ?? 16 })));
 		ctx.slots.inject("main", () => ctx.slots.register(
 			{ name: "main", key: PANEL_ID },
-			() => h(Panel)));
+			() => h(PanelErrorBoundary, null, h(Panel))));
 	};
 
 	return { apply, inject: ["slots"], name: "dsh-dafeiyu-evolve" };

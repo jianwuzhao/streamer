@@ -1,6 +1,6 @@
 {
   "name": "dsh-dafeiyu-evolve",
-  "version": "0.14.0",
+  "version": "0.15.3",
   "description": "大肥鱼自学习直播系统：鹅次元式角色档案（含 dsh-pet 插件中桌宠）、本地优先推理、统一记忆、技能库、观众画像、训练与自动发布（DSH 插件）",
   "type": "module",
   "main": "lib/index.js",
@@ -16,12 +16,14 @@
     "README.md",
     "client",
     "scripts/synthesize-role-voice.py",
-    "scripts/setup-role-voices.sh"
+    "scripts/setup-role-voices.sh",
+    "scripts/setup-ollama.mjs"
   ],
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
+    "setup:ollama": "node scripts/setup-ollama.mjs",
     "build": "tsdown",
     "test": "node --test \"src/**/*.test.ts\"",
     "test:worker": "python3 -m unittest discover -s training-worker -p 'test_*.py' -v",

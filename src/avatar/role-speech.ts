@@ -34,8 +34,8 @@ const execFileAsync = promisify(execFile)
 /** 固定二进制路径：不经 PATH 搜索，避免被同名可执行文件劫持。 */
 export const SAY_BIN = '/usr/bin/say'
 
-/** 支持角色语音的档案 id 白名单（dsh-pet 桌宠不在其列）。 */
-export const ROLE_SPEECH_PROFILE_IDS = ['xiaxia', 'lubai', 'guyu', 'beila'] as const
+/** 支持角色语音的档案 id 白名单。 */
+export const ROLE_SPEECH_PROFILE_IDS = ['xiaxia', 'lubai', 'guyu', 'beila', 'dsh-pet'] as const
 export type RoleSpeechProfileId = (typeof ROLE_SPEECH_PROFILE_IDS)[number]
 
 export interface RoleSpeechVoice {
@@ -50,13 +50,21 @@ export interface RoleSpeechVoice {
   readonly rateWpm: number
 }
 
-/** 角色音色映射（仅此四档；新增须同步 ROLE_SPEECH_PROFILE_IDS）。 */
+/** 角色音色映射。 */
 export const ROLE_SPEECH_VOICES: readonly RoleSpeechVoice[] = [
   { profileId: 'xiaxia', voiceName: 'Sandy（中文（中国大陆））', sayVoice: 'Sandy (中文（中国大陆）)', locale: 'zh-CN', rateWpm: 190 },
   { profileId: 'lubai', voiceName: 'Tingting（中文（中国大陆））', sayVoice: 'Tingting', locale: 'zh-CN', rateWpm: 153 },
   { profileId: 'guyu', voiceName: 'Flo（中文（中国大陆））', sayVoice: 'Flo (中文（中国大陆）)', locale: 'zh-CN', rateWpm: 168 },
   { profileId: 'beila', voiceName: 'Shelley（中文（中国大陆））', sayVoice: 'Shelley (中文（中国大陆）)', locale: 'zh-CN', rateWpm: 206 },
+  { profileId: 'dsh-pet', voiceName: 'Rocko（中文（中国大陆））', sayVoice: 'Rocko (中文（中国大陆）)', locale: 'zh-CN', rateWpm: 192 },
 ]
+
+const DESKPET_STYLES = new Map([
+  ['qing-wan', { sayVoice: 'Sandy (中文（中国大陆）)', rateWpm: 178 }],
+  ['chen-lang', { sayVoice: 'Reed (中文（中国大陆）)', rateWpm: 163 }],
+  ['tong-qu', { sayVoice: 'Rocko (中文（中国大陆）)', rateWpm: 205 }],
+  ['ping-shi', { sayVoice: 'Tingting', rateWpm: 188 }],
+])
 
 /** 文本上限（与 preview/chat 同一口径，UTF-16 码点计）。 */
 export const ROLE_SPEECH_TEXT_MAX = 500
@@ -265,7 +273,7 @@ export class RoleSpeechService {
    * 合成角色语音：文本经 UTF-8 临时文件 `-f` 喂入，输出 WAV 后读回并清理。
    * 并发超上限直接显式 busy（不排队），由客户端决定重试或回退浏览器朗读。
    */
-  async synthesize(profileId: string, text: string): Promise<RoleSpeechResult> {
+  async synthesize(profileId: string, text: string, voiceId?: string): Promise<RoleSpeechResult> {
     const voice = resolveRoleSpeechVoice(profileId)
     if (voice === null) {
       throw new RoleSpeechError(
@@ -283,7 +291,8 @@ export class RoleSpeechService {
     }
     this.inFlight += 1
     try {
-      return await this.run(voice, normalized)
+      const style = profileId === 'dsh-pet' && voiceId ? DESKPET_STYLES.get(voiceId) : undefined
+      return await this.run(style ? { ...voice, ...style, voiceName: style.sayVoice } : voice, normalized)
     } finally {
       this.inFlight -= 1
     }

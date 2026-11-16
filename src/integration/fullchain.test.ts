@@ -15,6 +15,10 @@ import { NotImplementedError } from '../types.ts'
 
 test('全链路：事件→画像→礼物→记忆→检索→回答→训练→发布→回滚（含故障注入）', async () => {
   const { createPlugin } = await import('../index.ts')
+  // 密封性：本机可能真实运行 Ollama（0.15.x 部署链）——钉死到必死端口，
+  // 保证「本地不可达 → LOCAL_UNAVAILABLE → fallback」注入确定性（同 host-api.test.ts 惯例）
+  const prevOllamaUrl = process.env.DAFEIYU_OLLAMA_URL
+  process.env.DAFEIYU_OLLAMA_URL = 'http://127.0.0.1:1'
   const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-it-'))
   const plugin = createPlugin({
     configPath: resolve(process.cwd(), 'config/default.yaml'),
@@ -122,6 +126,8 @@ test('全链路：事件→画像→礼物→记忆→检索→回答→训练�
   } finally {
     plugin.dispose()
     rmSync(dataDir, { recursive: true, force: true })
+    if (prevOllamaUrl === undefined) delete process.env.DAFEIYU_OLLAMA_URL
+    else process.env.DAFEIYU_OLLAMA_URL = prevOllamaUrl
   }
 })
 

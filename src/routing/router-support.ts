@@ -2,6 +2,7 @@
  * 路由器支撑类型与纯函数（自 router.ts 拆出，保持单文件 ≤400 行）。
  */
 import { CloudDisabledError } from '../adapters/cloud.ts'
+import type { GenerateMessage } from '../adapters/model-adapter.ts'
 import type { ModelAdapter } from '../adapters/model-adapter.ts'
 import type { DafeiyuConfigType, FeatureGates } from '../config.ts'
 import type { AnswerReceipt, AnswerRoute, ReasonCode } from '../types.ts'
@@ -38,6 +39,14 @@ export interface RouterDeps {
 }
 
 export interface RouteContext {
+  readonly signal?: AbortSignal
+  readonly hostConversation?: {
+    readonly name: string
+    readonly description: string
+    readonly history: readonly GenerateMessage[]
+    readonly cloudHistory: readonly GenerateMessage[]
+    readonly memory: readonly string[]
+  }
   readonly localOnly?: boolean
   readonly previewCharacter?: string
   readonly previewDescription?: string

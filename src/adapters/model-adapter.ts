@@ -83,7 +83,8 @@ export function combineSignals(signal: AbortSignal | undefined, timeoutMs: numbe
   const timer =
     timeoutMs !== undefined ? setTimeout(() => controller.abort(new Error('timeout')), timeoutMs) : undefined
   const onAbort = () => controller.abort(signal?.reason)
-  signal?.addEventListener('abort', onAbort, { once: true })
+  if (signal?.aborted) onAbort()
+  else signal?.addEventListener('abort', onAbort, { once: true })
   return {
     signal: controller.signal,
     cleanup: () => {

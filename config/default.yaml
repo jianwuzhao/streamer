@@ -63,10 +63,10 @@ models:
   routing: local_first
   local:
     engine: ollama
-    baseModel: Qwen/Qwen3-4B-Instruct-2507
+    baseModel: qwen3:4b
     artifact: pinned_approved_artifact
     contextTokens: 4096
-    maxOutputTokens: 128
+    maxOutputTokens: 224
     concurrency: 1
     cpuFallbackEnabled: true
   cloud:

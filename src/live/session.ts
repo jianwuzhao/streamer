@@ -204,6 +204,10 @@ export class LiveSession {
     return this.previewActive && this.standalonePreview ? this.standalonePreviewRun : null
   }
 
+  get liveRunId(): number | null {
+    return this.status === 'live_confirmed' ? this.startEpoch : null
+  }
+
   get previewActive(): boolean {
     return this.status === 'local_preview'
   }

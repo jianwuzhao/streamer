@@ -10,9 +10,9 @@
  * - host-api-audience.ts：观众与治理 GET（audience×2、governance×4）
  * - host-api-shared.ts：类型与公共助手
  */
-import { randomUUID } from 'node:crypto'
 import type { DafeiyuPluginHandle } from './index.ts'
-import { BUILTIN_VOICES } from './settings/catalogs.ts'
+import { ConversationError, MESSAGE_LIMIT } from './live/conversation.ts'
+import { BUILTIN_VOICES, resolveCloudBaseUrl } from './settings/catalogs.ts'
 import { SettingsValidationError, type Readiness } from './settings/store.ts'
 import { json, readBody, todayCostCny, FEEDBACK_LABELS, type FeedbackLabelInput, type ServerRequest, type ServerResponse } from './host-api-shared.ts'
 import { handleDataGetRoute } from './host-api-data.ts'
@@ -81,7 +81,7 @@ export function buildStatus(handle: DafeiyuPluginHandle): DafeiyuStatus {
 
 /** 生成 connection/request 处理器：非 /api/dafeiyu/ 前缀一律 next() 放行。 */
 export function createRequestHandler(handle: DafeiyuPluginHandle) {
-  let pendingPreviewRun: number | null = null
+  const { session, conversation, danmaku } = handle.live
   return async (req: ServerRequest, res: ServerResponse, next: () => Promise<void>): Promise<void> => {
     const url = req.url ?? ''
     if (!url.startsWith('/api/dafeiyu/')) return next()
@@ -95,6 +95,10 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
       }
 
       if (method === 'GET') {
+        if (path === 'interaction') {
+          res.setHeader('cache-control', 'no-store')
+          return json(res, 200, { ok: true, ...conversation.snapshot(), danmaku: danmaku.status })
+        }
         if (await handleDataGetRoute(handle, path, res)) return
         if (handleAudienceGetRoute(handle, path, query, res)) return
         if (handleAvatarGetRoute(handle.avatar, path, query, res, req.headers)) return
@@ -102,7 +106,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
 
       if (method === 'POST') {
         // 预览输入类端点共用 8192 字节请求体上限（chat 文本 + role-speech 的 profileId/文本）
-        const boundedPreviewInput = path === 'preview/chat' || path.startsWith('preview/role-speech')
+        const boundedPreviewInput = path === 'preview/chat' || path.startsWith('preview/role-speech') || path.startsWith('interaction/')
         const body = await readBody(req, boundedPreviewInput ? 8192 : Infinity)
         if (body === null) return json(res, 413, { ok: false, error: '请求体过大' })
         let parsed: unknown
@@ -138,6 +142,8 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
               typeof args.idempotencyKey === 'string' ? args.idempotencyKey : `ui-${Date.now()}`,
               preflightInput,
             )
+            conversation.snapshot()
+            if (session.liveRunId !== null) danmaku.start()
             return json(res, 200, {
               ok: true,
               status: buildStatus(handle),
@@ -146,15 +152,20 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
           }
           case 'live/stop': {
             const status = await handle.live.session.stop()
+            danmaku.stop()
+            conversation.reset()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
           case 'live/emergency-stop': {
             handle.referenceVoiceStream.cancel()
             const status = handle.live.session.emergencyStop()
+            danmaku.stop()
+            conversation.reset()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
           case 'live/operator-confirm': {
             const status = handle.live.session.operatorConfirmedLive(new Date().toISOString())
+            if (session.liveRunId !== null) danmaku.start()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
           case 'preview/start': {
@@ -169,39 +180,26 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
           }
           case 'preview/stop': {
             const status = handle.live.session.exitPreview()
+            conversation.snapshot()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
+          case 'interaction/reply': {
+            if (typeof args.id !== 'string') return json(res, 400, { ok: false, error: '请选择一条弹幕' })
+            return json(res, 202, { ok: true, turn: conversation.reply(args.id) })
+          }
+          case 'interaction/send':
           case 'preview/chat': {
-            const session = handle.live.session
-            const previewRun = session.previewRunId
-            if (previewRun === null) return json(res, 409, { ok: false, error: '请先进入本地预览' })
-            if (pendingPreviewRun !== null) return json(res, 409, { ok: false, error: '正在等待上一条预览回复' })
+            const legacy = path === 'preview/chat'
+            if (legacy && session.previewRunId === null) return json(res, 409, { ok: false, error: '请先进入本地预览' })
             const text = typeof args.text === 'string' ? args.text.trim() : ''
-            if (text.length === 0 || text.length > 500) {
-              return json(res, 400, { ok: false, error: '请输入 1–500 字的文字' })
+            if (text.length === 0 || text.length > MESSAGE_LIMIT) {
+              return json(res, 400, { ok: false, error: `请输入 1–${MESSAGE_LIMIT} 字的文字` })
             }
-            const profile = handle.settings.getPersonaProfile()
-            pendingPreviewRun = previewRun
-            try {
-              const result = await handle.router.routePreview({
-                requestId: randomUUID(),
-                sessionId: `preview-${previewRun}`,
-                roomId: 'local-preview',
-                text,
-                type: 'operator',
-                purposeTags: ['preview'],
-                occurredAt: new Date().toISOString(),
-              }, profile.name, profile.media ? profile.tagline : undefined)
-              if (session.previewRunId !== previewRun) {
-                return json(res, 409, { ok: false, error: '本次预览已结束' })
-              }
-              if (handle.settings.getPersonaProfile().id !== profile.id) {
-                return json(res, 409, { ok: false, error: '角色已切换，请重新发送' })
-              }
-              return json(res, 200, { ok: true, result })
-            } finally {
-              pendingPreviewRun = null
-            }
+            const { turn, done } = conversation.send(text, legacy)
+            if (!legacy) return json(res, 202, { ok: true, id: conversation.snapshot().id, turn })
+            const result = await done
+            if (!result) return json(res, 409, { ok: false, error: '预览已结束或回复中断，请重新发送' })
+            return json(res, 200, { ok: true, result })
           }
           case 'preview/role-speech/warm': {
             const profileId = handle.settings.getPersonaProfile().id
@@ -230,14 +228,25 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
             if (speechText.length === 0 || speechText.length > ROLE_SPEECH_TEXT_MAX) {
               return json(res, 400, { ok: false, error: `请输入 1–${ROLE_SPEECH_TEXT_MAX} 字的文字` })
             }
+            const interactionId = typeof args.interactionId === 'string' ? args.interactionId : null
+            const verifyRun = () => {
+              if (interactionId && !conversation.acceptsSpeech(interactionId)) throw new ConversationError(409, '本场互动已结束')
+            }
+            verifyRun()
             let streaming = false
             const controller = new AbortController()
             const disconnect = () => controller.abort()
+            const useSystemVoice = (error: unknown) => {
+              if (!controller.signal.aborted && !streaming && error instanceof ReferenceVoiceError) return null
+              throw error
+            }
             try {
               const write = res.write?.bind(res)
+              res.once?.('close', disconnect)
+              let reference: Buffer | null = null
               if (args.stream === true && write) {
-                res.once?.('close', disconnect)
                 const streamed = await handle.referenceVoiceStream.speak(profileId, speechText, (chunk) => {
+                  verifyRun()
                   if (!streaming) {
                     res.statusCode = 200
                     res.setHeader('content-type', 'application/x-ndjson; charset=utf-8')
@@ -246,18 +255,24 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
                     streaming = true
                   }
                   write(JSON.stringify({ type: 'audio', voiceName: currentProfile.name, ...chunk }) + '\n')
-                }, controller.signal)
-                if (streamed) {
-                  if (!streaming) return json(res, 500, { ok: false, error: '角色语音没有可播放的音频' })
+                }, controller.signal).catch(useSystemVoice)
+                if (streamed && streaming) {
+                  verifyRun()
                   return void res.end(JSON.stringify({ type: 'end' }) + '\n')
                 }
+              } else {
+                reference = await synthesizeReferenceVoice(handle.dataDir, profileId, speechText).catch(useSystemVoice)
               }
-              const reference = await synthesizeReferenceVoice(handle.dataDir, profileId, speechText)
-              const speech = reference === null ? await roleSpeechService.synthesize(profileId, speechText) : {
+              if (controller.signal.aborted) return
+              verifyRun()
+              const storedVoice = handle.settings.getPersona().voiceId
+              const speech = reference === null ? await roleSpeechService.synthesize(profileId, speechText, storedVoice) : {
                 audioBase64: reference.toString('base64'),
                 voiceName: currentProfile.name,
               }
               const source = reference === null ? 'system' : 'reference'
+              if (controller.signal.aborted) return
+              verifyRun()
               // 合成耗时数秒，期间角色可能被切换——与 preview/chat 同样事后复核
               if (handle.settings.getPersonaProfile().id !== profileId) {
                 return json(res, 409, { ok: false, error: '角色已切换，请重新生成' })
@@ -272,7 +287,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
               if (err instanceof ReferenceVoiceError) {
                 const status = err.code === 'busy' ? 429 : err.code === 'timeout' ? 504 : 500
                 const error = err.code === 'synthesis_failed' ? '本地参考音色生成失败，请检查模型和参考录音' : err.message
-                return json(res, status, { ok: false, error, code: err.code })
+                return json(res, status, { ok: false, error, code: err.code, fallback: true })
               }
               if (err instanceof RoleSpeechError) {
                 return json(res, err.status, { ok: false, error: err.message, code: err.code, fallback: err.fallback })
@@ -281,6 +296,11 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
             } finally {
               res.removeListener?.('close', disconnect)
             }
+          }
+          case 'model/deploy': {
+            // 一键部署本地模型：幂等启动（running 中重复调用原样返回），进度经 GET model/deploy 轮询
+            const deploy = handle.modelDeploy.start()
+            return json(res, deploy.status === 'running' ? 202 : 200, { ok: true, deploy })
           }
           case 'preview/voice-test': {
             const persona = handle.settings.getPersona()
@@ -291,6 +311,106 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
               return json(res, 400, { ok: false, error: '请选择有效的朗读风格并输入 1–80 字的试听语句' })
             }
             return json(res, 200, { ok: true, result: { phrase, voice, note: '浏览器语音试听（本地）' } })
+          }
+          case 'settings/cloud/key': {
+            // 云端密钥界面维护（0.15）：保存/清除；响应只回掩码状态，明文永不回传
+            try {
+              if (args.clear === true) {
+                handle.settings.clearCloudKey()
+              } else if (typeof args.apiKey === 'string' && args.apiKey.trim() !== '') {
+                handle.settings.saveCloudKey(args.apiKey)
+              } else {
+                return json(res, 400, { ok: false, error: '请输入密钥，或用 {"clear":true} 清除界面维护的密钥' })
+              }
+              return json(res, 200, {
+                ok: true,
+                cloudKey: handle.settings.getCloudKeyStatus(),
+                note: '界面密钥已保存并即时生效；环境变量 DAFEIYU_CLOUD_API_KEY 优先',
+              })
+            } catch (err) {
+              if (err instanceof SettingsValidationError) {
+                return json(res, 400, { ok: false, error: err.message, issues: err.issues })
+              }
+              throw err
+            }
+          }
+          case 'settings/cloud/test': {
+            // 云端配置连接测试（0.15.1）：按「表单当前值 + 现有密钥」组合发起一次最小 chat 请求，
+            // 不写入任何设置；端点/密钥解析与保存后的真实调用一致（env 优先），通过后前端才放行保存。
+            const provider = typeof args.provider === 'string' ? args.provider.trim() : ''
+            const model = typeof args.model === 'string' ? args.model.trim() : ''
+            const formKey = typeof args.apiKey === 'string' ? args.apiKey.trim() : ''
+            const formBase = typeof args.baseUrl === 'string' ? args.baseUrl.trim() : ''
+            const envKey = process.env.DAFEIYU_CLOUD_API_KEY?.trim() ?? ''
+            const envBase = process.env.DAFEIYU_CLOUD_BASE_URL?.trim() ?? ''
+            // 端点解析优先级（0.15.3）：环境变量 > 表单「端点 URL」> 服务商预设
+            const presetBase = resolveCloudBaseUrl(provider)
+            const baseURL = envBase !== '' ? envBase : formBase !== '' ? formBase : presetBase
+            if (baseURL === null || baseURL === '') {
+              return json(res, 400, {
+                ok: false,
+                error: '无法确定端点：选择内置预设（腾讯云混元/DeepSeek），或在「端点 URL」填写自定义网关地址',
+              })
+            }
+            if (model === '') return json(res, 400, { ok: false, error: '请填写模型名' })
+            const apiKey = envKey !== '' ? envKey : formKey !== '' ? formKey : handle.settings.getCloudSecretRaw()
+            if (apiKey === '') {
+              return json(res, 400, { ok: false, error: '请填写 API Key（或配置环境变量 DAFEIYU_CLOUD_API_KEY）' })
+            }
+            const keySource = envKey !== '' ? 'env' : formKey !== '' ? 'form' : 'ui'
+            try {
+              const controller = new AbortController()
+              const timer = setTimeout(() => controller.abort(), 8_000)
+              let upstream: Response
+              try {
+                upstream = await fetch(`${baseURL}/chat/completions`, {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+                  body: JSON.stringify({
+                    model,
+                    messages: [{ role: 'user', content: '连接测试：请只回复四个字「连接成功」' }],
+                    // 推理模型思考会先消耗预算，给足余量避免正文被截空误报失败
+                    max_tokens: 512,
+                  }),
+                  signal: controller.signal,
+                })
+              } finally {
+                clearTimeout(timer)
+              }
+              if (!upstream.ok) {
+                const hint = upstream.status === 401 || upstream.status === 403 ? '（密钥无效或无权限）'
+                  : upstream.status === 404 ? '（端点或模型名不匹配）' : ''
+                return json(res, 200, { ok: false, error: `服务商返回 HTTP ${upstream.status} ${hint}`, keySource, baseURL, model })
+              }
+              const body = (await upstream.json()) as {
+                choices?: Array<{ message?: { content?: string; reasoning_content?: string } }>
+              }
+              const content = body.choices?.[0]?.message?.content?.trim() ?? ''
+              const reasoning = body.choices?.[0]?.message?.reasoning_content?.trim() ?? ''
+              if (content === '' && reasoning !== '') {
+                // 推理模型（hy4/R1 系）：端点/密钥/模型均已验证，只是思考未完成正文
+                return json(res, 200, {
+                  ok: true,
+                  detail: '（推理模型）端点与密钥验证通过，已返回思考内容',
+                  keySource,
+                  baseURL,
+                  model,
+                })
+              }
+              if (content === '') {
+                return json(res, 200, {
+                  ok: false,
+                  error: '端点可达但响应缺少文本（检查模型名是否支持 chat/completions）',
+                  keySource,
+                  baseURL,
+                  model,
+                })
+              }
+              return json(res, 200, { ok: true, detail: content.slice(0, 40), keySource, baseURL, model })
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err)
+              return json(res, 200, { ok: false, error: `连接失败：${msg.slice(0, 120)}`, keySource, baseURL, model })
+            }
           }
           case 'settings/persona':
           case 'settings/platform':
@@ -317,7 +437,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
                 section,
                 value: saved,
                 readiness: handle.settings.readiness(),
-                ...(section === 'cloud' ? { note: '云端覆盖在重启插件后生效；API Key 仍走环境变量' } : {}),
+                ...(section === 'cloud' ? { note: '云端设置与 API Key 保存后即时生效（环境变量优先）' } : {}),
               })
             } catch (err) {
               if (err instanceof SettingsValidationError) {
@@ -437,6 +557,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
       }
       return json(res, 405, { ok: false, error: `方法不支持: ${method}` })
     } catch (err) {
+      if (err instanceof ConversationError) return json(res, err.status, { ok: false, error: err.message })
       return json(res, 500, { ok: false, error: (err as Error).message })
     }
   }

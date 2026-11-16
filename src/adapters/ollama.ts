@@ -78,6 +78,7 @@ export class OllamaAdapter implements ModelAdapter {
           model: this.opts.model,
           messages: req.messages.map((m) => ({ role: m.role, content: m.text })),
           stream: false,
+          think: false,
           options: { num_predict: req.maxOutputTokens ?? this.opts.maxOutputTokens ?? 128 },
         }),
         ...(signal !== undefined ? { signal } : {}),

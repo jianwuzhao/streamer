@@ -74,8 +74,8 @@ export function seedSkillPackages(registry: SkillRegistry, dir: string, onIssue:
 
 /**
  * 云端设置覆盖（§24.1 向导第 4 步）：settings/cloud 的 provider 非空才覆盖
- * config.yaml；预算未填保持原值（null 仍禁用付费调用）。重启插件后生效；
- * API key 永不落库，仍由 DAFEIYU_CLOUD_API_KEY 环境变量提供。
+ * config.yaml；预算未填保持原值（null 仍禁用付费调用）。0.15.1 起经实时视图
+ * 每次调用时读取（保存即生效）；API key 环境变量优先，界面维护值兜底。
  */
 export function applyCloudOverrides(base: DafeiyuConfigType, cloud: CloudSettingsType): DafeiyuConfigType {
   if (cloud.provider.trim() === '') return base

@@ -6,8 +6,8 @@
  *   写入 false 属校验失败（400），模型与技能均无权翻转；
  * - 平台登录/实名/人脸在官方客户端完成，本模块只保存操作员声明时间戳，
  *   不保存任何凭据、cookie 或认证材料；
- * - 云端密钥不落库：CloudSettings 只存 provider/model/预算引用，
- *   API key 仍走环境变量（DAFEIYU_CLOUD_API_KEY）。
+ * - 云端密钥（0.15）：可在界面维护（cloud_secret 节，SQLite 持久化）；
+ *   读取路径一律只回掩码与来源，环境变量 DAFEIYU_CLOUD_API_KEY 仍优先；保存后重启插件生效。
  */
 import { z } from 'zod'
 import { get, nowIso, run, type DB } from '../storage/db.ts'
@@ -77,10 +77,29 @@ export type SceneSettingsType = z.infer<typeof SceneSettings>
 export const CloudSettings = z.object({
   enabled: z.boolean().default(false),
   provider: z.string().trim().max(64, '服务商名不超过 64 字').default(''),
+  /** 自定义 OpenAI 兼容端点（0.15.3）：非空时优先于预设；留空走预设。解析链 env > 此值 > 预设。 */
+  baseUrl: z
+    .string()
+    .trim()
+    .max(300, '端点不超过 300 字符')
+    .refine((v) => v === '' || URL.canParse(v), '端点须为有效 URL（如 https://host/v1）')
+    .default(''),
   model: z.string().trim().max(128, '模型名不超过 128 字').default(''),
   dailyBudgetCny: z.number().positive('每日费用上限须为正数').nullable().default(null),
 })
 export type CloudSettingsType = z.infer<typeof CloudSettings>
+
+/**
+ * 云端密钥（界面维护，0.15）：存 cloud_secret 节。
+ * - 只存密钥本体与更新时间；面板/GET 一律经 getCloudKeyStatus() 取「掩码 + 来源」，明文永不回传；
+ * - 环境变量 DAFEIYU_CLOUD_API_KEY 优先于界面值（运维覆盖通道，index.ts 装配处解析）；
+ * - 保存/清除写审计，但审计摘要不含密钥值。
+ */
+export const CloudSecret = z.object({
+  apiKey: z.string().max(512, '密钥长度不超过 512 字符').default(''),
+  updatedAt: z.string().nullable().default(null),
+})
+export type CloudSecretType = z.infer<typeof CloudSecret>
 
 /** 数据用途声明（向导第 5 步确认项；隐私下限不可放宽，只能确认）。 */
 export const DataUsageSettings = z.object({
@@ -96,7 +115,13 @@ export const GiftsSettings = z.object({
 })
 export type GiftsSettingsType = z.infer<typeof GiftsSettings>
 
-export type SettingsSectionKey = 'persona' | 'platform' | 'scene' | 'cloud' | 'data_usage' | 'gifts'
+export type SettingsSectionKey = 'persona' | 'platform' | 'scene' | 'cloud' | 'cloud_secret' | 'data_usage' | 'gifts'
+
+/** 密钥掩码（getCloudKeyStatus 专用）：首 3 + •••• + 尾 4；过短全部打码，永不回明文。 */
+function maskSecret(secret: string): string {
+  if (secret.length <= 8) return '••••'
+  return secret.slice(0, 3) + '••••' + secret.slice(-4)
+}
 
 export type Readiness = { ready: true } | { ready: false; reason: string }
 
@@ -172,7 +197,11 @@ export class SettingsStore {
       JSON.stringify(next),
       this.clock(),
     )
-    run(this.db, `INSERT INTO audit (action, summary) VALUES ('settings', ?)`, `${key} 更新`)
+    run(
+      this.db,
+      `INSERT INTO audit (action, summary) VALUES ('settings', ?)`,
+      key === 'cloud_secret' ? '云端密钥经界面更新（审计不含密钥值）' : `${key} 更新`,
+    )
     return next
   }
 
@@ -219,6 +248,39 @@ export class SettingsStore {
 
   saveCloud(input: unknown): CloudSettingsType {
     return this.saveSection('cloud', CloudSettings, input)
+  }
+
+  /** 界面维护的云端密钥原文（仅 index.ts 装配处解析凭据用；面板/GET 一律不得调用）。 */
+  getCloudSecretRaw(): string {
+    return this.readSection('cloud_secret', CloudSecret).apiKey
+  }
+
+  /**
+   * 云端密钥状态（面板回显）：source=env（环境变量，优先）/ ui（界面维护）/ none；
+   * masked 永远是掩码，明文不出存储层以外的任何读取路径。
+   */
+  getCloudKeyStatus(): { source: 'env' | 'ui' | 'none'; masked: string | null; updatedAt: string | null } {
+    const envKey = process.env.DAFEIYU_CLOUD_API_KEY?.trim() ?? ''
+    if (envKey !== '') return { source: 'env', masked: maskSecret(envKey), updatedAt: null }
+    const secret = this.readSection('cloud_secret', CloudSecret)
+    if (secret.apiKey !== '') {
+      return { source: 'ui', masked: maskSecret(secret.apiKey), updatedAt: secret.updatedAt }
+    }
+    return { source: 'none', masked: null, updatedAt: null }
+  }
+
+  /** 保存界面维护的密钥（非空校验；审计摘要不含值）。 */
+  saveCloudKey(input: string): CloudSecretType {
+    const apiKey = input.trim()
+    if (apiKey === '') {
+      throw new SettingsValidationError('settings/cloud_secret 校验失败', ['apiKey：请输入密钥（清除请用 clearCloudKey）'])
+    }
+    return this.saveSection('cloud_secret', CloudSecret, { apiKey, updatedAt: this.clock() })
+  }
+
+  /** 清除界面维护的密钥（环境变量不受影响）。 */
+  clearCloudKey(): CloudSecretType {
+    return this.saveSection('cloud_secret', CloudSecret, { apiKey: '', updatedAt: null })
   }
 
   saveDataUsage(input: unknown): DataUsageSettingsType {

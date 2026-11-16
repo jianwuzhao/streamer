@@ -186,6 +186,32 @@ test('settings：切换 role profile 后 getPersonaProfile 跟随选中档案且
   }
 })
 
+test('settings：云端自定义端点——合法 URL 可存、非法被拒、部分更新保留', () => {
+  const { store, db, dataDir } = makeStore()
+  try {
+    assert.equal(store.getCloud().baseUrl, '')
+    store.saveCloud({ provider: 'tokenhub', baseUrl: 'https://tokenhub.tencentmaas.com/v1' })
+    assert.equal(store.getCloud().baseUrl, 'https://tokenhub.tencentmaas.com/v1')
+    assert.equal(store.getCloud().provider, 'tokenhub')
+    // 部分更新不丢端点
+    store.saveCloud({ model: 'hy4' })
+    assert.equal(store.getCloud().baseUrl, 'https://tokenhub.tencentmaas.com/v1')
+    assert.equal(store.getCloud().model, 'hy4')
+    // 非法 URL 被拒（中文原因）
+    assert.throws(
+      () => store.saveCloud({ baseUrl: 'not a url' }),
+      (err: unknown) => {
+        assert.ok(err instanceof SettingsValidationError)
+        assert.ok(err.issues.some((i) => i.includes('有效 URL')))
+        return true
+      },
+    )
+  } finally {
+    db.close()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('catalogs：云端服务商预设——混元/DeepSeek 端点解析与未命中回落', () => {
   // 预设含腾讯云混元（OpenAI 兼容端点），模型名非空
   const hunyuan = CLOUD_PROVIDER_PRESETS.find((p) => p.id === 'tencent-hunyuan')
@@ -197,4 +223,46 @@ test('catalogs：云端服务商预设——混元/DeepSeek 端点解析与未�
   assert.equal(resolveCloudBaseUrl(' deepseek '), 'https://api.deepseek.com/v1')
   assert.equal(resolveCloudBaseUrl('my-own-gateway'), null)
   assert.equal(resolveCloudBaseUrl(''), null)
+})
+
+test('settings：云端密钥界面维护——保存/掩码/清除与 env 优先', () => {
+  const { store, db, dataDir } = makeStore()
+  const previous = process.env.DAFEIYU_CLOUD_API_KEY
+  delete process.env.DAFEIYU_CLOUD_API_KEY
+  try {
+    assert.equal(store.getCloudKeyStatus().source, 'none')
+    store.saveCloudKey('sk-live-abcd1234')
+    const status = store.getCloudKeyStatus()
+    assert.equal(status.source, 'ui')
+    assert.equal(status.masked, 'sk-••••1234')
+    assert.ok(status.updatedAt !== null)
+    // 原文只经装配取用；重启保留
+    assert.equal(store.getCloudSecretRaw(), 'sk-live-abcd1234')
+    assert.equal(new SettingsStore(db).getCloudKeyStatus().masked, 'sk-••••1234')
+    // 环境变量优先展示
+    process.env.DAFEIYU_CLOUD_API_KEY = 'env-key-987654321'
+    const envFirst = store.getCloudKeyStatus()
+    assert.equal(envFirst.source, 'env')
+    assert.equal(envFirst.masked, 'env••••4321')
+    // 清除只影响界面值
+    store.clearCloudKey()
+    assert.equal(store.getCloudSecretRaw(), '')
+    assert.equal(store.getCloudKeyStatus().source, 'env')
+    delete process.env.DAFEIYU_CLOUD_API_KEY
+    assert.equal(store.getCloudKeyStatus().source, 'none')
+    // 空密钥被拒（给中文单一原因）
+    assert.throws(
+      () => store.saveCloudKey('   '),
+      (err: unknown) => {
+        assert.ok(err instanceof SettingsValidationError)
+        assert.ok(err.issues.some((i) => i.includes('请输入密钥')))
+        return true
+      },
+    )
+  } finally {
+    if (previous === undefined) delete process.env.DAFEIYU_CLOUD_API_KEY
+    else process.env.DAFEIYU_CLOUD_API_KEY = previous
+    db.close()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
 })
