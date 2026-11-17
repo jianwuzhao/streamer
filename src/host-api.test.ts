@@ -87,9 +87,9 @@ test('host-api：状态/四主操作/紧急停止路由；非本插件路径放�
     assert.equal(pv1.payload.status.liveStatus, 'local_preview')
     const pvGet = await call(handler, 'GET', '/api/dafeiyu/preview')
     assert.equal(pvGet.payload.preview.previewActive, true)
-    assert.equal(pvGet.payload.preview.persona.name, '大肥鱼')
+    assert.equal(pvGet.payload.preview.persona.name, 'DSH 蓝发女仆')
     assert.equal(pvGet.payload.preview.persona.profileId, 'dsh-pet')
-    assert.equal(pvGet.payload.preview.persona.enName, 'DSH-PET')
+    assert.equal(pvGet.payload.preview.persona.enName, 'DSH PET')
     assert.ok(pvGet.payload.preview.persona.tagline.length > 0)
     assert.equal(pvGet.payload.preview.persona.aiLabelText, 'AI 生成内容')
     assert.equal(typeof pvGet.payload.preview.officialClientUrl, 'string')
@@ -136,14 +136,14 @@ test('host-api：settings 读写/目录/AI 标识不可关闭（400 + issues）'
 
     const got = await call(handler, 'GET', '/api/dafeiyu/settings')
     assert.equal(got.payload.ok, true)
-    assert.ok(got.payload.settings.catalogs.avatars.length >= 3)
+    assert.deepEqual(got.payload.settings.catalogs.avatars.map((avatar: { id: string }) => avatar.id), ['dsh-pet'])
     assert.ok(got.payload.settings.catalogs.voices.length >= 4)
     // 角色档案（主播信息）目录：鹅次元角色 + dsh-pet 插件中档案
     assert.equal(got.payload.settings.catalogs.profiles.length, 5)
     assert.ok(got.payload.settings.catalogs.profiles.some((p: { id: string; source: string }) => p.id === 'dsh-pet' && p.source === 'plugin'))
     assert.equal(got.payload.settings.profile.id, 'dsh-pet')
-    assert.equal(got.payload.settings.profile.name, '大肥鱼')
-    assert.equal(got.payload.settings.persona.personaName, '大肥鱼')
+    assert.equal(got.payload.settings.profile.name, 'DSH 蓝发女仆')
+    assert.equal(got.payload.settings.persona.personaName, 'DSH 蓝发女仆')
     assert.ok(got.payload.settings.notes.length >= 3)
 
     // AI 标识写 false → 400 + 中文单一原因
@@ -396,10 +396,10 @@ test('host-api：Live2D 桌宠资产路由（catalog/vendor/model-file 与安全
   // 临时模型包与 vendor 目录（不依赖仓库内真实资产）
   const modelsDir = join(dataDir, 'models')
   const vendorDir = join(dataDir, 'vendor')
-  mkdirSync(join(modelsDir, 'hiyori'), { recursive: true })
+  mkdirSync(join(modelsDir, 'custom-avatar'), { recursive: true })
   mkdirSync(vendorDir, { recursive: true })
-  writeFileSync(join(modelsDir, 'hiyori', 'hiyori.model3.json'), JSON.stringify({ Version: 3, FileReferences: { Moc: 'hiyori.moc3' } }))
-  writeFileSync(join(modelsDir, 'hiyori', 'hiyori.moc3'), 'MOC3FAKE')
+  writeFileSync(join(modelsDir, 'custom-avatar', 'custom-avatar.model3.json'), JSON.stringify({ Version: 3, FileReferences: { Moc: 'custom-avatar.moc3' } }))
+  writeFileSync(join(modelsDir, 'custom-avatar', 'custom-avatar.moc3'), 'MOC3FAKE')
   writeFileSync(join(vendorDir, 'live2dcubismcore.min.js'), '// core')
   writeFileSync(join(vendorDir, 'pixi.min.js'), '// pixi')
   writeFileSync(join(vendorDir, 'pixi-live2d-display.min.js'), '// ext')
@@ -412,7 +412,7 @@ test('host-api：Live2D 桌宠资产路由（catalog/vendor/model-file 与安全
     assert.equal(cat.payload.ok, true)
     assert.deepEqual(cat.payload.catalog.vendors, { core: true, pixi: true, extension: true })
     assert.equal(cat.payload.catalog.models.length, 1)
-    assert.equal(cat.payload.catalog.models[0].entry, 'hiyori.model3.json')
+    assert.equal(cat.payload.catalog.models[0].entry, 'custom-avatar.model3.json')
 
     const v = await call(handler, 'GET', '/api/dafeiyu/avatar/vendor?name=core')
     assert.equal(v.payload.ok, true)
@@ -420,10 +420,10 @@ test('host-api：Live2D 桌宠资产路由（catalog/vendor/model-file 与安全
     const bad = await call(handler, 'GET', '/api/dafeiyu/avatar/vendor?name=evil')
     assert.equal(bad.code, 400)
 
-    const f = await call(handler, 'GET', '/api/dafeiyu/avatar/model-file?id=hiyori&path=hiyori.moc3')
+    const f = await call(handler, 'GET', '/api/dafeiyu/avatar/model-file?id=custom-avatar&path=custom-avatar.moc3')
     assert.equal(f.payload.ok, true)
     assert.equal(Buffer.from(f.payload.file.base64, 'base64').toString(), 'MOC3FAKE')
-    const escape = await call(handler, 'GET', '/api/dafeiyu/avatar/model-file?id=hiyori&path=../vendor/pixi.min.js')
+    const escape = await call(handler, 'GET', '/api/dafeiyu/avatar/model-file?id=custom-avatar&path=../vendor/pixi.min.js')
     assert.equal(escape.code, 400)
   } finally {
     delete process.env.DAFEIYU_VENDOR_DIR
@@ -443,7 +443,8 @@ test('本地预览对话仅在预览期间有效，不登记直播回复，晚�
     plugin.router.route = async (request, context) => {
       assert.equal(request.text, '大肥鱼你好')
       assert.equal(context.localOnly, true)
-      assert.equal(context.previewCharacter, '大肥鱼')
+      assert.equal(context.hostConversation?.mode, 'preview')
+      assert.equal(context.hostProfile?.name, 'DSH 蓝发女仆')
       await new Promise<void>((resolve) => { finishRoute = resolve })
       return { requestId: request.requestId, playbackKey: request.requestId, text: '你好！',
         route: 'local_gpu', latencyMs: 0, usageId: null }
@@ -483,11 +484,11 @@ test('本地预览描述符保留旧设置，并回传保存的桌宠模型与�
     const handler = createRequestHandler(plugin)
     const path = '/api/dafeiyu/preview'
     assert.equal((await call(handler, 'GET', path)).payload.preview.persona.live2dModelId, undefined)
-    for (const id of ['Hiyori', null]) {
+    for (const id of ['custom-avatar', 'Hiyori', null]) {
       assert.equal((await call(handler, 'POST', '/api/dafeiyu/settings/persona',
         { live2dModelId: id, voiceId: 'tong-qu' })).code, 200)
       const { persona } = (await call(handler, 'GET', path)).payload.preview
-      assert.equal(persona.live2dModelId, id)
+      assert.equal(persona.live2dModelId, id === 'Hiyori' ? null : id)
       assert.equal(persona.voiceId, 'tong-qu')
     }
     assert.equal((await call(handler, 'POST', '/api/dafeiyu/settings/persona', { live2dModelId: '../x' })).code, 400)
@@ -507,7 +508,10 @@ test('四位鹅次元角色分别暴露官方立绘、试听和本地模型目�
   try {
     const handler = createRequestHandler(plugin)
     const preview = '/api/dafeiyu/preview'
-    assert.equal((await call(handler, 'GET', preview)).payload.preview.persona.media, null)
+    assert.equal((await call(handler, 'GET', preview)).payload.preview.persona.media.modelId, 'dsh-pet')
+    const pet = await call(handler, 'GET', '/api/dafeiyu/avatar/prototype?id=dsh-pet')
+    assert.equal(pet.payload.ok, true)
+    assert.ok(Buffer.from(pet.payload.image, 'base64').length > 1000)
     for (const [id, slug, name] of [
       ['xiaxia', 'xiaxia', '夏夏'],
       ['lubai', 'shenlubai', '沈露白'],
@@ -828,13 +832,22 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
   const requests: { url: string; messages: { role: string; content: string }[] }[] = []
   let localAvailable = true
   let waitingForAnswer: Promise<void> | undefined
+  let localStream: ReadableStream<Uint8Array> | undefined
   const answer = '草莓种在向阳处吧。浇水后咱们再去看看。'
   t.mock.method(globalThis, 'fetch', async (url: string, options: RequestInit) => {
-    const { messages } = JSON.parse(String(options.body))
+    const { messages, stream } = JSON.parse(String(options.body))
     requests.push({ url, messages })
     if (url.endsWith('/api/chat')) {
+      if (localStream) {
+        assert.equal(stream, true)
+        const body = localStream
+        localStream = undefined
+        return new Response(body, { headers: { 'content-type': 'application/x-ndjson' } })
+      }
       if (waitingForAnswer) await waitingForAnswer
-      return localAvailable ? Response.json({ message: { content: answer } }) : new Response('', { status: 404 })
+      return localAvailable ? Response.json({
+        model: 'qwen3:4b-actual', prompt_eval_count: 13, eval_count: 5, message: { content: answer },
+      }) : new Response('', { status: 404 })
     }
     assert.ok(url.endsWith('/chat/completions'))
     return Response.json({ choices: [{ message: { content: answer } }] })
@@ -847,13 +860,14 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
     const memory = '草莓的本地参考资料是温室东侧的种植记录。'
     plugin.db.prepare(`INSERT INTO learned_stable
       (id, revision, layer, claim, scope, source_consolidation, review_at, valid_until)
-      VALUES ('strawberry', 1, 'L1', ?, 'dafeiyu/garden', 'test', ?, ?)`).run(memory, date, date)
+      VALUES ('strawberry', 1, 'L1', ?, 'dsh-pet/garden', 'test', ?, ?)`).run(memory, date, date)
     await post('preview/start')
     const first = await post('interaction/send', { text: '草莓怎么种？' })
     assert.equal(first.code, 202)
     await settle()
     assert.equal((await state()).turns[0].memoryUsed, 1)
     assert.match(requests[0]!.messages[0]!.content, /温室东侧/)
+    assert.match(requests[0]!.messages[0]!.content, /「DSH 蓝发女仆」，正在本地预览/)
     assert.ok(!requests[0]!.messages[0]!.content.includes('不超过两句'))
 
     localAvailable = false
@@ -863,6 +877,21 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
     assert.equal(requests.at(-1)?.messages.length, 2)
     assert.ok(!requests.at(-1)?.messages[0]?.content.includes('温室东侧'))
     assert.ok(requests.at(-2)?.messages.some(({ content }) => content === '草莓怎么种？'))
+
+    const previousPreview = (await state()).id
+    assert.equal((await post('settings/persona', { profileId: 'xiaxia' })).code, 200)
+    assert.notEqual((await state()).id, previousPreview)
+    assert.deepEqual((await state()).turns, [])
+    await post('interaction/send', { text: '介绍一下自己' })
+    await settle()
+    const cloudMessages = requests.at(-1)!.messages
+    assert.equal(cloudMessages[0]?.role, 'system')
+    assert.match(cloudMessages[0]!.content, /「夏夏」，正在本地预览/)
+    assert.match(cloudMessages[0]!.content, /新传专业大二学生/)
+    assert.match(cloudMessages[0]!.content, /英文名：XIAXIA，年龄：19 岁，身高：162cm，星座：白羊座，MBTI：ENFP/)
+    assert.match(cloudMessages[0]!.content, /说话方式：活泼热情/)
+    assert.doesNotMatch(cloudMessages[0]!.content, /蓝发女仆|温室东侧/)
+    assert.deepEqual(cloudMessages.slice(1), [{ role: 'user', content: '介绍一下自己' }])
 
     await post('live/start')
     await post('live/operator-confirm')
@@ -879,7 +908,78 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
     await post('interaction/reply', { id: viewerTurn.id })
     await settle()
     assert.equal(requests.length, before + 1, '访客数据只进入本地模型')
+    assert.match(requests.at(-1)!.messages[0]!.content, /「夏夏」，正在直播间互动/)
+    assert.match(requests.at(-1)!.messages[0]!.content, /MBTI：ENFP/)
     assert.equal((await state()).turns[0].answer.route, 'fallback')
+
+    const ownerA = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'
+    const ownerB = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb'
+    const claimed = await post('interaction/stage', { owner: ownerA })
+    assert.equal(claimed.payload.owner, true)
+    assert.ok(claimed.payload.reply.key)
+    assert.equal((await post('interaction/stage', { owner: ownerB })).payload.owner, false)
+    assert.equal((await post('interaction/stage', { owner: ownerA })).payload.reply.key, claimed.payload.reply.key)
+    assert.equal((await post('interaction/stage', { owner: ownerA, playingKey: claimed.payload.reply.key })).payload.reply, null)
+    assert.equal((await post('preview/role-speech', { profileId: 'xiaxia', text: claimed.payload.reply.text,
+      interactionId: live.id, stageOwner: ownerB, playbackKey: claimed.payload.reply.key })).code, 409)
+    await post('interaction/stage', { owner: ownerA, completedKey: claimed.payload.reply.key, completedOk: true })
+    assert.equal((await state()).turns[0].playback, 'played')
+
+    await post('interaction/stage', { owner: ownerA, release: true })
+    localAvailable = true
+    let streamWriter!: ReadableStreamDefaultController<Uint8Array>
+    localStream = new ReadableStream({ start: (writer) => { streamWriter = writer } })
+    const encoder = new TextEncoder()
+    const firstChunk = encoder.encode(JSON.stringify({ message: { content: '早上好，', thinking: '内部推理' } }) + '\n')
+    const split = firstChunk.indexOf(encoder.encode('早')[0]!) + 1
+    streamWriter.enqueue(firstChunk.slice(0, split))
+    streamWriter.enqueue(firstChunk.slice(split))
+    await post('interaction/automatic', { kinds: ['comment'] })
+    assert.equal(plugin.live.conversation.receive({ ...event, id: 'auto-without-audio',
+      text: '早上好', sentAt: new Date().toISOString() }), true)
+    await settle()
+    const drafting = (await state()).turns.at(-1)
+    assert.equal(drafting.status, 'thinking')
+    assert.equal(drafting.draft, '早上好，')
+    assert.equal(drafting.answer, undefined)
+    assert.equal(drafting.playback, undefined)
+    streamWriter.enqueue(encoder.encode(JSON.stringify({
+      message: { content: '今天想聊些什么？' }, done: true,
+      model: 'qwen3:4b-actual', prompt_eval_count: 13, eval_count: 5,
+    }) + '\n'))
+    streamWriter.close()
+    await settle()
+    const silent = (await state()).turns.at(-1)
+    assert.equal(silent.status, 'answered', '文字自动回复独立于播出音频')
+    assert.equal(silent.draft, undefined)
+    assert.equal(silent.answer.text, '早上好，今天想聊些什么？')
+    assert.equal(silent.answer.tokensTotal, 18)
+    assert.equal(silent.playback, 'pending')
+    assert.equal((await state()).stageReady, false)
+    const resumed = (await post('interaction/stage', { owner: ownerA })).payload.reply
+    assert.equal(resumed.key, silent.answer.playbackKey)
+    await post('interaction/stage', { owner: ownerA, completedKey: resumed.key, completedOk: true })
+
+    for (const count of [1, 3, 2]) {
+      assert.equal(plugin.live.conversation.receive({
+        id: 'combo-' + count, kind: 'gift', roomId: 'room-a', viewerId: 'viewer-a',
+        group: 'combo', quantity: count, giftName: '鲜花', groupComplete: count === 2,
+        text: '送礼', sentAt: new Date().toISOString(),
+      }), true)
+    }
+    const gift = (await state()).turns.find((turn: { kind: string }) => turn.kind === 'gift')
+    assert.equal(gift.text, '送出 鲜花 ×3')
+    assert.equal((await post('interaction/automatic', { kinds: ['gift'] })).code, 200)
+    await settle()
+    const next = (await post('interaction/stage', { owner: ownerA })).payload.reply
+    assert.ok(next?.key)
+    const list = (await call(api, 'GET', '/api/dafeiyu/replies')).payload.replies
+    assert.equal(list[0].model, 'qwen3:4b-actual')
+    assert.equal(list[0].tokensIn, 13)
+    assert.equal(list[0].tokensOut, 5)
+    assert.equal(list[0].tokensTotal, 18)
+    assert.equal((await state()).turns.at(-1).answer.tokensTotal, 18)
+    assert.equal(plugin.live.conversation.allowsStageSpeech(live.id, ownerA, next.key, next.text), true)
 
     let release!: () => void
     waitingForAnswer = new Promise((resolve) => { release = resolve })
@@ -890,7 +990,7 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
     await settle()
     assert.equal((await state()).id, null)
     assert.equal(plugin.live.conversation.receive({ ...event, id: 'm2' }), false)
-    assert.equal((await post('preview/role-speech', { profileId: 'dsh-pet', text: answer, interactionId: live.id })).code, 409)
+    assert.equal((await post('preview/role-speech', { profileId: 'xiaxia', text: answer, interactionId: live.id })).code, 409)
     assert.equal(plugin.db.prepare('SELECT COUNT(*) AS n FROM reply_log WHERE question_text = ?').get('正在生成时停播')?.n, 0)
   } finally {
     plugin.dispose()

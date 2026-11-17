@@ -16,6 +16,7 @@ import {
   type GenerateResult,
   type ModelAdapter,
 } from './model-adapter.ts'
+import { responseLines } from './response-lines.ts'
 
 export type CloudDisabledReason =
   | 'disabled_by_config'
@@ -54,7 +55,48 @@ interface ChatCompletionsResponse {
     readonly message?: { readonly content?: string; readonly reasoning_content?: string }
     readonly finish_reason?: string
   }>
-  readonly usage?: { readonly prompt_tokens?: number; readonly completion_tokens?: number }
+  readonly model?: string
+  readonly usage?: { readonly prompt_tokens?: number; readonly completion_tokens?: number; readonly total_tokens?: number }
+}
+
+interface ChatStreamChunk {
+  readonly model?: string
+  readonly choices?: Array<{ readonly delta?: { readonly content?: string }; readonly finish_reason?: string | null }>
+  readonly usage?: ChatCompletionsResponse['usage'] | null
+  readonly error?: unknown
+}
+
+async function readChatStream(response: Response, onDraft: (text: string) => void): Promise<ChatCompletionsResponse> {
+  let text = ''
+  let model: string | undefined
+  let finishReason: string | undefined
+  let usage: ChatCompletionsResponse['usage']
+  let done = false
+  for await (const line of responseLines(response)) {
+    if (!line.startsWith('data:')) continue
+    const data = line.slice(5).trim()
+    if (data === '[DONE]') {
+      done = true
+      break
+    }
+    if (!data) continue
+    const chunk = JSON.parse(data) as ChatStreamChunk
+    if (chunk.error) throw new ModelCallError('LOCAL_UNAVAILABLE', '云端流式回复中断')
+    model = chunk.model || model
+    usage = chunk.usage ?? usage
+    const choice = chunk.choices?.[0]
+    if (choice?.delta?.content) {
+      text += choice.delta.content
+      onDraft(text)
+    }
+    finishReason = choice?.finish_reason ?? finishReason
+  }
+  if (!done && !finishReason) throw new ModelCallError('LOCAL_UNAVAILABLE', '云端未返回流式回复结束标记')
+  return {
+    choices: [{ message: { content: text }, ...(finishReason ? { finish_reason: finishReason } : {}) }],
+    ...(model ? { model } : {}),
+    ...(usage ? { usage } : {}),
+  }
 }
 
 export class OpenAICompatCloudAdapter implements ModelAdapter {
@@ -129,6 +171,7 @@ export class OpenAICompatCloudAdapter implements ModelAdapter {
     const timeoutMs = Math.min(callOpts?.timeoutMs ?? Infinity, this.opts.timeoutMs ?? 8_000)
     const { signal, cleanup } = combineSignals(callOpts?.signal, timeoutMs)
     const doFetch = this.opts.fetchImpl ?? fetch
+    const onDraft = req.responseSchema === undefined ? callOpts?.onDraft : undefined
     try {
       const doPost = async (maxTokens: number): Promise<ChatCompletionsResponse> => {
         const res = await doFetch(`${rt.baseURL}/chat/completions`, {
@@ -141,6 +184,7 @@ export class OpenAICompatCloudAdapter implements ModelAdapter {
             model: rt.model,
             messages: req.messages.map((m) => ({ role: m.role, content: m.text })),
             max_tokens: maxTokens,
+            ...(onDraft ? { stream: true, stream_options: { include_usage: true } } : {}),
             ...(req.responseSchema !== undefined
               ? { response_format: { type: 'json_object' } }
               : {}),
@@ -153,26 +197,38 @@ export class OpenAICompatCloudAdapter implements ModelAdapter {
             `云端 HTTP ${res.status} ${res.statusText}`,
           )
         }
-        return (await res.json()) as ChatCompletionsResponse
+        return onDraft && res.headers.get('content-type')?.includes('text/event-stream')
+          ? await readChatStream(res, onDraft) : await res.json() as ChatCompletionsResponse
       }
       const firstTokens = req.maxOutputTokens ?? 128
       let body = await doPost(firstTokens)
+      const attempts = [body]
       // 推理模型（思考型，如 hy4 / R1 系）：思考先消耗 max_tokens 把正文截空时，
       // 单次补齐令牌预算重试（仍属同一次逻辑生成，不循环付费调用）
       const emptyContent = (body.choices?.[0]?.message?.content ?? '').trim() === ''
       if (emptyContent && body.choices?.[0]?.finish_reason === 'length') {
         body = await doPost(Math.max(1024, firstTokens * 4))
+        attempts.push(body)
       }
       const text = body.choices?.[0]?.message?.content
-      if (typeof text !== 'string') {
+      if (typeof text !== 'string' || (onDraft && !text.trim())) {
         throw new ModelCallError('LOCAL_UNAVAILABLE', '云端响应缺少 choices[0].message.content')
       }
+      const sum = (read: (usage: ChatCompletionsResponse['usage']) => number | undefined) => {
+        const values = attempts.map((attempt) => read(attempt.usage))
+        return values.every((value): value is number => Number.isSafeInteger(value) && value! >= 0)
+          ? values.reduce((total, value) => total + value, 0) : undefined
+      }
+      const tokensIn = sum((usage) => usage?.prompt_tokens)
+      const tokensOut = sum((usage) => usage?.completion_tokens)
+      const tokensTotal = sum((usage) => usage?.total_tokens ??
+        (usage?.prompt_tokens !== undefined && usage.completion_tokens !== undefined ?
+          usage.prompt_tokens + usage.completion_tokens : undefined))
       return {
-        text,
-        ...(body.usage?.prompt_tokens !== undefined ? { tokensIn: body.usage.prompt_tokens } : {}),
-        ...(body.usage?.completion_tokens !== undefined
-          ? { tokensOut: body.usage.completion_tokens }
-          : {}),
+        text, model: body.model || rt.model,
+        ...(tokensIn === undefined ? {} : { tokensIn }),
+        ...(tokensOut === undefined ? {} : { tokensOut }),
+        ...(tokensTotal === undefined ? {} : { tokensTotal }),
         ...(body.choices?.[0]?.finish_reason !== undefined
           ? { finishReason: body.choices[0]?.finish_reason }
           : {}),

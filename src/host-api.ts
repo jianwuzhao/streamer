@@ -11,7 +11,7 @@
  * - host-api-shared.ts：类型与公共助手
  */
 import type { DafeiyuPluginHandle } from './index.ts'
-import { ConversationError, MESSAGE_LIMIT } from './live/conversation.ts'
+import { ConversationError, INTERACTION_KINDS, MESSAGE_LIMIT, type InteractionKind } from './live/conversation.ts'
 import { BUILTIN_VOICES, resolveCloudBaseUrl } from './settings/catalogs.ts'
 import { SettingsValidationError, type Readiness } from './settings/store.ts'
 import { json, readBody, todayCostCny, FEEDBACK_LABELS, type FeedbackLabelInput, type ServerRequest, type ServerResponse } from './host-api-shared.ts'
@@ -81,8 +81,8 @@ export function buildStatus(handle: DafeiyuPluginHandle): DafeiyuStatus {
 
 /** 生成 connection/request 处理器：非 /api/dafeiyu/ 前缀一律 next() 放行。 */
 export function createRequestHandler(handle: DafeiyuPluginHandle) {
-  const { session, conversation, danmaku } = handle.live
-  return async (req: ServerRequest, res: ServerResponse, next: () => Promise<void>): Promise<void> => {
+  const { session, conversation, startInteraction, stopInteraction, interactionSource, interactionStatus } = handle.live
+  const handler = async (req: ServerRequest, res: ServerResponse, next: () => Promise<void>): Promise<void> => {
     const url = req.url ?? ''
     if (!url.startsWith('/api/dafeiyu/')) return next()
     const path = url.replace(/\?.*$/, '').slice('/api/dafeiyu/'.length)
@@ -97,7 +97,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
       if (method === 'GET') {
         if (path === 'interaction') {
           res.setHeader('cache-control', 'no-store')
-          return json(res, 200, { ok: true, ...conversation.snapshot(), danmaku: danmaku.status })
+          return json(res, 200, { ok: true, ...conversation.snapshot(), danmaku: interactionStatus(), source: interactionSource() })
         }
         if (await handleDataGetRoute(handle, path, res)) return
         if (handleAudienceGetRoute(handle, path, query, res)) return
@@ -143,7 +143,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
               preflightInput,
             )
             conversation.snapshot()
-            if (session.liveRunId !== null) danmaku.start()
+            if (session.liveRunId !== null) startInteraction()
             return json(res, 200, {
               ok: true,
               status: buildStatus(handle),
@@ -152,20 +152,20 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
           }
           case 'live/stop': {
             const status = await handle.live.session.stop()
-            danmaku.stop()
+            stopInteraction()
             conversation.reset()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
           case 'live/emergency-stop': {
             handle.referenceVoiceStream.cancel()
             const status = handle.live.session.emergencyStop()
-            danmaku.stop()
+            stopInteraction()
             conversation.reset()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
           case 'live/operator-confirm': {
             const status = handle.live.session.operatorConfirmedLive(new Date().toISOString())
-            if (session.liveRunId !== null) danmaku.start()
+            if (session.liveRunId !== null) startInteraction()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
           case 'preview/start': {
@@ -182,6 +182,31 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
             const status = handle.live.session.exitPreview()
             conversation.snapshot()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
+          }
+          case 'interaction/automatic': {
+            if (!Array.isArray(args.kinds) || args.kinds.length > INTERACTION_KINDS.length ||
+              !args.kinds.every((item) => INTERACTION_KINDS.includes(item as InteractionKind))) {
+              return json(res, 400, { ok: false, error: '请选择互动类型' })
+            }
+            conversation.setAutomatic(args.kinds as InteractionKind[])
+            return json(res, 200, { ok: true })
+          }
+          case 'interaction/stage': {
+            const owner = args.owner
+            if (typeof owner !== 'string' || !/^[a-f0-9-]{36}$/i.test(owner)) return json(res, 400, { ok: false })
+            if (args.release === true) {
+              conversation.stageRelease(owner)
+              return json(res, 200, { ok: true })
+            }
+            const completion = typeof args.completedKey === 'string' && typeof args.completedOk === 'boolean' ?
+              { key: args.completedKey, ok: args.completedOk } : undefined
+            const playingKey = typeof args.playingKey === 'string' ? args.playingKey : undefined
+            return json(res, 200, { ok: true, ...conversation.stagePoll(owner, completion, playingKey) })
+          }
+          case 'interaction/replay': {
+            if (typeof args.id !== 'string') return json(res, 400, { ok: false, error: '请选择一条回复' })
+            conversation.stageReplay(args.id)
+            return json(res, 200, { ok: true })
           }
           case 'interaction/reply': {
             if (typeof args.id !== 'string') return json(res, 400, { ok: false, error: '请选择一条弹幕' })
@@ -231,11 +256,18 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
             const interactionId = typeof args.interactionId === 'string' ? args.interactionId : null
             const verifyRun = () => {
               if (interactionId && !conversation.acceptsSpeech(interactionId)) throw new ConversationError(409, '本场互动已结束')
+              if (!interactionId || !conversation.liveWindow()) return
+              if (typeof args.stageOwner !== 'string' || typeof args.playbackKey !== 'string' ||
+                !conversation.allowsStageSpeech(interactionId, args.stageOwner, args.playbackKey, speechText)) {
+                throw new ConversationError(409, '请在直播画面启用播出音频')
+              }
             }
             verifyRun()
             let streaming = false
             const controller = new AbortController()
             const disconnect = () => controller.abort()
+            const referenceDeadline = new AbortController()
+            let firstAudio: ReturnType<typeof setTimeout> | undefined
             const useSystemVoice = (error: unknown) => {
               if (!controller.signal.aborted && !streaming && error instanceof ReferenceVoiceError) return null
               throw error
@@ -245,8 +277,13 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
               res.once?.('close', disconnect)
               let reference: Buffer | null = null
               if (args.stream === true && write) {
+                if (typeof args.stageOwner === 'string') {
+                  firstAudio = setTimeout(() => referenceDeadline.abort(
+                    new ReferenceVoiceError('timeout', '参考音色未及时开始，改用系统音色')), 4500)
+                }
                 const streamed = await handle.referenceVoiceStream.speak(profileId, speechText, (chunk) => {
                   verifyRun()
+                  clearTimeout(firstAudio)
                   if (!streaming) {
                     res.statusCode = 200
                     res.setHeader('content-type', 'application/x-ndjson; charset=utf-8')
@@ -255,7 +292,8 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
                     streaming = true
                   }
                   write(JSON.stringify({ type: 'audio', voiceName: currentProfile.name, ...chunk }) + '\n')
-                }, controller.signal).catch(useSystemVoice)
+                }, AbortSignal.any([controller.signal, referenceDeadline.signal])).catch(useSystemVoice)
+                clearTimeout(firstAudio)
                 if (streamed && streaming) {
                   verifyRun()
                   return void res.end(JSON.stringify({ type: 'end' }) + '\n')
@@ -266,7 +304,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
               if (controller.signal.aborted) return
               verifyRun()
               const storedVoice = handle.settings.getPersona().voiceId
-              const speech = reference === null ? await roleSpeechService.synthesize(profileId, speechText, storedVoice) : {
+              const speech = reference === null ? await roleSpeechService.synthesize(profileId, speechText, storedVoice, typeof args.stageOwner === 'string') : {
                 audioBase64: reference.toString('base64'),
                 voiceName: currentProfile.name,
               }
@@ -294,6 +332,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
               }
               throw err
             } finally {
+              clearTimeout(firstAudio)
               res.removeListener?.('close', disconnect)
             }
           }
@@ -418,6 +457,14 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
           case 'settings/cloud':
           case 'settings/data-usage':
           case 'settings/gifts': {
+            if (path === 'settings/persona' && session.liveRunId !== null &&
+              typeof args.profileId === 'string' && args.profileId !== handle.settings.getPersonaProfile().id) {
+              return json(res, 409, { ok: false, error: '下播后可切换主播角色' })
+            }
+            if (path === 'settings/platform' && session.liveRunId !== null &&
+              ('roomUrl' in args || 'interactionSource' in args)) {
+              return json(res, 409, { ok: false, error: '下播后可更换互动来源和直播间' })
+            }
             const section = path.split('/')[1] as 'persona' | 'platform' | 'scene' | 'cloud' | 'data-usage' | 'gifts'
             try {
               const saved =
@@ -432,6 +479,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
                         : section === 'data-usage'
                           ? handle.settings.saveDataUsage(args)
                           : handle.settings.saveGifts(args)
+              if (section === 'persona') conversation.snapshot()
               return json(res, 200, {
                 ok: true,
                 section,
@@ -561,4 +609,5 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
       return json(res, 500, { ok: false, error: (err as Error).message })
     }
   }
+  return handler
 }

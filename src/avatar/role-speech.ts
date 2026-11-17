@@ -273,7 +273,7 @@ export class RoleSpeechService {
    * 合成角色语音：文本经 UTF-8 临时文件 `-f` 喂入，输出 WAV 后读回并清理。
    * 并发超上限直接显式 busy（不排队），由客户端决定重试或回退浏览器朗读。
    */
-  async synthesize(profileId: string, text: string, voiceId?: string): Promise<RoleSpeechResult> {
+  async synthesize(profileId: string, text: string, voiceId?: string, allowSystemFallback = false): Promise<RoleSpeechResult> {
     const voice = resolveRoleSpeechVoice(profileId)
     if (voice === null) {
       throw new RoleSpeechError(
@@ -292,13 +292,13 @@ export class RoleSpeechService {
     this.inFlight += 1
     try {
       const style = profileId === 'dsh-pet' && voiceId ? DESKPET_STYLES.get(voiceId) : undefined
-      return await this.run(style ? { ...voice, ...style, voiceName: style.sayVoice } : voice, normalized)
+      return await this.run(style ? { ...voice, ...style, voiceName: style.sayVoice } : voice, normalized, allowSystemFallback)
     } finally {
       this.inFlight -= 1
     }
   }
 
-  private async run(voice: RoleSpeechVoice, text: string): Promise<RoleSpeechResult> {
+  private async run(voice: RoleSpeechVoice, text: string, allowSystemFallback: boolean): Promise<RoleSpeechResult> {
     // 音色可用性必须显式确认：say 对未知音色名会静默回落默认音色且退出码为 0
     let voices: Set<string>
     try {
@@ -306,6 +306,10 @@ export class RoleSpeechService {
     } catch (err) {
       if (err instanceof RoleSpeechError) throw err
       throw new RoleSpeechError('voice_unavailable', `无法确认系统音色：${describe(err)}`)
+    }
+    if (allowSystemFallback && !voices.has(`${voice.sayVoice}\n${voice.locale}`)) {
+      const available = ROLE_SPEECH_VOICES.find((choice) => voices.has(`${choice.sayVoice}\n${choice.locale}`))
+      if (available) voice = { ...voice, sayVoice: available.sayVoice, voiceName: available.voiceName }
     }
     if (!voices.has(`${voice.sayVoice}\n${voice.locale}`)) {
       throw new RoleSpeechError(

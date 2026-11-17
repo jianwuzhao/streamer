@@ -22,6 +22,16 @@ export interface Live2DModelEntry {
   readonly entry: string
   readonly source: string | null
   readonly license: string | null
+  readonly lipSyncDeclared: boolean
+  readonly lipSync?: LipSyncCalibration
+}
+
+interface LipSyncCalibration {
+  readonly ids?: string[]
+  readonly closed?: number
+  readonly open?: number
+  readonly gain?: number
+  readonly threshold?: number
 }
 
 const VENDOR_FILES = {
@@ -57,6 +67,11 @@ const MANIFEST_MAX_BYTES = 64 * 1024
 
 const SCENE_EXTENSIONS = new Set(['.mp4'])
 
+const SAMPLE_IDS = new Set(['haru', 'hiyori', 'mao', 'mark', 'natori', 'ren', 'rice', 'wanko'])
+export function isRetiredSample(id: string): boolean {
+  return SAMPLE_IDS.has(id.toLowerCase())
+}
+
 const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 export class AvatarAssetError extends Error {
@@ -72,6 +87,35 @@ interface ModelManifest {
   readonly name?: unknown
   readonly source?: unknown
   readonly license?: unknown
+  readonly lipSync?: unknown
+}
+
+function parseCalibration(raw: unknown): LipSyncCalibration | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const input = raw as Record<string, unknown>
+  const number = (value: unknown, min: number, max: number) =>
+    typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : undefined
+  const ids = Array.isArray(input.ids) && input.ids.length <= 8 &&
+    input.ids.every((value) => typeof value === 'string' && /^[A-Za-z0-9_]{1,100}$/.test(value)) ?
+    input.ids as string[] : undefined
+  const closed = number(input.closed, -100, 100)
+  const open = number(input.open, -100, 100)
+  const gain = number(input.gain, 0.1, 10)
+  const threshold = number(input.threshold, 0, 0.9)
+  return {
+    ...(ids?.length ? { ids } : {}), ...(closed === undefined ? {} : { closed }),
+    ...(open === undefined ? {} : { open }), ...(gain === undefined ? {} : { gain }),
+    ...(threshold === undefined ? {} : { threshold }),
+  }
+}
+
+function hasLipSync(path: string): boolean {
+  try {
+    if (lstatSync(path).size > MANIFEST_MAX_BYTES) return false
+    const data = JSON.parse(readFileSync(path, 'utf8')) as { Groups?: { Name?: string; Ids?: unknown[] }[] }
+    return Array.isArray(data.Groups) && data.Groups.some((group) => group?.Name === 'LipSync' &&
+      Array.isArray(group.Ids) && group.Ids.some((value) => typeof value === 'string' && value.length > 0))
+  } catch { return false }
 }
 
 function readManifest(modelDir: string): ModelManifest | null {
@@ -98,10 +142,12 @@ function asString(v: unknown): string | null {
 export class AvatarAssetStore {
   private readonly modelsDir: string
   private readonly vendorDir: string
+  private readonly dshPetDir?: string | undefined
 
-  constructor(opts: { modelsDir: string; vendorDir: string }) {
+  constructor(opts: { modelsDir: string; vendorDir: string; dshPetDir?: string }) {
     this.modelsDir = opts.modelsDir
     this.vendorDir = opts.vendorDir
+    this.dshPetDir = opts.dshPetDir
   }
 
   /** vendor 文件是否齐备（缺件时客户端自动回退 CSS 桌宠） */
@@ -129,18 +175,21 @@ export class AvatarAssetStore {
     if (!existsSync(this.modelsDir)) return []
     const out: Live2DModelEntry[] = []
     for (const ent of readdirSync(this.modelsDir, { withFileTypes: true })) {
-      if (!ent.isDirectory() || !MODEL_ID_PATTERN.test(ent.name)) continue
+      if (!ent.isDirectory() || !MODEL_ID_PATTERN.test(ent.name) || isRetiredSample(ent.name)) continue
       const dir = join(this.modelsDir, ent.name)
       const files = readdirSync(dir, { withFileTypes: true })
       const entry = files.find((f) => f.isFile() && /\.model3\.json$/.test(f.name))
       if (entry === undefined) continue
       const manifest = readManifest(dir)
+      const lipSync = parseCalibration(manifest?.lipSync)
       out.push({
         id: ent.name,
         name: asString(manifest?.name) ?? ent.name,
         entry: entry.name,
         source: asString(manifest?.source),
         license: asString(manifest?.license),
+        lipSyncDeclared: !!lipSync?.ids?.length || hasLipSync(join(dir, entry.name)),
+        ...(lipSync ? { lipSync } : {}),
       })
     }
     return out.sort((a, b) => a.id.localeCompare(b.id))
@@ -150,6 +199,35 @@ export class AvatarAssetStore {
   readModelFile(id: string, relPath: string): { path: string; base64: string; bytes: number } {
     const file = this.resolveAsset(id, relPath, MODEL_FILE_EXTENSIONS)
     return { path: relPath, base64: readFileSync(file.path).toString('base64'), bytes: file.bytes }
+  }
+
+  hasPrototype(id: string): boolean {
+    if (id === 'dsh-pet') return !!this.dshPetDir && existsSync(join(this.dshPetDir, 'still.png'))
+    try {
+      this.resolveAsset(id, 'mouth-model.json', MODEL_FILE_EXTENSIONS)
+      this.resolveAsset(id, 'portrait-frame.png', MODEL_FILE_EXTENSIONS)
+      return true
+    } catch { return false }
+  }
+
+  readPrototype(id: string) {
+    if (id === 'dsh-pet') {
+      if (!this.dshPetDir) throw new AvatarAssetError('DSH 桌宠资源未安装', 404)
+      return { image: readFileSync(join(this.dshPetDir, 'still.png')).toString('base64'),
+        mouth: { x: 0.459, y: 0.551, width: 0.034, tilt: 0 } }
+    }
+    const { base64 } = this.readModelFile(id, 'mouth-model.json')
+    const mouth = JSON.parse(Buffer.from(base64, 'base64').toString('utf8')) as Record<string, unknown>
+    if (!mouth || !['x', 'y', 'width'].every((key) => typeof mouth[key] === 'number' && mouth[key] > 0 && mouth[key] < 1) ||
+      typeof mouth.tilt !== 'number' || !Number.isFinite(mouth.tilt) || Math.abs(mouth.tilt) > Math.PI / 2) {
+      throw new AvatarAssetError('角色口型配置无效')
+    }
+    return { image: this.readModelFile(id, 'portrait-frame.png').base64, mouth }
+  }
+
+  readDshIdle(): Buffer {
+    if (!this.dshPetDir) throw new AvatarAssetError('DSH 桌宠资源未安装', 404)
+    return readFileSync(join(this.dshPetDir, 'idle.webm'))
   }
 
   readScene(id: string): Buffer {
@@ -166,6 +244,7 @@ export class AvatarAssetStore {
   }
 
   private resolveAsset(id: string, relPath: string, extensions: ReadonlySet<string>): { path: string; bytes: number } {
+    if (isRetiredSample(id)) throw new AvatarAssetError('示例角色已移除', 404)
     if (!MODEL_ID_PATTERN.test(id)) throw new AvatarAssetError(`非法模型 id：${id}`)
     if (relPath.includes('\0')) throw new AvatarAssetError('非法路径')
     const dir = resolve(this.modelsDir, id)

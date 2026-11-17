@@ -125,6 +125,10 @@ export interface AnswerReceipt {
   readonly route: AnswerRoute
   readonly reasonCode?: ReasonCode
   readonly usageId: number | null
+  readonly model?: string | null
+  readonly tokensIn?: number | null
+  readonly tokensOut?: number | null
+  readonly tokensTotal?: number | null
   readonly latencyMs: number
 }
 

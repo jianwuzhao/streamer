@@ -519,4 +519,12 @@ CREATE TABLE IF NOT EXISTS simulation_events (
 CREATE INDEX IF NOT EXISTS idx_simulation_events_run ON simulation_events(run_no, id DESC);
 `,
   },
+  {
+    version: 11,
+    name: '011_reply_generation_usage',
+    sql: `
+ALTER TABLE usage ADD COLUMN tokens_total INTEGER;
+ALTER TABLE reply_log ADD COLUMN usage_id INTEGER;
+`,
+  },
 ]

@@ -11,6 +11,7 @@
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 0.16.0 | 2026-11-17 | 抖音直播间后台直读 + 播出画面声音链 + 角色口型原型：①**抖音后台读取**——新增 `src/platform/douyin-browser.ts`（playwright-core CDP 后台静音 Chrome 打开 `live.douyin.com` 房间页）与 `douyin-protocol.ts`（gzip + protobuf 裸解码网页数据流，DouyinBarrageGrab 系 wire 字段；读出评论/礼物/点赞/进房/关注/粉丝团/分享，64 位 ID 恒为十进制字符串）；`PlatformSettings.interactionSource` 二选一——`browser`（默认，填完整房间 URL）或 `relay`（沿用 env `DAFEIYU_DANMAKU_*` 转发源，行为不变）；②**播出画面与声音**——新增「直播画面」页（窗口捕获工作流：竖屏 1080×1920 / 横屏 1920×1080，直播伴侣同比例裁切推流）；「启用播出声音 / 试播一句 / 暂停播出声音」（应用音频或虚拟声卡，伴侣只收一条角色音轨；插件内切页不停声，紧急停止立即静音并显示安全画面）；「让主播回复」与按互动类型自动回复（每场重置，回复文字/模型/Token 记入互动与账本）；③**角色口型原型**——`client/assets/dsh-pet/`（DSH 蓝发女仆透明待机动画 + 静帧，取自 [dsh-pet 0.4.8](https://github.com/PC2005-cloud/dsh-pet) MIT）与 `scripts/prepare-role-prototypes.mjs`（本地原片提取口型图层）；Live2D 未安装时舞台回退口型原型/立绘（原为 CSS 桌宠）；④迁移 011 reply_generation_usage（`usage.tokens_total` / `reply_log.usage_id`——回复 Token 用量归因）；`src/adapters/response-lines.ts` 模型流式响应跨 chunk/UTF-8 边界按行解码；删除 `scripts/fetch-live2d-samples.sh`（Live2D 官方示例安装脚本，历史版本可复现）；依赖 +playwright-core 1.65.0 / +protobufjs 7.6.6（pnpm-workspace.yaml allowBuilds）；TS 202 例全过 |
 | 0.15.3 | 2026-11-16 | 自定义网关接入（TokenHub 混元 hy4 实测）+ 推理模型兼容：①**端点 URL 字段**——`CloudSettings` 新增 `baseUrl`，「模型与云端」新增「端点 URL（自定义网关）」输入框；解析优先级 env `DAFEIYU_CLOUD_BASE_URL` > 界面端点 > 服务商预设，自定义网关（如腾讯 TokenHub `https://tokenhub.tencentmaas.com/v1` + hy4）无需任何环境变量即可接入、测试与保存；额度路由同链路（TokenHub 无 billing 接口 → 如实标注「以控制台为准」）。②**推理模型兼容**——测试请求 max_tokens 提到 512，`content` 空但 `reasoning_content` 非空视为端点验证通过（hy4/R1 系思考先消耗预算）；云端适配器在 `finish_reason=length` 且正文为空时单次补足 ≥1024 tokens 重试（仍属同一次逻辑生成）；TS 198 例全过 |
 | 0.15.2 | 2026-11-16 | 额度/可用余额展示：新增 `GET cloud/quota`——按已保存的生效配置（env 优先）尽力查询：**DeepSeek 官方**走源站 `/user/balance`（总余额/赠送/充值三行 + 可用徽章，is_available=false 时标注停用）；**其余 OpenAI 兼容端点**（one-api/new-api 系）走 `dashboard/billing`（总额度/本年已用/可用余额，USD）；不支持的服务商（如腾讯混元）`supported:false` 如实标注「以控制台为准」，不编造数值。面板「模型与云端」新增「额度 / 可用余额」区块：进入页面自动查询、保存后自动刷新、可手动刷新；密钥未配置时提示先配置 |
 | 0.15.1 | 2026-11-16 | 云端配置即时生效 + 连接测试门禁：①**保存即生效**——`OpenAICompatCloudAdapter` 改为 `resolve()` 实时视图（每次调用读取 env > 面板保存值），`featureGates` 云端门禁用 getter 包装：API Key / 服务商 / 模型 / 预算保存后**无需重载插件**立即生效；②**连接测试**——新增 `POST settings/cloud/test`：按「表单当前值 + 已填密钥」发起一次最小 chat 请求（不写入设置；端点/密钥解析与真实调用一致，env 优先），面板「模型与云端」新增「测试连接」按钮，**测试通过后「保存」才可点击**（任何字段改动重置测试状态），测试结果回显服务商返回文本或 HTTP 错误（401/403/404 带中文提示）；③部署卡加固——状态接口异常显式红字报错（旧后端场景提示重载插件），无快照时按钮可点击 POST 兜底，install 探测改后台刷新不阻塞响应 |
@@ -58,7 +59,7 @@
 | 角色档案 · 主播信息（0.12.0，参照 eciyuan.qq.com） | ✅ | `BUILTIN_PROFILES` 五份档案（夏夏 / 沈露白 / 谷雨 / 贝拉 四个鹅次元官网角色 + dsh-pet 插件中桌宠角色）：中文名 / 英文名 / #人设标签 / 年龄·身高·星座·MBTI / 简介 / 主题色；`PersonaSettings.profileId`（默认 dsh-pet）+ `getPersonaProfile()`；settings / preview 两处带出档案；向导第 3 步与首页均改为档案卡展示与选择；播出展示名跟随档案中文名，AI 标识 / 授权 / 音色等合规字段不变 |
 | 观众画像管理与治理面板（§6.4/§24.2，I） | ✅ | 观众伪名化概览/详情隔离读取/纠错/退出个性化/删除两步流（墓碑优先）；技能库全版本、记忆候选生命周期、发布链灰度、审计与决策；反馈状态推进 |
 | 大肥鱼桌宠形象（J，语音互动与模拟开播已于 0.13.0 移除） | ✅ | 内置形象目录含 2 款桌宠（默认选中，旧经典形象保留可回退）；本地预览渲染桌宠小窗（气泡字幕/悬浮动画/AI 标识常显）；音色试听用浏览器本机 TTS（录音不上传，最终音色以直播伴侣音轨为准） |
-| Live2D 桌宠渲染（0.14.0，对齐鹅次元形象层） | ✅ | vendor 运行时（Cubism Core/pixi/pixi-live2d-display）随插件分发；模型包本地数据目录管理（官方示例一键安装 `scripts/fetch-live2d-samples.sh`，限本地/学习用途）；待机动作/点击互动/说话期口型驱动；未安装或失败自动回退 CSS 桌宠；资产经 host-api `avatar/*` 下发（base64 + blob URL，客户端保持单文件契约） |
+| Live2D 桌宠渲染（0.14.0，对齐鹅次元形象层） | ✅ | vendor 运行时（Cubism Core/pixi/pixi-live2d-display）随插件分发；模型包本地数据目录管理（Cubism 导出后手动放入，限本地/学习用途）；待机动作/点击互动/说话期口型驱动；未安装或失败自动回退角色口型原型/立绘（0.16.0，原为 CSS 桌宠）；资产经 host-api `avatar/*` 下发（base64 + blob URL，客户端保持单文件契约） |
 | 一键部署本地模型（0.14.1） | ✅ | 向导「模型与云端」一键安装并验证 Ollama + 本地模型（`model/deploy` 端点 + `LocalModelDeployer` 子进程复用 `scripts/setup-ollama.mjs`，幂等可重入），进度日志实时回显；命令行 `pnpm setup:ollama` 等价 |
 | 云端服务商预设（0.14.0） | ✅ | 内置腾讯云混元 / DeepSeek 官方 OpenAI 兼容端点预设（向导选卡即填，端点免环境变量）；自定义服务商仍走 `DAFEIYU_CLOUD_BASE_URL`；密钥永不落库 |
 | 工作台与管理（§24.2–24.4） | ✅ | 工作台常驻实时预览、直播控制、学习、待处理与费用；管理含配置、训练记录、互动账本、观众、治理和诊断 |
@@ -70,7 +71,7 @@
 ```bash
 pnpm install
 pnpm setup:ollama # 安装或复用 Ollama，下载 qwen3:4b 并验证推理
-pnpm test        # 198 个单元/契约/集成测试（node:test）
+pnpm test        # 202 个单元/契约/集成测试（node:test）
 pnpm test:worker # Python worker 11 例（unittest，纯标准库）
 pnpm typecheck   # tsc --noEmit（strict + exactOptionalPropertyTypes）
 pnpm build       # tsdown → lib/index.js（ESM，宿主插件规范）
@@ -109,7 +110,7 @@ src/
   testing/                 # 测试公共设施（临时库/资源桩/embedding 桩/评测夹具——不进生产路径）
   host-adapter.ts          # 宿主 define 接入层（cordis 行的 node 半）
 skill-packages/            # 技能包目录（示例：gift-ack-phrase）
-scripts/                   # fetch-live2d-samples.sh（安装 Live2D 官方示例角色）；setup-role-voices.sh / synthesize-role-voice.py（Qwen3-TTS 本地角色声线合成）
+scripts/                   # setup-role-voices.sh / synthesize-role-voice.py（Qwen3-TTS 本地角色声线合成）
 client/vendor/             # Live2D 渲染运行时（Cubism Core/pixi/pixi-live2d-display，许可见 VENDOR-LICENSES.md）
 training-worker/           # Python 训练进程：分时状态机/检查点/QLoRA（dry-run 零依赖）
 docs/                      # §25 文档集（随阶段补齐）
@@ -124,7 +125,7 @@ installer/                 # G 阶段
 - 界面适配 DSH 主界面：样式经注入的 `<style>` 类（`dfy-*` 前缀）全部引用宿主 `design-platform` 的 `--dsw-*` 设计变量并带降级值——亮/暗主题随宿主 `body[data-ds-dark-theme]` 自动切换；侧边栏图标为单色剪影（`currentColor` 随宿主导航色）+ DeepSeek 蓝气泡，与宿主品牌视觉（鲸鱼剪影 logo）同语言
 - 工作台：开播/下播、训练演练、暂停/恢复学习、恢复稳定版本；紧急停止常显。状态自动更新，切换角色和形象即时预览并自动保存。
 - 首次配置（§24.1 五步）：①数据与自检（逐项 ok/原因/修复动作）→ ②直播接入（运行模式/内容类别/官方客户端入口/操作员登录声明）→ ③**角色档案（主播信息，参照 eciyuan.qq.com CHARACTERS）**：档案卡网格选择（夏夏 / 沈露白 / 谷雨 / 贝拉 四个鹅次元角色 + dsh-pet 插件中桌宠），每卡展示中文名 / 英文名 / #人设标签 / 年龄·身高·星座·MBTI，选中档案中文名即播出展示名；另含音色 / 试听 / 使用授权；AI 标识固定常显 → ④模型与云端（**一键部署本地模型**：安装 Ollama、默认经 ModelScope 国内镜像直连下载权重并导入（无需代理）后试运行验证；未安装时界面琥珀提示并可一键安装，进度条 + 进程输出实时回显，已就绪部分自动跳过；**API Key 界面维护**：保存/清除/掩码回显与来源徽章，环境变量优先，明文永不回传，保存即时生效；「测试连接」通过后才能保存云端配置；**额度/可用余额**区块自动查询 DeepSeek 余额或 OpenAI 兼容 billing（不支持的服务商如实标注）；**服务商预设选卡**：腾讯云混元 / DeepSeek 官方 / 自定义，预设自动填端点与模型名建议，云端覆盖重启生效；面板根带渲染错误边界，组件异常显示错误卡而非白屏）→ ⑤运行模式与数据用途确认
-- 主播互动：工作台在本地预览和开播确认后均可发送文字，立即显示问题，按顺序生成和朗读。支持多轮上下文、本地记忆、本地模型优先及为操作员配置云端兜底。直播中可从授权弹幕源接收观众消息，点选回复或开启自动回复。接入格式见[快速开始](docs/quick-start.md#直播弹幕接入)。
+- 主播互动：工作台在本地预览和开播确认后均可发送文字，立即显示问题，按顺序生成和朗读。支持多轮上下文、本地记忆、本地模型优先及为操作员配置云端兜底。直播中可用独立 Chrome 读取指定抖音直播间的互动，也可使用授权转发源。每种互动可手动或自动交给主播回复。管理区显示回复、模型和 Token。见[直播互动接入](docs/quick-start.md#直播互动接入)。
 - 实时预览：同屏切换角色和形象。Live2D 使用实际播放音频驱动口型。预录视频用于待机，语音回复时使用角色立绘与字幕。
 - 互动与账本：最近回复（50 条）逐条四类反馈（有用/答错/不像大肥鱼/响应太慢）+ 纠正说法；反馈状态列表（已收到/核实中/已修复/证据不足）与操作员核实推进；礼物账本汇总（收到/待结算/已结算/退款/未验证）与答谢点名开关
 - 观众（§6.4 管理入口）：伪名化观众概览（墓碑计数/权利请求）；画像详情（隔离读取、来源/置信/用途、互动可重放聚合）；观众纠错（viewer_stated 覆盖推测留审计链）、退出个性化、删除两步流（申请→验证后执行，未验证不删）

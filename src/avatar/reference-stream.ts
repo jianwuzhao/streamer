@@ -20,6 +20,15 @@ interface SpeechJob {
 }
 
 /** One local model process per plugin instance. */
+function waitUntilReady<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted()
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason)
+    signal.addEventListener('abort', abort, { once: true })
+    void promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
+  })
+}
+
 export class ReferenceVoiceStream {
   private process: ChildProcessWithoutNullStreams | undefined
   private ready: Promise<number> | undefined
@@ -98,11 +107,11 @@ export class ReferenceVoiceStream {
     signal.throwIfAborted()
     const ready = this.start(profileId)
     if (!ready) return false
-    await ready
+    await waitUntilReady(ready, signal)
     signal.throwIfAborted()
     const child = this.process
     if (!child) throw new ReferenceVoiceError('synthesis_failed', '本地语音进程已中断，请重试')
-    if (this.job?.signal.aborted) await this.job.stopped
+    if (this.job?.signal.aborted) await waitUntilReady(this.job.stopped, signal)
     signal.throwIfAborted()
     if (this.process !== child) return this.speak(profileId, text, receive, signal)
     if (this.job) throw new ReferenceVoiceError('busy', '上一条语音还在结束，请稍后重试')

@@ -19,8 +19,8 @@ test('settings：默认值齐备（schema default），未保存即可读', () =
   try {
     const persona = store.getPersona()
     assert.equal(persona.profileId, 'dsh-pet')
-    assert.equal(persona.personaName, '大肥鱼')
-    assert.equal(persona.avatarId, 'fish-deskpet')
+    assert.equal(persona.personaName, 'DSH 蓝发女仆')
+    assert.equal(persona.avatarId, 'dsh-pet')
     assert.equal(persona.voiceId, 'qing-wan')
     assert.equal(persona.usageRightConfirmed, false)
     assert.equal(persona.aiLabelVisible, true)
@@ -50,7 +50,7 @@ test('settings：round-trip 持久化 + 部分更新语义 + 就绪翻转', () =
     // 部分更新：只改声音，其余保持
     store.savePersona({ voiceId: 'chen-lang' })
     const persona = store.getPersona()
-    assert.equal(persona.avatarId, 'fish-night')
+    assert.equal(persona.avatarId, 'dsh-pet')
     assert.equal(persona.voiceId, 'chen-lang')
     assert.equal(persona.usageRightConfirmed, true)
     assert.equal(store.personaReady().ready, true)
@@ -62,7 +62,7 @@ test('settings：round-trip 持久化 + 部分更新语义 + 就绪翻转', () =
 
     // 同一 DB 重新打开（重启保留）
     const reopened = new SettingsStore(db)
-    assert.equal(reopened.getPersona().personaName, '大肥鱼')
+    assert.equal(reopened.getPersona().personaName, 'DSH 蓝发女仆')
     assert.equal(reopened.getPersona().usageRightConfirmed, true)
     assert.equal(reopened.platformReady().ready, true)
   } finally {
@@ -125,12 +125,12 @@ test('settings：字段校验失败给出可读 issues；损坏行回落默认�
 test('settings：目录与迁移 009 生效（operator_settings 表存在）', () => {
   const { store, db, dataDir } = makeStore()
   try {
-    assert.ok(BUILTIN_AVATARS.length >= 3)
+    assert.ok(BUILTIN_AVATARS.length === 1)
     assert.ok(BUILTIN_VOICES.length >= 4)
     // 桌宠形象排在目录首位、默认选中，且带 style 标记
-    assert.equal(BUILTIN_AVATARS[0]?.id, 'fish-deskpet')
+    assert.equal(BUILTIN_AVATARS[0]?.id, 'dsh-pet')
     assert.equal(BUILTIN_AVATARS[0]?.style, 'deskpet')
-    assert.ok(BUILTIN_AVATARS.some((a) => a.style === 'deskpet' && a.label.includes('桌宠')))
+    assert.ok(BUILTIN_AVATARS.some((a) => a.style === 'deskpet' && a.label.includes('蓝发女仆')))
     store.saveGifts({ nameMention: false })
     const row = db.prepare(`SELECT value FROM operator_settings WHERE key = 'gifts'`).get() as { value: string }
     assert.equal((JSON.parse(row.value) as { nameMention: boolean }).nameMention, false)
@@ -159,7 +159,7 @@ test('settings：角色档案目录（鹅次元角色 + dsh-pet 插件中档案�
   assert.ok(pet !== undefined)
   assert.equal(pet?.source, 'plugin')
   assert.equal(pet?.style, 'deskpet')
-  assert.equal(pet?.name, '大肥鱼')
+  assert.equal(pet?.name, 'DSH 蓝发女仆')
   // 未知 id 回落 dsh-pet
   assert.equal(resolveProfile('does-not-exist').id, 'dsh-pet')
 })

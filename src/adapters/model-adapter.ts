@@ -31,6 +31,8 @@ export interface GenerateRequest {
 
 export interface GenerateResult {
   readonly text: string
+  readonly model?: string
+  readonly tokensTotal?: number
   readonly tokensIn?: number
   readonly tokensOut?: number
   readonly finishReason?: string
@@ -39,6 +41,8 @@ export interface GenerateResult {
 export interface GenerateOptions {
   readonly signal?: AbortSignal
   readonly timeoutMs?: number
+  /** Receive the accumulated reply text as it arrives. */
+  readonly onDraft?: (text: string) => void
 }
 
 /** 模型调用失败：携带路由原因码（§4.1）。 */

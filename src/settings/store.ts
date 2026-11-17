@@ -9,6 +9,8 @@
  * - 云端密钥（0.15）：可在界面维护（cloud_secret 节，SQLite 持久化）；
  *   读取路径一律只回掩码与来源，环境变量 DAFEIYU_CLOUD_API_KEY 仍优先；保存后重启插件生效。
  */
+import { isRetiredSample } from '../avatar/model-store.ts'
+import { douyinRoomUrl } from '../platform/douyin-protocol.ts'
 import { z } from 'zod'
 import { get, nowIso, run, type DB } from '../storage/db.ts'
 import { BUILTIN_AVATARS, BUILTIN_VOICES, BUILTIN_PROFILES, resolveProfile, type ProfileOption } from './catalogs.ts'
@@ -36,18 +38,21 @@ export const PersonaSettings = z.object({
   /** 选中的角色档案（参照 eciyuan.qq.com CHARACTERS）；主播信息由该档案驱动展示 */
   profileId: z.enum(profileIds).default('dsh-pet'),
   /** 播出展示名：默认取所选档案中文名；保留为可覆盖字段以兼容既有设置/回退 */
-  personaName: z.string().trim().min(1, '主播名称不能为空').max(24, '主播名称不超过 24 字').default('大肥鱼'),
-  /** 默认即「大肥鱼桌宠」（用户要求虚拟形象换成桌宠）；旧值 fish-* 仍合法可回退 */
-  avatarId: z.enum(avatarIds).default('fish-deskpet'),
+  personaName: z.string().trim().min(1, '主播名称不能为空').max(24, '主播名称不超过 24 字').default('DSH 蓝发女仆').transform((value) => value === '大肥鱼' ? 'DSH 蓝发女仆' : value),
+  /** Normalize retired avatars when reading existing settings. */
+  avatarId: z.preprocess((value) => typeof value === 'string' &&
+    ['fish-deskpet', 'fish-deskpet-gold', 'fish-classic', 'fish-gold', 'fish-night'].includes(value) ? 'dsh-pet' : value,
+  z.enum(avatarIds).default('dsh-pet')),
   /** 缺省沿用自动选取，null 使用内置形象。 */
-  live2dModelId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/).max(128).nullable().optional(),
+  live2dModelId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/).max(128).nullable().optional()
+    .transform((id) => id && isRetiredSample(id) ? null : id),
   voiceId: z.enum(voiceIds).default('qing-wan'),
   samplePhrase: z
     .string()
     .trim()
     .min(1, '试听语句不能为空')
     .max(80, '试听语句不超过 80 字')
-    .default('大家好，我是大肥鱼，今天咱们一起把日子过好。'),
+    .default('大家好，很高兴在直播间见到你。'),
   usageRightConfirmed: z.boolean().default(false),
   aiLabelText: z.string().trim().min(1, 'AI 标识文案不能为空').max(16, 'AI 标识文案不超过 16 字').default('AI 生成内容'),
   /** §23.2 输出检查最小集：AI 标识不可关闭——只接受 true。 */
@@ -57,6 +62,10 @@ export type PersonaSettingsType = z.infer<typeof PersonaSettings>
 
 export const PlatformSettings = z.object({
   platform: z.literal('douyin').default('douyin'),
+  interactionSource: z.enum(['browser', 'relay']).default('browser'),
+  roomUrl: z.string().trim().max(500).refine((value) => value === '' || douyinRoomUrl(value) !== null,
+    '请输入 https://live.douyin.com/ 开头的直播间链接')
+    .transform((value) => value ? douyinRoomUrl(value)! : '').default(''),
   operationMode: z.enum(['assisted', 'human_driven']).default('assisted'),
   contentCategory: z.string().trim().max(24, '内容类别不超过 24 字').default(''),
   officialClientUrl: httpUrl('官方客户端入口须为有效 URL').default('https://streamingtool.douyin.com/docs/qna_start_error'),
@@ -68,6 +77,7 @@ export type PlatformSettingsType = z.infer<typeof PlatformSettings>
 export const SceneSettings = z.object({
   title: z.string().trim().min(1, '直播间标题不能为空').max(30, '标题不超过 30 字').default('大肥鱼的直播间'),
   resolution: z.enum(['1280x720', '1920x1080']).default('1280x720'),
+  broadcastLayout: z.enum(['portrait', 'landscape']).default('portrait'),
   background: z.enum(['teal', 'night', 'warm']).default('teal'),
   danmakuOverlay: z.boolean().default(true),
 })

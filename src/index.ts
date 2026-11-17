@@ -29,6 +29,7 @@ import { TrainingSamplePipeline } from './training/samples.ts'
 import { TrainingScheduler } from './training/scheduler.ts'
 import { createRequestHandler } from './host-api.ts'
 import { DouyinAssistedAdapter } from './platform/adapter.ts'
+import { DouyinBrowserFeed } from './platform/douyin-browser.ts'
 import { DanmakuFeed } from './platform/danmaku-feed.ts'
 import { loadPolicyPack } from './platform/policy-pack.ts'
 import { LiveSession } from './live/session.ts'
@@ -106,6 +107,10 @@ export interface DafeiyuPluginHandle {
     readonly platform: DouyinAssistedAdapter
     readonly conversation: HostConversation
     readonly danmaku: DanmakuFeed
+    readonly interactionSource: () => 'browser' | 'relay'
+    readonly interactionStatus: () => string
+    startInteraction(): void
+    stopInteraction(): void
   }
   readonly memory: MemoryStore
   readonly audience: {
@@ -165,6 +170,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   // Live2D 桌宠资产：vendor 随插件（client/vendor），模型包在数据目录（data/models，不入库）
   const avatar = new AvatarAssetStore({
     modelsDir: join(dataDir, 'models'),
+    dshPetDir: join(packageDir(), 'client', 'assets', 'dsh-pet'),
     vendorDir: process.env.DAFEIYU_VENDOR_DIR ?? join(packageDir(), 'client', 'vendor'),
   })
   const configuredGates = getFeatureGates(config)
@@ -248,6 +254,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   const registry = new GenerationRegistry()
   const router = new RequestRouter({
     config,
+    getHostProfile: () => settings.getPersonaProfile(),
     featureGates,
     qualityGate,
     usage,
@@ -346,9 +353,15 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   const rulesPath = join(packageDir(), 'policy-packs/douyin/rules.json')
   const session = new LiveSession(platform, existsSync(rulesPath) ? loadPolicyPack(rulesPath) : null, config.platform.id)
   const roomId = process.env.DAFEIYU_DANMAKU_ROOM_ID?.trim()
-  const conversation = new HostConversation({ session, settings, router, runtime, ...(roomId ? { roomId } : {}),
+  const interactionSource = () => {
+    const { roomUrl, interactionSource: source } = settings.getPlatform()
+    return source === 'browser' && !roomUrl && roomId ? 'relay' : source
+  }
+  const conversation = new HostConversation({ session, settings, router, runtime,
+    ...(roomId ? { roomId } : {}),
+    roomForRun: () => interactionSource() === 'browser' ? settings.getPlatform().roomUrl : roomId,
     recall: async (text, profileId) => {
-      const characterId = profileId === 'dsh-pet' ? config.scope.characterId : profileId
+      const characterId = profileId
       const { memories } = await retrievalService.retrieve({ text, characterId },
         { routes: { vector: false, lexical: config.retrieval.lexicalEnabled, graph: config.retrieval.graphEnabled } })
       const matched = memories.map((entry) => entry.text)
@@ -366,6 +379,12 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   const danmaku = new DanmakuFeed(conversation, {
     roomId, url: process.env.DAFEIYU_DANMAKU_URL, token: process.env.DAFEIYU_DANMAKU_TOKEN,
   })
+
+  const douyinBrowser = new DouyinBrowserFeed(conversation)
+  const stopInteraction = () => {
+    danmaku.stop()
+    douyinBrowser.stop()
+  }
 
   return {
     config,
@@ -414,7 +433,13 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
       consolidation: consolidationService,
     },
     live: {
-      session, platform, conversation, danmaku,
+      session, platform, conversation, danmaku, interactionSource, stopInteraction,
+      interactionStatus: () => interactionSource() === 'relay' ? danmaku.status :
+        settings.getPlatform().roomUrl ? douyinBrowser.status : 'unconfigured',
+      startInteraction: () => {
+        if (interactionSource() === 'relay') danmaku.start()
+        else douyinBrowser.start(settings.getPlatform().roomUrl)
+      },
       trainingEntry: new TrainingEntry(trainingScheduler),
     },
     training: {
@@ -422,7 +447,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
       scheduler: trainingScheduler,
     },
     dispose() {
-      danmaku.stop()
+      stopInteraction()
       conversation.reset()
       modelDeploy.dispose()
       referenceVoiceStream.dispose()

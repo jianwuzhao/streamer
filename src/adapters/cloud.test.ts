@@ -115,14 +115,24 @@ test('推理模型空正文（finish=length）：单次补预算重试后取到�
       calls.push(body.max_tokens)
       return calls.length === 1
         ? new Response(
-            JSON.stringify({ choices: [{ message: { content: '', reasoning_content: '思考' }, finish_reason: 'length' }] }),
+            JSON.stringify({
+              choices: [{ message: { content: '', reasoning_content: '思考' }, finish_reason: 'length' }],
+              usage: { prompt_tokens: 10, completion_tokens: 128, total_tokens: 138 },
+            }),
             { status: 200 },
           )
-        : new Response(JSON.stringify({ choices: [{ message: { content: '正文' }, finish_reason: 'stop' }] }), { status: 200 })
+        : new Response(JSON.stringify({
+            model: 'actual-model', choices: [{ message: { content: '正文' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 10, completion_tokens: 30, total_tokens: 40 },
+          }), { status: 200 })
     }) as unknown as typeof fetch,
   })
   const result = await adapter.generate({ messages: [{ role: 'user', text: 'hi' }], maxOutputTokens: 128 })
   assert.equal(result.text, '正文')
+  assert.equal(result.model, 'actual-model')
+  assert.equal(result.tokensIn, 20)
+  assert.equal(result.tokensOut, 158)
+  assert.equal(result.tokensTotal, 178)
   assert.deepEqual(calls, [128, 1024], '重试应补足到 ≥1024 tokens')
 })
 
@@ -146,4 +156,28 @@ test('能力不足：responseSchema + 声明能力不含结构化输出时拒绝
     },
   )
   assert.equal(fetchCount(), 0)
+})
+
+test('兼容云端流式回复只递交正文，并读取独立的用量分块', async () => {
+  const events = [
+    { choices: [{ delta: { reasoning_content: '内部推理' } }] },
+    { model: 'actual-model', choices: [{ delta: { content: '你好，' } }] },
+    { choices: [{ delta: { content: '欢迎来直播间。' }, finish_reason: 'stop' }] },
+    { choices: [], usage: { prompt_tokens: 21, completion_tokens: 9, total_tokens: 30 } },
+  ]
+  const wire = events.map((event) => 'data: ' + JSON.stringify(event)).join('\r\n\r\n') + '\r\n\r\ndata: [DONE]\r\n\r\n'
+  const { adapter } = makeAdapter({
+    fetchImpl: async (_url, init) => {
+      const payload = JSON.parse(String(init?.body))
+      assert.equal(payload.stream, true)
+      assert.equal(payload.stream_options.include_usage, true)
+      return new Response(wire, { headers: { 'content-type': 'text/event-stream' } })
+    },
+  })
+  const drafts: string[] = []
+  const result = await adapter.generate({ messages: [{ role: 'user', text: '你好' }] }, { onDraft: (text) => drafts.push(text) })
+  assert.deepEqual(drafts, ['你好，', '你好，欢迎来直播间。'])
+  assert.deepEqual(result, {
+    text: '你好，欢迎来直播间。', model: 'actual-model', tokensIn: 21, tokensOut: 9, tokensTotal: 30, finishReason: 'stop',
+  })
 })

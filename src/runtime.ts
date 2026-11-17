@@ -37,8 +37,8 @@ export class SqliteUsageRecorder implements UsageRecorder {
     try {
       const res = run(
         this.db,
-        `INSERT INTO usage (request_id, generation_epoch, route, reason_code, model, latency_ms, tokens_in, tokens_out, cost_cny)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO usage (request_id, generation_epoch, route, reason_code, model, latency_ms, tokens_in, tokens_out, cost_cny, tokens_total)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         entry.requestId,
         entry.epoch,
         entry.route,
@@ -48,6 +48,7 @@ export class SqliteUsageRecorder implements UsageRecorder {
         entry.tokensIn ?? null,
         entry.tokensOut ?? null,
         entry.costCny ?? 0,
+        entry.tokensTotal ?? null,
       )
       return Number((res as { lastInsertRowid?: number | bigint }).lastInsertRowid ?? 0) || null
     } catch {
@@ -107,13 +108,14 @@ export class DafeiyuRuntime implements LearningRuntime {
     try {
       run(
         this.deps.db,
-        `INSERT INTO reply_log (request_id, session_id, question_text, reply_text, route)
-         VALUES (?, ?, ?, ?, ?) ON CONFLICT(request_id) DO NOTHING`,
+        `INSERT INTO reply_log (request_id, session_id, question_text, reply_text, route, usage_id)
+         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(request_id) DO NOTHING`,
         request.requestId,
         request.sessionId,
         request.text,
         receipt.text,
         receipt.route,
+        receipt.usageId,
       )
       run(
         this.deps.db,

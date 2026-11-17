@@ -5,6 +5,7 @@ import { CloudDisabledError } from '../adapters/cloud.ts'
 import type { GenerateMessage } from '../adapters/model-adapter.ts'
 import type { ModelAdapter } from '../adapters/model-adapter.ts'
 import type { DafeiyuConfigType, FeatureGates } from '../config.ts'
+import type { ProfileOption } from '../settings/catalogs.ts'
 import type { AnswerReceipt, AnswerRoute, ReasonCode } from '../types.ts'
 import type { GenerationRegistry } from './budget.ts'
 import type { QualityGate, QualityGateResult } from './quality-gate.ts'
@@ -18,6 +19,7 @@ export interface UsageEntry {
   readonly latencyMs: number
   readonly tokensIn?: number
   readonly tokensOut?: number
+  readonly tokensTotal?: number
   readonly costCny?: number
 }
 
@@ -36,13 +38,15 @@ export interface RouterDeps {
   readonly cloud?: ModelAdapter
   readonly registry?: GenerationRegistry
   readonly now?: () => number
+  readonly getHostProfile?: () => ProfileOption
 }
 
 export interface RouteContext {
   readonly signal?: AbortSignal
+  readonly onDraft?: (text: string) => void
+  readonly hostProfile?: ProfileOption
   readonly hostConversation?: {
-    readonly name: string
-    readonly description: string
+    readonly mode: 'preview' | 'live'
     readonly history: readonly GenerateMessage[]
     readonly cloudHistory: readonly GenerateMessage[]
     readonly memory: readonly string[]

@@ -9,17 +9,17 @@ function makeFixture() {
   const root = mkdtempSync(join(tmpdir(), 'dafeiyu-avatar-'))
   const modelsDir = join(root, 'models')
   const vendorDir = join(root, 'vendor')
-  mkdirSync(join(modelsDir, 'hiyori'), { recursive: true })
+  mkdirSync(join(modelsDir, 'custom-avatar'), { recursive: true })
   mkdirSync(vendorDir, { recursive: true })
   writeFileSync(
-    join(modelsDir, 'hiyori', 'hiyori.model3.json'),
-    JSON.stringify({ Version: 3, FileReferences: { Moc: 'hiyori.moc3', Textures: ['texture_00.png'] } }),
+    join(modelsDir, 'custom-avatar', 'custom-avatar.model3.json'),
+    JSON.stringify({ Version: 3, FileReferences: { Moc: 'custom-avatar.moc3', Textures: ['texture_00.png'] } }),
   )
-  writeFileSync(join(modelsDir, 'hiyori', 'hiyori.moc3'), 'FAKEMOC3')
-  writeFileSync(join(modelsDir, 'hiyori', 'texture_00.png'), 'FAKEPNG')
+  writeFileSync(join(modelsDir, 'custom-avatar', 'custom-avatar.moc3'), 'FAKEMOC3')
+  writeFileSync(join(modelsDir, 'custom-avatar', 'texture_00.png'), 'FAKEPNG')
   writeFileSync(
-    join(modelsDir, 'hiyori', 'manifest.json'),
-    JSON.stringify({ name: 'Hiyori（官方示例）', source: 'Live2D CubismWebSamples', license: 'Live2D Free Material License' }),
+    join(modelsDir, 'custom-avatar', 'manifest.json'),
+    JSON.stringify({ name: '自制角色', source: '本地自制', license: 'Live2D Free Material License' }),
   )
   // 无 model3.json 的目录不应入列
   mkdirSync(join(modelsDir, 'not-a-model'), { recursive: true })
@@ -33,12 +33,16 @@ function makeFixture() {
 test('avatar：模型目录扫描——只列含 model3.json 的目录，manifest 驱动展示名', () => {
   const { store, root } = makeFixture()
   try {
+    const retired = join(root, 'models', 'Hiyori')
+    mkdirSync(retired)
+    writeFileSync(join(retired, 'Hiyori.model3.json'), '{}')
+    assert.throws(() => store.readModelFile('Hiyori', 'Hiyori.model3.json'), AvatarAssetError)
     const models = store.listModels()
     assert.equal(models.length, 1)
-    assert.equal(models[0]?.id, 'hiyori')
-    assert.equal(models[0]?.entry, 'hiyori.model3.json')
-    assert.equal(models[0]?.name, 'Hiyori（官方示例）')
-    assert.equal(models[0]?.source, 'Live2D CubismWebSamples')
+    assert.equal(models[0]?.id, 'custom-avatar')
+    assert.equal(models[0]?.entry, 'custom-avatar.model3.json')
+    assert.equal(models[0]?.name, '自制角色')
+    assert.equal(models[0]?.source, '本地自制')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -63,18 +67,18 @@ test('avatar：vendor 状态与读取——缺件如实标注，未知名拒绝'
 test('avatar：模型文件下发——正常读取 + 路径穿越/类型/大小防护', () => {
   const { store, root } = makeFixture()
   try {
-    const f = store.readModelFile('hiyori', 'texture_00.png')
+    const f = store.readModelFile('custom-avatar', 'texture_00.png')
     assert.equal(f.bytes, 7)
     assert.equal(Buffer.from(f.base64, 'base64').toString(), 'FAKEPNG')
     // 子目录相对路径允许（motions/xxx.motion3.json 场景）
-    mkdirSync(join(root, 'models', 'hiyori', 'motions'))
-    writeFileSync(join(root, 'models', 'hiyori', 'motions', 'idle.motion3.json'), '{}')
-    assert.doesNotThrow(() => store.readModelFile('hiyori', 'motions/idle.motion3.json'))
+    mkdirSync(join(root, 'models', 'custom-avatar', 'motions'))
+    writeFileSync(join(root, 'models', 'custom-avatar', 'motions', 'idle.motion3.json'), '{}')
+    assert.doesNotThrow(() => store.readModelFile('custom-avatar', 'motions/idle.motion3.json'))
     // 越界与非法
-    assert.throws(() => store.readModelFile('hiyori', '../vendor/pixi.min.js'), AvatarAssetError)
-    assert.throws(() => store.readModelFile('hiyori', '../../etc/passwd'), AvatarAssetError)
+    assert.throws(() => store.readModelFile('custom-avatar', '../vendor/pixi.min.js'), AvatarAssetError)
+    assert.throws(() => store.readModelFile('custom-avatar', '../../etc/passwd'), AvatarAssetError)
     assert.throws(() => store.readModelFile('../models', 'x.json'), AvatarAssetError) // id 越界
-    assert.throws(() => store.readModelFile('hiyori', 'evil.exe'), AvatarAssetError) // 扩展名白名单
+    assert.throws(() => store.readModelFile('custom-avatar', 'evil.exe'), AvatarAssetError) // 扩展名白名单
     assert.throws(() => store.readModelFile('ghost', 'model3.json'), AvatarAssetError) // 不存在
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -92,7 +96,7 @@ test('avatar：模型目录符号链接——指向根外/别名他模型一律�
     symlinkSync(outside, join(modelsDir, 'linked'))
     assert.throws(() => store.readModelFile('linked', 'secret.png'), AvatarAssetError)
     // 根内其他模型目录的别名（解析后 realDir ≠ 根下名为 id 的直接子目录）
-    symlinkSync(join(modelsDir, 'hiyori'), join(modelsDir, 'copy'))
+    symlinkSync(join(modelsDir, 'custom-avatar'), join(modelsDir, 'copy'))
     assert.throws(() => store.readModelFile('copy', 'texture_00.png'), AvatarAssetError)
     // 符号链接目录不入列
     assert.equal(store.listModels().length, 1)
@@ -129,15 +133,15 @@ test('avatar：manifest 读取受限——符号链接逃逸/超大文件按缺�
 test('avatar：白名单名符号链接——无扩展名/可执行真实目标拒绝，目录内正常别名放行', () => {
   const { store, root, modelsDir } = makeFixture()
   try {
-    const dir = join(modelsDir, 'hiyori')
+    const dir = join(modelsDir, 'custom-avatar')
     writeFileSync(join(dir, 'payload'), 'no-ext') // 无扩展名真实文件
     writeFileSync(join(dir, 'run.sh'), 'x') // 可执行类真实文件
     symlinkSync('payload', join(dir, 'data.json')) // 允许名 → 无扩展名目标
     symlinkSync('run.sh', join(dir, 'steal.png')) // 允许名 → 可执行目标
     symlinkSync('texture_00.png', join(dir, 'alias.png')) // 目录内正常别名
-    assert.throws(() => store.readModelFile('hiyori', 'data.json'), AvatarAssetError)
-    assert.throws(() => store.readModelFile('hiyori', 'steal.png'), AvatarAssetError)
-    const ok = store.readModelFile('hiyori', 'alias.png')
+    assert.throws(() => store.readModelFile('custom-avatar', 'data.json'), AvatarAssetError)
+    assert.throws(() => store.readModelFile('custom-avatar', 'steal.png'), AvatarAssetError)
+    const ok = store.readModelFile('custom-avatar', 'alias.png')
     assert.equal(Buffer.from(ok.base64, 'base64').toString(), 'FAKEPNG')
   } finally {
     rmSync(root, { recursive: true, force: true })

@@ -3,7 +3,7 @@
  * - avatar/catalog：vendor 就绪状态 + 已安装模型包列表（客户端据此决定渲染或回退）；
  * - avatar/vendor?name=core|pixi|extension：vendor 脚本文本（blob <script> 注入用）；
  * - avatar/model-file?id=&path=：模型包内单文件（base64；客户端拼 Blob URL 喂渲染器）。
- * 模型包不随插件分发：本地数据目录 + scripts/fetch-live2d-samples.sh 安装。
+ * Cubism 模型包从本地数据目录加载。
  */
 import type { AvatarAssetStore } from './avatar/model-store.ts'
 import { AvatarAssetError } from './avatar/model-store.ts'
@@ -27,7 +27,28 @@ export function handleAvatarGetRoute(
 ): boolean {
   if (path === 'avatar/catalog') {
     const scenes = BUILTIN_PROFILES.flatMap(({ media }) => media && avatar.hasScene(media.modelId) ? [media.modelId] : [])
-    json(res, 200, { ok: true, catalog: { vendors: avatar.vendorStatus(), models: avatar.listModels(), scenes } })
+    const prototypes = BUILTIN_PROFILES.flatMap(({ media }) => media && avatar.hasPrototype(media.modelId) ? [media.modelId] : [])
+    json(res, 200, { ok: true, catalog: { vendors: avatar.vendorStatus(), models: avatar.listModels(), scenes, prototypes } })
+    return true
+  }
+
+  if (path === 'avatar/prototype') {
+    const id = query.get('id')
+    if (!id || !BUILTIN_PROFILES.some(({ media }) => media?.modelId === id) || !avatar.hasPrototype(id)) {
+      json(res, 404, { ok: false })
+      return true
+    }
+    try { json(res, 200, { ok: true, ...avatar.readPrototype(id) }) } catch (err) { fail(res, err) }
+    return true
+  }
+
+  if (path === 'avatar/dsh-idle') {
+    try {
+      const video = avatar.readDshIdle()
+      res.statusCode = 200
+      res.setHeader('content-type', 'video/webm')
+      res.end(video)
+    } catch (err) { fail(res, err) }
     return true
   }
 

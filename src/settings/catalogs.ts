@@ -20,15 +20,15 @@ export interface VoiceOption {
 }
 
 /**
- * 官方媒体档案：鹅次元官网公开素材（封面 / 试听音频）+ 本插件本地 Live2D 包 id。
- * - 两个 URL 均为官网公开静态资源（无鉴权），仅用于预览展示与试听；
+ * 角色媒体档案包含立绘、可选试听音频和本地模型包 id。
+ * - 鹅次元 URL 仅用于预览展示与试听。
  * - `modelId` 为确定性本地包 id（不依赖运行时目录探测），前端按需加载。
  */
 export interface ProfileMedia {
   /** 官方公开立绘/封面图 */
   readonly portraitUrl: string
   /** 官方公开试听音频 */
-  readonly sampleAudioUrl: string
+  readonly sampleAudioUrl?: string
   /** 本地 Live2D 模型包 id（确定性映射） */
   readonly modelId: string
 }
@@ -58,6 +58,8 @@ export interface ProfileOption {
   readonly mbti: string
   /** 角色简介 */
   readonly bio: string
+  /** 文字回复采用的表达方式 */
+  readonly speakingStyle: string
   /** 档案卡主题色（预览画布/卡片用） */
   readonly theme: { readonly bg: string; readonly primary: string; readonly accent: string }
   /** 官方媒体档案（仅官网角色携带；插件内桌宠角色无官方素材，保持缺省） */
@@ -83,15 +85,17 @@ function eciyuanMedia(slug: string, modelId: string): ProfileMedia {
 export const BUILTIN_PROFILES: readonly ProfileOption[] = [
   {
     id: 'dsh-pet',
-    name: '大肥鱼',
-    enName: 'DSH-PET',
-    tagline: '一只陪你把日子过好的桌宠',
+    name: 'DSH 蓝发女仆',
+    enName: 'DSH PET',
+    tagline: '来自 DeepSeek Harness 的蓝发桌宠',
     age: '—',
     height: '—',
     zodiac: '—',
-    mbti: 'ENFP',
-    bio: '本插件内置的 AI 桌宠角色，常驻桌面小窗陪你直播、聊天、种田。',
-    theme: { bg: '#0f3d38', primary: '#0f5e57', accent: '#ffd166' },
+    mbti: '—',
+    bio: '蓝发女仆，说话温柔、自然，偶尔带一点俏皮。',
+    speakingStyle: '语气轻柔亲切，偶尔俏皮地接梗，像陪观众闲聊。',
+    theme: { bg: '#17213c', primary: '#344d86', accent: '#cfdeff' },
+    media: { modelId: 'dsh-pet', portraitUrl: '' },
     source: 'plugin',
     style: 'deskpet',
   },
@@ -105,6 +109,7 @@ export const BUILTIN_PROFILES: readonly ProfileOption[] = [
     zodiac: '白羊座',
     mbti: 'ENFP',
     bio: '元气满满的校园搭子，懂梗、爱聊天，情绪价值永远在线。',
+    speakingStyle: '活泼热情，像同学聊天一样自然接梗，多用轻松的口语。',
     theme: { bg: '#3a2440', primary: '#7b4b8a', accent: '#ffd6ec' },
     media: eciyuanMedia('xiaxia', 'eciyuan-xiaxia'),
     source: 'eciyuan',
@@ -120,6 +125,7 @@ export const BUILTIN_PROFILES: readonly ProfileOption[] = [
     zodiac: '水瓶座',
     mbti: 'INTP',
     bio: '冷静犀利的战术脑，游戏理解在线，讲解向陪玩首选。',
+    speakingStyle: '冷静直接，先讲判断，再给理由。聊游戏时用简明的解说口吻。',
     theme: { bg: '#10243a', primary: '#2b5c8a', accent: '#9fdcff' },
     media: eciyuanMedia('shenlubai', 'eciyuan-lubai'),
     source: 'eciyuan',
@@ -135,6 +141,7 @@ export const BUILTIN_PROFILES: readonly ProfileOption[] = [
     zodiac: '金牛座',
     mbti: 'INFJ',
     bio: '温和细致的生活家，把每一场陪伴都料理得妥帖。',
+    speakingStyle: '语气温和耐心，用具体的生活细节解释，聊到料理时说清关键步骤。',
     theme: { bg: '#3a2a12', primary: '#8a6a1f', accent: '#ffe3a3' },
     media: eciyuanMedia('guyu', 'eciyuan-guyu'),
     source: 'eciyuan',
@@ -150,6 +157,7 @@ export const BUILTIN_PROFILES: readonly ProfileOption[] = [
     zodiac: '射手座',
     mbti: 'ESTP',
     bio: '风一样利落的竞技搭子，节奏快、反应更快。',
+    speakingStyle: '句子短而利落，适度用竞技搭子的调侃接话，节奏明快。',
     theme: { bg: '#3a1420', primary: '#8a2b45', accent: '#ffb3c6' },
     media: eciyuanMedia('beila', 'eciyuan-beila'),
     source: 'eciyuan',
@@ -163,36 +171,7 @@ export function resolveProfile(id: string): ProfileOption {
 }
 
 export const BUILTIN_AVATARS: readonly AvatarOption[] = [
-  {
-    id: 'fish-deskpet',
-    label: '大肥鱼桌宠 · 青绿',
-    theme: { bg: '#0f3d38', primary: '#0f5e57', accent: '#ffd166' },
-    style: 'deskpet',
-  },
-  {
-    id: 'fish-deskpet-gold',
-    label: '大肥鱼桌宠 · 暖金',
-    theme: { bg: '#4a3410', primary: '#8a6d1f', accent: '#ffe3a3' },
-    style: 'deskpet',
-  },
-  {
-    id: 'fish-classic',
-    label: '大肥鱼 · 经典青绿',
-    theme: { bg: '#0f3d38', primary: '#0f5e57', accent: '#ffd166' },
-    style: 'classic',
-  },
-  {
-    id: 'fish-gold',
-    label: '大肥鱼 · 暖金',
-    theme: { bg: '#4a3410', primary: '#8a6d1f', accent: '#ffe3a3' },
-    style: 'classic',
-  },
-  {
-    id: 'fish-night',
-    label: '大肥鱼 · 夜航蓝',
-    theme: { bg: '#101c33', primary: '#1d3557', accent: '#7ae7ff' },
-    style: 'classic',
-  },
+  { id: 'dsh-pet', label: 'DSH 蓝发女仆', theme: { bg: '#17213c', primary: '#344d86', accent: '#cfdeff' }, style: 'deskpet' },
 ]
 
 /**

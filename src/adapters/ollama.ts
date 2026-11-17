@@ -12,14 +12,34 @@ import {
   type ModelAdapter,
   type ModelCapabilities,
 } from './model-adapter.ts'
+import { responseLines } from './response-lines.ts'
 
 const DEFAULT_TIMEOUT_MS = 5_000
 
 interface OllamaChatResponse {
   readonly message?: { readonly content?: string }
+  readonly model?: string
   readonly prompt_eval_count?: number
   readonly eval_count?: number
   readonly done_reason?: string
+  readonly done?: boolean
+  readonly error?: string
+}
+
+async function readChatStream(response: Response, onDraft: (text: string) => void): Promise<OllamaChatResponse> {
+  let text = ''
+  for await (const line of responseLines(response)) {
+    if (!line.trim()) continue
+    const chunk = JSON.parse(line) as OllamaChatResponse
+    if (chunk.error) throw new ModelCallError('LOCAL_UNAVAILABLE', 'Ollama 流式回复中断')
+    const delta = chunk.message?.content
+    if (delta) {
+      text += delta
+      onDraft(text)
+    }
+    if (chunk.done === true) return { ...chunk, message: { content: text } }
+  }
+  throw new ModelCallError('LOCAL_UNAVAILABLE', 'Ollama 未返回流式回复结束标记')
 }
 
 interface OllamaShowResponse {
@@ -70,6 +90,7 @@ export class OllamaAdapter implements ModelAdapter {
     const timeoutMs = callOpts?.timeoutMs ?? this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
     const { signal, cleanup } = combineSignals(callOpts?.signal, timeoutMs)
     const doFetch = this.opts.fetchImpl ?? fetch
+    const onDraft = callOpts?.onDraft
     try {
       const res = await doFetch(`${this.opts.baseURL}/api/chat`, {
         method: 'POST',
@@ -77,7 +98,7 @@ export class OllamaAdapter implements ModelAdapter {
         body: JSON.stringify({
           model: this.opts.model,
           messages: req.messages.map((m) => ({ role: m.role, content: m.text })),
-          stream: false,
+          stream: onDraft !== undefined,
           think: false,
           options: { num_predict: req.maxOutputTokens ?? this.opts.maxOutputTokens ?? 128 },
         }),
@@ -89,13 +110,14 @@ export class OllamaAdapter implements ModelAdapter {
           `ollama HTTP ${res.status} ${res.statusText}`,
         )
       }
-      const body = (await res.json()) as OllamaChatResponse
+      const body = onDraft && !res.headers.get('content-type')?.includes('application/json')
+        ? await readChatStream(res, onDraft) : await res.json() as OllamaChatResponse
       const text = body.message?.content
-      if (typeof text !== 'string') {
+      if (typeof text !== 'string' || (onDraft && !text.trim())) {
         throw new ModelCallError('LOCAL_UNAVAILABLE', 'ollama 响应缺少 message.content')
       }
       return {
-        text,
+        text, model: body.model || this.opts.model,
         ...(body.prompt_eval_count !== undefined ? { tokensIn: body.prompt_eval_count } : {}),
         ...(body.eval_count !== undefined ? { tokensOut: body.eval_count } : {}),
         ...(body.done_reason !== undefined ? { finishReason: body.done_reason } : {}),

@@ -4,7 +4,12 @@
  */
 import { get, type DB } from './storage/db.ts'
 
-export type ServerRequest = { method?: string; url?: string; headers?: { range?: string | string[] }; on(eventName: string, cb: (chunk: Buffer) => void): void }
+export type ServerRequest = {
+  method?: string | undefined
+  url?: string | undefined
+  headers?: { range?: string | string[] | undefined } | undefined
+  on(eventName: string, cb: (chunk: Buffer) => void): void
+}
 export type ServerResponse = {
   statusCode?: number
   setHeader(name: string, value: string): unknown

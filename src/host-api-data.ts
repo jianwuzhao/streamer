@@ -61,6 +61,10 @@ function buildSettingsPayload(handle: DafeiyuPluginHandle): SettingsPayload {
 
 interface ReplyRow {
   readonly reply_id: number
+  readonly model: string | null
+  readonly tokens_in: number | null
+  readonly tokens_out: number | null
+  readonly tokens_total: number | null
   readonly request_id: string
   readonly session_id: string
   readonly question_text: string
@@ -168,6 +172,7 @@ export async function handleDataGetRoute(
           name: profile.name,
           enName: profile.enName,
           profileId: profile.id,
+          source: profile.source,
           tagline: profile.tagline,
           bio: profile.bio,
           theme: profile.theme,
@@ -358,7 +363,14 @@ export async function handleDataGetRoute(
   }
 
   if (path === 'replies') {
-    const replies = all<ReplyRow>(handle.db, 'SELECT * FROM reply_log ORDER BY reply_id DESC LIMIT 50')
+    res.setHeader('cache-control', 'no-store')
+    const replies = all<ReplyRow>(handle.db, `
+      SELECT r.*, u.model, u.tokens_in, u.tokens_out, COALESCE(u.tokens_total, u.tokens_in + u.tokens_out) AS tokens_total
+      FROM reply_log r LEFT JOIN usage u ON u.usage_id = COALESCE(r.usage_id, (
+        SELECT last.usage_id FROM usage last WHERE last.request_id = r.request_id
+          AND last.route = r.route AND last.reason_code IS NULL ORDER BY last.usage_id DESC LIMIT 1
+      ))
+      ORDER BY r.reply_id DESC LIMIT 50`)
     const feedbacks = all<FeedbackLiteRow>(
       handle.db,
       `SELECT feedback_id, label, status, target_reply_id, correction, created_at
@@ -380,6 +392,7 @@ export async function handleDataGetRoute(
         question: r.question_text,
         reply: r.reply_text,
         route: r.route,
+        model: r.model, tokensIn: r.tokens_in, tokensOut: r.tokens_out, tokensTotal: r.tokens_total,
         createdAt: r.created_at,
         feedback: byReply.get(r.request_id) ?? [],
       })),
