@@ -10,6 +10,8 @@
  * 符号链接真实目标同样过扩展名白名单、manifest.json 限 lstat 常规文件
  * 且限读取上限——host-api 返回 base64，防巨文件撑爆面板请求。
  */
+import { validateFaceRig } from './face-rig.ts'
+import { hash } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { extname, join, resolve, sep } from 'node:path'
 
@@ -222,7 +224,33 @@ export class AvatarAssetStore {
       typeof mouth.tilt !== 'number' || !Number.isFinite(mouth.tilt) || Math.abs(mouth.tilt) > Math.PI / 2) {
       throw new AvatarAssetError('角色口型配置无效')
     }
-    return { image: this.readModelFile(id, 'portrait-frame.png').base64, mouth }
+    const image = this.readModelFile(id, 'portrait-frame.png').base64
+    const { motionMaskSource, eyes: eyeConfig, ...calibration } = mouth
+    const optionalMask = (file: string) => {
+      try {
+        return this.readModelFile(id, file).base64
+      } catch (error) {
+        if (!(error instanceof AvatarAssetError)) throw error
+        return undefined
+      }
+    }
+    const matches = typeof motionMaskSource === 'string' && hash('sha256', Buffer.from(image, 'base64')) === motionMaskSource
+    const motionMask = matches ? optionalMask('motion-mask.png') : undefined
+    const headMask = motionMask ? optionalMask('head-mask.png') : undefined
+    const eyes = matches && Array.isArray(eyeConfig) && eyeConfig.length === 2 && eyeConfig.every((eye) =>
+      eye && ['x', 'y', 'width', 'height'].every((key) => typeof eye[key] === 'number' &&
+        Number.isFinite(eye[key]) && eye[key] > 0 && eye[key] < 1) &&
+      eye.width < 0.3 && eye.height < 0.2 && eye.x > eye.width && eye.x + eye.width < 1 &&
+      eye.y > eye.height * 1.5 && eye.y + eye.height * 1.5 < 1 &&
+      typeof eye.tilt === 'number' && Number.isFinite(eye.tilt) && Math.abs(eye.tilt) < Math.PI / 3) ? eyeConfig : undefined
+    let faceRig: ReturnType<typeof validateFaceRig> | undefined
+    try {
+      const file = this.readModelFile(id, 'face-rig.json')
+      faceRig = validateFaceRig(JSON.parse(Buffer.from(file.base64, 'base64').toString('utf8')), hash('sha256', Buffer.from(image, 'base64')))
+    } catch (error) {
+      if (!(error instanceof AvatarAssetError && error.status === 404)) throw new AvatarAssetError('完整面部模型需要重新生成：' + (error as Error).message)
+    }
+    return { image, mouth: calibration, ...(faceRig ? { faceRig } : {}), ...(eyes ? { eyes } : {}), ...(motionMask ? { motionMask } : {}), ...(headMask ? { headMask } : {}) }
   }
 
   readDshIdle(): Buffer {

@@ -831,6 +831,7 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
   const state = async () => (await call(api, 'GET', '/api/dafeiyu/interaction')).payload
   const requests: { url: string; messages: { role: string; content: string }[] }[] = []
   let localAvailable = true
+  let cloudAvailable = true
   let waitingForAnswer: Promise<void> | undefined
   let localStream: ReadableStream<Uint8Array> | undefined
   const answer = '草莓种在向阳处吧。浇水后咱们再去看看。'
@@ -850,7 +851,7 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
       }) : new Response('', { status: 404 })
     }
     assert.ok(url.endsWith('/chat/completions'))
-    return Response.json({ choices: [{ message: { content: answer } }] })
+    return cloudAvailable ? Response.json({ choices: [{ message: { content: answer } }] }) : new Response('', { status: 503 })
   })
   const settle = () => new Promise<void>((resolve) => setImmediate(resolve))
 
@@ -898,19 +899,22 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
     const live = await state()
     assert.equal(live.mode, 'live')
     assert.deepEqual(live.turns, [])
-    const event = { id: 'm1', roomId: 'room-a', text: '你好主播', viewerId: 'viewer-a', sentAt: new Date().toISOString() }
+    assert.deepEqual(live.automatic, ['comment', 'join', 'gift'])
+    localAvailable = true
+    const event = { id: 'm1', roomId: 'room-a', text: '你好主播', viewerId: 'viewer-a', nickname: '观众小柚', sentAt: new Date().toISOString() }
+    const before = requests.length
     assert.equal(plugin.live.conversation.receive({ ...event, roomId: 'room-b' }), false)
     assert.equal(plugin.live.conversation.receive(event), true)
     assert.equal(plugin.live.conversation.receive(event), false)
-    const viewerTurn = (await state()).turns[0]
-    assert.equal(viewerTurn.status, 'waiting')
-    const before = requests.length
-    await post('interaction/reply', { id: viewerTurn.id })
     await settle()
-    assert.equal(requests.length, before + 1, '访客数据只进入本地模型')
-    assert.match(requests.at(-1)!.messages[0]!.content, /「夏夏」，正在直播间互动/)
-    assert.match(requests.at(-1)!.messages[0]!.content, /MBTI：ENFP/)
-    assert.equal((await state()).turns[0].answer.route, 'fallback')
+    assert.equal((await state()).turns[0].status, 'answered', '开播后首条评论无需手动回复')
+    const firstViewerRequest = requests[before]!
+    assert.equal(requests.length, before + 1)
+    assert.match(firstViewerRequest.url, /\/chat\/completions$/)
+    assert.match(firstViewerRequest.messages[0]!.content, /「夏夏」，正在直播间互动/)
+    assert.match(firstViewerRequest.messages[0]!.content, /MBTI：ENFP/)
+    assert.doesNotMatch(JSON.stringify(firstViewerRequest.messages), /观众小柚|viewer-a|温室东侧/)
+    assert.equal((await state()).turns[0].answer.route, 'cloud')
 
     const ownerA = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'
     const ownerB = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb'
@@ -953,6 +957,7 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
     assert.equal(silent.status, 'answered', '文字自动回复独立于播出音频')
     assert.equal(silent.draft, undefined)
     assert.equal(silent.answer.text, '早上好，今天想聊些什么？')
+    assert.equal(silent.answer.route, 'local_gpu')
     assert.equal(silent.answer.tokensTotal, 18)
     assert.equal(silent.playback, 'pending')
     assert.equal((await state()).stageReady, false)
@@ -980,6 +985,67 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
     assert.equal(list[0].tokensTotal, 18)
     assert.equal((await state()).turns.at(-1).answer.tokensTotal, 18)
     assert.equal(plugin.live.conversation.allowsStageSpeech(live.id, ownerA, next.key, next.text), true)
+    assert.match(requests.at(-1)!.messages[0]!.content, /礼物事件/)
+    assert.match(requests.at(-1)!.messages.at(-1)!.content, /鲜花 ×3/)
+    await post('interaction/stage', { owner: ownerA, completedKey: next.key, completedOk: true })
+    await post('interaction/stage', { owner: ownerA, release: true })
+    await post('interaction/automatic', { kinds: ['join', 'gift'] })
+
+    const receive = async (viewerId: string, kind: 'join' | 'gift', id = `${kind}-${viewerId}`) => {
+      assert.equal(plugin.live.conversation.receive({
+        ...event, viewerId, id, kind, text: kind === 'join' ? '进入直播间' : '送出 鲜花 ×1', sentAt: new Date().toISOString(),
+      }), true)
+      await settle()
+      return (await state()).turns.at(-1)
+    }
+    assert.equal((await receive('viewer-b', 'join')).answer.route, 'cloud')
+    assert.match(requests.at(-1)!.messages[0]!.content, /进房事件/)
+    assert.equal((await receive('viewer-b', 'gift')).answer.route, 'fallback', '重复候选由角色专属预设接替')
+    assert.match(requests.at(-1)!.url, /\/api\/chat$/)
+
+    cloudAvailable = false
+    localAvailable = false
+    const welcomeA = (await receive('viewer-c', 'join')).answer
+    const welcomeB = (await receive('viewer-d', 'join')).answer
+    const thanks = (await receive('viewer-c', 'gift')).answer
+    assert.equal(welcomeA.route, 'fallback')
+    assert.equal(welcomeB.route, 'fallback')
+    assert.notEqual(welcomeA.text, welcomeB.text)
+    assert.match(welcomeA.text + welcomeB.text, /下课|新搭子/)
+    assert.match(thanks.text, /谢谢/)
+    assert.equal(thanks.route, 'fallback')
+
+    await post('interaction/automatic', { kinds: ['comment', 'join'] })
+    assert.ok((await post('interaction/stage', { owner: ownerA })).payload.reply)
+    const progressBefore = requests.length
+    localAvailable = true
+    const joinWhileSpeaking = { ...event, id: 'join-while-speaking', kind: 'join' as const, text: '进入直播间', sentAt: new Date().toISOString() }
+    const commentWhileSpeaking = { ...event, id: 'comment-while-speaking', text: '先聊聊草莓', sentAt: new Date().toISOString() }
+    assert.equal(plugin.live.conversation.receive(joinWhileSpeaking), true)
+    assert.equal(plugin.live.conversation.receive(commentWhileSpeaking), true)
+    assert.equal((await state()).turns.at(-1).status, 'waiting')
+    await post('interaction/stage', { owner: ownerA, release: true })
+    await settle()
+    assert.equal((await state()).turns.at(-1).status, 'answered', '暂停播出后，等待中的评论继续生成文字回复')
+    assert.equal(requests[progressBefore]?.messages.at(-1)?.content, commentWhileSpeaking.text, '优先回复评论')
+
+    await post('interaction/automatic', { kinds: ['join'] })
+    assert.equal(plugin.live.conversation.receive({ ...event, id: 'manual-only', text: '请手动回复', sentAt: new Date().toISOString() }), true)
+    const manual = (await state()).turns.at(-1)
+    assert.equal(manual.status, 'waiting')
+    assert.equal((await post('interaction/reply', { id: manual.id })).code, 202)
+    await settle()
+    assert.equal((await state()).turns.at(-1).status, 'answered')
+
+    const capture = plugin.live.conversation.liveWindow()
+    assert.ok(capture)
+    assert.equal((await post('settings/persona', { usageRightConfirmed: false })).code, 200)
+    assert.equal((await state()).id, null)
+    assert.deepEqual(plugin.live.conversation.liveWindow(), capture, '角色授权暂时失效时采集仍跟随当前直播场次')
+    assert.equal((await post('settings/persona', { usageRightConfirmed: true })).code, 200)
+    assert.deepEqual(plugin.live.conversation.liveWindow(), capture)
+    assert.deepEqual((await state()).automatic, ['join'], '同一场恢复角色授权后保留评论开关')
+    assert.equal(plugin.live.conversation.receive(commentWhileSpeaking), false, '同一场不重复读取旧评论')
 
     let release!: () => void
     waitingForAnswer = new Promise((resolve) => { release = resolve })

@@ -28,7 +28,7 @@ export async function makeFixtureEval(): Promise<{
   const graph = new GraphStore(t.db)
   const indexer = new RetrievalIndexer(t.db, vector, graph, embedder)
   indexer.ensureGeneration()
-  const service = new RetrievalService({ db: t.db, vector, graph, embedder, config })
+  const service = new RetrievalService({ db: t.db, vector, graph, embedder, config, clock: () => '2026-11-11T04:00:00.000Z' })
   const memory = new MemoryStore(t.db, { characterId: 'dafeiyu', clock: () => '2026-11-11T04:00:00.000Z' })
   const registry = new SkillRegistry(t.db, { grantedPermissions: [] })
 

@@ -1,6 +1,6 @@
 import { defineConfig } from 'tsdown'
 
-export default defineConfig({
+export default defineConfig([{
   entry: ['src/index.ts'],
   outDir: 'lib',
   format: 'esm',
@@ -10,4 +10,16 @@ export default defineConfig({
   outExtensions: () => ({ js: '.js', dts: '.d.ts' }),
   deps: { neverBundle: ['yaml', 'zod', 'playwright-core', 'protobufjs'] },
   clean: true,
-})
+}, {
+  entry: { 'broadcast-renderer': 'client/broadcast-window.mjs' },
+  outDir: 'lib',
+  format: 'iife',
+  platform: 'browser',
+  target: 'safari16.4',
+  env: { NODE_ENV: 'production' },
+  outExtensions: () => ({ js: '.js' }),
+  deps: { alwaysBundle: ['react', 'react-dom', 'scheduler'], onlyBundle: ['react', 'react-dom', 'scheduler'] },
+  dts: false,
+  minify: true,
+  clean: false,
+}])

@@ -10,14 +10,21 @@ const roomUrl = 'https://live.douyin.com/123'
 const room = '99887766'
 const settle = () => new Promise<void>((resolve) => setImmediate(resolve))
 
-function chromeStub() {
+function chromeStub(offline = false) {
   const network = new EventEmitter()
   const page = new EventEmitter()
   const browser = new EventEmitter()
+  const offlineLocator = {
+    getByText: () => offlineLocator,
+    filter: () => offlineLocator,
+    first: () => offlineLocator,
+    isVisible: async () => offline,
+  }
   Object.assign(network, { send: async (method: string) => method === 'Network.getResponseBody' ?
     { body: '{"data":[],"status_code":0}', base64Encoded: false } : {} })
   Object.assign(page, {
     url: () => roomUrl, goto: async () => {}, mainFrame: () => ({}),
+    locator: (selector: string) => { assert.equal(selector, '#TipsLayout'); return offlineLocator },
     context: () => ({ newCDPSession: async () => network }),
   })
   Object.assign(browser, {
@@ -73,6 +80,35 @@ test('浏览器断线后重连，结束场次和旧连接的帧不会进入主�
     feed.stop()
     push(second.network, 4)
     assert.deepEqual(roomMessages.map(({ id }) => id), [`${room}:1`, `${room}:3`])
+  } finally {
+    feed.stop()
+    await settle()
+  }
+})
+
+test('播放器提示直播已结束时报告停播，重试后继续采集评论', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const offline = chromeStub(true)
+  const online = chromeStub()
+  const attempts = [offline, online]
+  const received: DanmakuMessage[] = []
+  const feed = new DouyinBrowserFeed({
+    liveWindow: () => ({ id: 'live-1', since: '2026-11-16T03:00:00Z' }),
+    receive: (message) => { received.push(message); return true },
+  }, async () => attempts.shift()!.browser)
+  try {
+    feed.start(roomUrl)
+    await settle()
+    assert.equal(feed.status, 'room_offline')
+    push(offline.network, 1)
+    assert.deepEqual(received, [])
+    t.mock.timers.tick(14_999)
+    assert.equal(attempts.length, 1)
+    t.mock.timers.tick(1)
+    await settle()
+    push(online.network, 2)
+    assert.equal(feed.status, 'connected')
+    assert.deepEqual(received.map(({ kind, text }) => [kind, text]), [['comment', '测试评论']])
   } finally {
     feed.stop()
     await settle()

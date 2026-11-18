@@ -4,6 +4,7 @@ import type { SettingsStore } from '../settings/store.ts'
 import type { RequestRouter, RouteContext } from '../routing/router.ts'
 import type { DafeiyuRuntime } from '../runtime.ts'
 import type { AnswerReceipt, LiveRequest } from '../types.ts'
+import type { HostInteraction } from './interaction-replies.ts'
 
 export const MESSAGE_LIMIT = 500
 const DISPLAY_LIMIT = 40
@@ -12,6 +13,7 @@ const DANMAKU_TTL_MS = 60_000
 
 export const INTERACTION_KINDS = ['comment', 'gift', 'like', 'join', 'follow', 'fansclub', 'share'] as const
 export type InteractionKind = typeof INTERACTION_KINDS[number]
+const DEFAULT_AUTOMATIC = ['comment', 'join', 'gift'] as const satisfies readonly InteractionKind[]
 type PlaybackStatus = 'pending' | 'playing' | 'played' | 'failed' | 'skipped'
 const STAGE_LEASE_MS = 4_000
 const AUTO_COOLDOWN_MS = 30_000
@@ -23,11 +25,11 @@ export interface DanmakuMessage {
   readonly sentAt: string
   readonly nickname?: string | undefined
   readonly viewerId?: string | undefined
-  readonly kind?: InteractionKind
-  readonly quantity?: number
-  readonly group?: string
-  readonly groupComplete?: boolean
-  readonly giftName?: string
+  readonly kind?: InteractionKind | undefined
+  readonly quantity?: number | undefined
+  readonly group?: string | undefined
+  readonly groupComplete?: boolean | undefined
+  readonly giftName?: string | undefined
 }
 
 type TurnStatus = 'waiting' | 'queued' | 'thinking' | 'answered' | 'expired' | 'error'
@@ -59,13 +61,13 @@ interface Entry {
 interface Run {
   readonly id: string
   readonly scope: string
-  readonly startedAt: number
   readonly mode: 'preview' | 'live'
   readonly profile: ReturnType<SettingsStore['getPersonaProfile']>
   readonly controller: AbortController
   readonly entries: Entry[]
   readonly automatic: Set<InteractionKind>
   readonly lastAutomatic: Map<string, number>
+  readonly interactionVariants: Record<HostInteraction['kind'], number>
   readonly groups: Map<string, { message: DanmakuMessage; timer: ReturnType<typeof setTimeout> }>
   stage?: { owner: string; lastSeen: number; active?: Turn }
   running: boolean
@@ -93,7 +95,9 @@ interface ConversationDeps {
 export class HostConversation {
   private readonly deps: ConversationDeps
   private run: Run | null = null
-  private liveScope: string | null = null
+  private trackedLiveRunId: number | null = null
+  private readonly liveAutomatic = new Set<InteractionKind>()
+  private readonly repliedViewers = new Set<string>()
   private liveStartedAt = 0
   private readonly seen = new Map<string, number>()
   private readonly finishedGroups = new Map<string, number>()
@@ -102,9 +106,23 @@ export class HostConversation {
     this.deps = deps
   }
 
+  private trackLiveRun(): number | null {
+    const live = this.deps.session.liveRunId
+    if (live !== this.trackedLiveRunId) {
+      this.trackedLiveRunId = live
+      this.liveStartedAt = Date.now()
+      this.repliedViewers.clear()
+      this.seen.clear()
+      this.finishedGroups.clear()
+      this.liveAutomatic.clear()
+      if (live !== null) for (const kind of DEFAULT_AUTOMATIC) this.liveAutomatic.add(kind)
+    }
+    return live
+  }
+
   private current(): Run | null {
     const { session, settings } = this.deps
-    const live = session.liveRunId
+    const live = this.trackLiveRun()
     const preview = session.previewRunId
     const mode = live === null ? 'preview' : 'live'
     const number = live ?? preview
@@ -113,16 +131,11 @@ export class HostConversation {
     if (scope === this.run?.scope) return this.run
     this.reset()
     if (scope === null) return null
-    if (mode === 'live' && this.liveScope !== scope) {
-      this.liveScope = scope
-      this.liveStartedAt = Date.now()
-      this.seen.clear()
-      this.finishedGroups.clear()
-    }
     this.run = {
-      id: randomUUID(), scope, startedAt: mode === 'live' ? this.liveStartedAt : Date.now(),
+      id: randomUUID(), scope,
       mode, profile, controller: new AbortController(), entries: [], running: false,
-      automatic: new Set(), lastAutomatic: new Map(), groups: new Map(),
+      automatic: mode === 'live' ? this.liveAutomatic : new Set(), lastAutomatic: new Map(),
+      interactionVariants: { join: 0, gift: 0 }, groups: new Map(),
     }
     return this.run
   }
@@ -143,7 +156,7 @@ export class HostConversation {
       }
     }
     if (run) {
-      this.expireStage(run)
+      if (this.expireStage(run)) this.scheduleAutomatic(run)
       this.trimPlayback(run)
     }
     return { id: run?.id ?? null, mode: run?.mode ?? null, turns: run?.entries.map(({ turn }) => turn) ?? [],
@@ -151,8 +164,9 @@ export class HostConversation {
   }
 
   liveWindow() {
-    const run = this.current()
-    return run?.mode === 'live' ? { id: run.id, since: new Date(run.startedAt).toISOString() } : null
+    // 采集跟随直播场次，角色授权或对话重建时保留当前连接与读取游标。
+    const live = this.trackLiveRun()
+    return live === null ? null : { id: String(live), since: new Date(this.liveStartedAt).toISOString() }
   }
 
   acceptsSpeech(runId: string): boolean {
@@ -181,7 +195,7 @@ export class HostConversation {
     const sentAt = Date.parse(message.sentAt)
     const now = Date.now()
     if (run?.mode !== 'live' || !this.roomId() || message.roomId !== this.roomId() ||
-        !Number.isFinite(sentAt) || sentAt < run.startedAt || sentAt < now - DANMAKU_TTL_MS || sentAt > now + 5000) return false
+        !Number.isFinite(sentAt) || sentAt < this.liveStartedAt || sentAt < now - DANMAKU_TTL_MS || sentAt > now + 5000) return false
     for (const [id, time] of this.seen) {
       if (time >= now - DANMAKU_TTL_MS) break
       this.seen.delete(id)
@@ -225,11 +239,13 @@ export class HostConversation {
   }
 
   private accept(run: Run, message: DanmakuMessage): void {
+    const nickname = message.nickname?.trim()
+    const viewer = message.viewerId ? `id:${message.viewerId}` : nickname ? `name:${nickname}` : undefined
     this.append(run, {
-      turn: { id: randomUUID(), source: 'danmaku', kind: message.kind ?? 'comment', author: message.nickname || '直播间观众',
+      turn: { id: randomUUID(), source: 'danmaku', kind: message.kind ?? 'comment', author: nickname || '直播间观众',
         text: message.text, sentAt: message.sentAt, status: 'waiting' },
       speaker: message.kind && message.kind !== 'comment' ? null : message.viewerId ? `viewer:${message.viewerId}` : null,
-      ...(message.viewerId ? { viewer: message.viewerId } : {}),
+      ...(viewer ? { viewer } : {}),
       localOnly: true,
     })
     this.scheduleAutomatic(run)
@@ -243,10 +259,11 @@ export class HostConversation {
     this.scheduleAutomatic(run)
   }
 
-  private expireStage(run: Run): void {
-    if (!run.stage || Date.now() - run.stage.lastSeen < STAGE_LEASE_MS) return
+  private expireStage(run: Run): boolean {
+    if (!run.stage || Date.now() - run.stage.lastSeen < STAGE_LEASE_MS) return false
     if (run.stage.active) run.stage.active.playback = 'failed'
     delete run.stage
+    return true
   }
 
   stagePoll(owner: string, completed?: { key: string; ok: boolean }, playingKey?: string) {
@@ -277,6 +294,7 @@ export class HostConversation {
     if (run?.stage?.owner !== owner) return
     if (run.stage.active) run.stage.active.playback = 'failed'
     delete run.stage
+    this.scheduleAutomatic(run)
   }
 
   stageReplay(id: string): void {
@@ -322,16 +340,19 @@ export class HostConversation {
       if (now - issued < AUTO_COOLDOWN_MS) break
       run.lastAutomatic.delete(key)
     }
-    for (const entry of run.entries) {
-      const { turn } = entry
-      if (turn.status !== 'waiting' || !turn.kind || !run.automatic.has(turn.kind) || this.expired(turn)) continue
-      if (turn.kind !== 'comment') {
-        const key = `${turn.kind}:${entry.viewer ?? 'anonymous'}`
-        if (run.lastAutomatic.has(key)) continue
-        run.lastAutomatic.set(key, now)
-      }
+    const waiting = run.entries.filter(({ turn }) =>
+      turn.status === 'waiting' && turn.kind && run.automatic.has(turn.kind) && !this.expired(turn))
+    const comment = waiting.find(({ turn }) => turn.kind === 'comment')
+    if (comment) {
+      void this.enqueue(run, comment)
+      return
+    }
+    for (const entry of waiting) {
+      const key = `${entry.turn.kind}:${entry.viewer ?? 'anonymous'}`
+      if (run.lastAutomatic.has(key)) continue
+      run.lastAutomatic.set(key, now)
       void this.enqueue(run, entry)
-      break
+      return
     }
   }
 
@@ -405,6 +426,7 @@ export class HostConversation {
           turn.answer = result.answer
           turn.memoryUsed = result.memoryUsed
           turn.status = 'answered'
+          if (entry.viewer) this.repliedViewers.add(entry.viewer)
           if (run.mode === 'live') this.queuePlayback(run, entry)
         } catch {
           turn.status = 'error'
@@ -420,16 +442,21 @@ export class HostConversation {
 
   private async generate(run: Run, entry: Entry) {
     const { turn } = entry
+    const interaction: HostInteraction | undefined = turn.kind === 'join' || turn.kind === 'gift'
+      ? { kind: turn.kind, variant: run.interactionVariants[turn.kind]++ } : undefined
+    const preferCloud = run.mode === 'live' && entry.viewer !== undefined && !this.repliedViewers.has(entry.viewer)
+    const recentReplies = interaction ? run.entries.filter(({ turn: previous }) =>
+      previous.kind === interaction.kind && previous.answer).slice(-2).map(({ turn: previous }) => previous.answer!.text) : []
     const past = entry.speaker === null ? [] : run.entries.filter((previous) =>
       previous.speaker === entry.speaker && previous.turn.answer && previous.turn.answer.route !== 'fallback').slice(-4)
     const messages = (entries: readonly Entry[]) => entries.flatMap(({ turn }) => [
       { role: 'user' as const, text: turn.text },
       { role: 'assistant' as const, text: turn.answer!.text },
     ])
-    const memory = await this.deps.recall(turn.text, run.profile.id).catch(() => [])
+    const memory = interaction ? [] : await this.deps.recall(turn.text, run.profile.id).catch(() => [])
     const signal = run.controller.signal
     signal.throwIfAborted()
-    const context: RouteContext = { signal, localOnly: entry.localOnly, recentReplies: [], hostProfile: run.profile,
+    const context: RouteContext = { signal, localOnly: entry.localOnly && !preferCloud, preferCloud, recentReplies, hostProfile: run.profile,
       onDraft: (text) => {
         if (signal.aborted || turn.status !== 'thinking') return
         if (text.trim()) turn.draft = text
@@ -440,6 +467,7 @@ export class HostConversation {
         history: messages(past),
         cloudHistory: messages(past.filter(({ turn }) => turn.answer?.route === 'cloud')),
         memory,
+        ...(interaction ? { interaction } : {}),
       },
     }
     const request: LiveRequest = {

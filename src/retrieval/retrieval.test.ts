@@ -35,7 +35,7 @@ async function makeFixture(configOver?: (c: DafeiyuConfigType) => void): Promise
   const graph = new GraphStore(t.db)
   const indexer = new RetrievalIndexer(t.db, vector, graph, embedder)
   indexer.ensureGeneration()
-  const service = new RetrievalService({ db: t.db, vector, graph, embedder, config })
+  const service = new RetrievalService({ db: t.db, vector, graph, embedder, config, clock: () => '2026-11-11T04:00:00.000Z' })
   const memory = new MemoryStore(t.db, { characterId: 'dafeiyu', clock: () => '2026-11-11T04:00:00.000Z' })
   const registry = new SkillRegistry(t.db, { grantedPermissions: [] })
   return { t, memory, registry, indexer, service, graph, vector, config, embedder }
@@ -202,7 +202,7 @@ test('向量路失败 ⇒ 降级词法检索并显式标记（不误报三路正
       scene: 's',
       documentRevision: 1,
     })
-    const service = new RetrievalService({ db: t.db, vector, graph, embedder: broken, config })
+    const service = new RetrievalService({ db: t.db, vector, graph, embedder: broken, config, clock: () => '2026-11-11T04:00:00.000Z' })
     const result = await service.retrieve({ text: '降级测试词法', characterId: 'dafeiyu' })
     assert.equal(result.meta.degraded, 'vector')
     assert.ok(result.memories.length >= 1)

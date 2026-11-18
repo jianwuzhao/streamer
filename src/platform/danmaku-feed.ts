@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { MESSAGE_LIMIT, type HostConversation } from '../live/conversation.ts'
+import { INTERACTION_KINDS, MESSAGE_LIMIT, type HostConversation } from '../live/conversation.ts'
 
 const event = z.object({
   id: z.string().min(1).max(180),
@@ -8,6 +8,11 @@ const event = z.object({
   sentAt: z.iso.datetime({ offset: true }),
   nickname: z.string().trim().max(40).optional(),
   viewerId: z.string().min(1).max(180).optional(),
+  kind: z.enum(INTERACTION_KINDS).optional(),
+  quantity: z.number().int().positive().optional(),
+  group: z.string().min(1).max(180).optional(),
+  groupComplete: z.boolean().optional(),
+  giftName: z.string().trim().min(1).max(40).optional(),
 })
 const batch = z.object({ cursor: z.string().max(1024), messages: z.array(z.unknown()).max(100) })
 

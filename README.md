@@ -11,6 +11,7 @@
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 0.17.0 | 2026-11-18 | 四角色 2D 形象重构（按 [RuiC-2D × LiveTalking 方案](docs/ruic-2d-refactor-plan.md) 的"音频和口型时间线 / 动作与打断"两条落地）：①**口型时间线**——新增 `src/avatar/lip-timeline.ts`：口型样本按采样位置记录 `turnId`/`profileId`/`sampleRate`/起止采样与 6 维 viseme 权重（开口·闭唇·圆唇·横展·露齿·微笑），按实际播放位置短插值（连读过渡），窗口外返回 null 不做边缘外推；**闭唇（b/p/m）压制开口**，呼吸余量不能把嘴顶开；`LipTimelinePlayer` 同话轮只收更大顺序号、跨话轮与换角色拒收、打断递增播出版本；`measureFirstAudio` 分三段记账（审核完成 / 首段 PCM / 实际首音）并如实标注未测到为 null。②**对话动作事件**——新增 `src/avatar/dialogue-motion.ts`：把「弹幕到达 → 输入开始/停顿 → 等待回复 → 首音 → 尾音 → 收尾」翻译成姿态目标（视线/头肩/点头/眉眼），连发弹幕按合并窗口 + 重触发限频抵消刷屏，说话期间动作权重压到 45% 不抢口型，`interrupt()`/`safe` 回到中性并递增版本。③**播出播放版本与打断**——`BroadcastWindow` 在切角色/进出安全画面时递增 `playbackVersion`，带旧版本号的上行帧直接拒收（迟到帧不得恢复上一句）；新增 `POST broadcast-window/interrupt`，`live/stop` 与 `live/emergency-stop` 一律作废在途口型与动作。④**客户端渲染适配**——`client/client.js` 新增 `applyVisemePose`：viseme 驱动 `mouthForm`（圆唇为负、横展为正）、闭唇优先于音量余量；Live2D 与 2.5D 原型两条渲染路径都接同一组参数。未接入对齐时间线时由 `visemeFromSample` 只用音频的过零率代理给出**形状**维度（圆唇/横展），开合仍由原平滑器与呼吸余量决定，因此**行为逐位不变**（有等价测试）；viseme 全零时完整回退旧路径。TS 238 例全过（+17） |
 | 0.16.0 | 2026-11-17 | 抖音直播间后台直读 + 播出画面声音链 + 角色口型原型：①**抖音后台读取**——新增 `src/platform/douyin-browser.ts`（playwright-core CDP 后台静音 Chrome 打开 `live.douyin.com` 房间页）与 `douyin-protocol.ts`（gzip + protobuf 裸解码网页数据流，DouyinBarrageGrab 系 wire 字段；读出评论/礼物/点赞/进房/关注/粉丝团/分享，64 位 ID 恒为十进制字符串）；`PlatformSettings.interactionSource` 二选一——`browser`（默认，填完整房间 URL）或 `relay`（沿用 env `DAFEIYU_DANMAKU_*` 转发源，行为不变）；②**播出画面与声音**——新增「直播画面」页（窗口捕获工作流：竖屏 1080×1920 / 横屏 1920×1080，直播伴侣同比例裁切推流）；「启用播出声音 / 试播一句 / 暂停播出声音」（应用音频或虚拟声卡，伴侣只收一条角色音轨；插件内切页不停声，紧急停止立即静音并显示安全画面）；「让主播回复」与按互动类型自动回复（每场重置，回复文字/模型/Token 记入互动与账本）；③**角色口型原型**——`client/assets/dsh-pet/`（DSH 蓝发女仆透明待机动画 + 静帧，取自 [dsh-pet 0.4.8](https://github.com/PC2005-cloud/dsh-pet) MIT）与 `scripts/prepare-role-prototypes.mjs`（本地原片提取口型图层）；Live2D 未安装时舞台回退口型原型/立绘（原为 CSS 桌宠）；④迁移 011 reply_generation_usage（`usage.tokens_total` / `reply_log.usage_id`——回复 Token 用量归因）；`src/adapters/response-lines.ts` 模型流式响应跨 chunk/UTF-8 边界按行解码；删除 `scripts/fetch-live2d-samples.sh`（Live2D 官方示例安装脚本，历史版本可复现）；依赖 +playwright-core 1.65.0 / +protobufjs 7.6.6（pnpm-workspace.yaml allowBuilds）；TS 202 例全过 |
 | 0.15.3 | 2026-11-16 | 自定义网关接入（TokenHub 混元 hy4 实测）+ 推理模型兼容：①**端点 URL 字段**——`CloudSettings` 新增 `baseUrl`，「模型与云端」新增「端点 URL（自定义网关）」输入框；解析优先级 env `DAFEIYU_CLOUD_BASE_URL` > 界面端点 > 服务商预设，自定义网关（如腾讯 TokenHub `https://tokenhub.tencentmaas.com/v1` + hy4）无需任何环境变量即可接入、测试与保存；额度路由同链路（TokenHub 无 billing 接口 → 如实标注「以控制台为准」）。②**推理模型兼容**——测试请求 max_tokens 提到 512，`content` 空但 `reasoning_content` 非空视为端点验证通过（hy4/R1 系思考先消耗预算）；云端适配器在 `finish_reason=length` 且正文为空时单次补足 ≥1024 tokens 重试（仍属同一次逻辑生成）；TS 198 例全过 |
 | 0.15.2 | 2026-11-16 | 额度/可用余额展示：新增 `GET cloud/quota`——按已保存的生效配置（env 优先）尽力查询：**DeepSeek 官方**走源站 `/user/balance`（总余额/赠送/充值三行 + 可用徽章，is_available=false 时标注停用）；**其余 OpenAI 兼容端点**（one-api/new-api 系）走 `dashboard/billing`（总额度/本年已用/可用余额，USD）；不支持的服务商（如腾讯混元）`supported:false` 如实标注「以控制台为准」，不编造数值。面板「模型与云端」新增「额度 / 可用余额」区块：进入页面自动查询、保存后自动刷新、可手动刷新；密钥未配置时提示先配置 |
@@ -34,7 +35,7 @@
 | 0.2.0 | 2026-11-11 | 阶段 B（完整数据层）：L2/L4 记忆生命周期与矛盾处理、全量观众画像（伪名化身份/字段版本链/删除墓碑）、技能库（manifest/受控执行/示例技能包）、反馈状态机、礼物幂等账本与合并答谢；累计 103 项测试 |
 | 0.1.0 | 2026-11-11 | 阶段 A（基础与资源）：插件骨架、统一配置、SQLite 存储基座、感知/黑板、本地优先路由、模型适配器、资源仲裁、政策授权骨架；70 项测试 |
 
-## 当前状态（阶段 A–I + 0.12.0 角色档案 + 0.13.0 收敛 + 0.14.0 Live2D 桌宠与云端预设 + 0.14.1 模型页白屏修复与一键部署本地模型 + 0.15.0 API Key 界面维护与 ModelScope 国内部署，代码交付完成）
+## 当前状态（阶段 A–I + 0.12.0 角色档案 + 0.13.0 收敛 + 0.14.0 Live2D 桌宠与云端预设 + 0.14.1 模型页白屏修复与一键部署本地模型 + 0.15.0 API Key 界面维护与 ModelScope 国内部署 + 0.16.0 抖音直读与播出画面声音链 + 0.17.0 口型时间线与对话动作，代码交付完成）
 
 按方案 §20.1 的 A–G 七阶段 + 阶段 H（面板与操作员设置，§24）+ 阶段 I（观众与治理面板，§6.4/§24.2）+ 0.12.0（主播信息改版为 eciyuan.qq.com 式角色档案卡，含 dsh-pet 插件中档案）：**代码全部交付**（G 含自检/诊断/集成测试/宿主适配层与文档；H 含操作员设置域/本地预览/多页签面板；I 含观众画像管理与治理审计面板；实机项——真实推理/QLoRA/两小时试运行/新用户实测——按方案在目标机与宿主安装环节验收）：
 
@@ -56,12 +57,13 @@
 | 三路检索（§8） | ✅ | BM25（中文 bigram）+ 向量（目标机 Qwen3-Embedding-0.6B via Ollama；测试桩语义映射）+ 图谱（逐跳作用域校验/2 跳/50 节点/高出度截断）；RRF 融合、证据质量与多样性重排、实时复检（challenged/过期/撤销不注入）、记忆 top-3 + 技能 top-2 + token 预算截断；索引 outbox 幂等消费、generation 迁移（building→active 原子切换）、墓碑即时过滤、向量路损坏降级词法并显式标记；评测 harness（Recall@5/nDCG@5/p50/p95）与三路消融 |
 | LearningRuntime | ✅ A+B+C 范围 | `ingest`/`answer`/`updateProfile`/`proposeCognition`/`retrieve` 实装；D/E 接口显式 `NotImplementedError` |
 | 操作员设置与本地预览（§24.1/§24.2，H） | ✅ | 设置域六节 SQLite 持久化（形象/接入/场景/云端覆盖/数据用途/答谢）；AI 标识字面量不可关闭；平台凭据永不入库；本地预览进入/退出 + 单一可操作原因；开播 preflight 接实况设置 |
-| 角色档案 · 主播信息（0.12.0，参照 eciyuan.qq.com） | ✅ | `BUILTIN_PROFILES` 五份档案（夏夏 / 沈露白 / 谷雨 / 贝拉 四个鹅次元官网角色 + dsh-pet 插件中桌宠角色）：中文名 / 英文名 / #人设标签 / 年龄·身高·星座·MBTI / 简介 / 主题色；`PersonaSettings.profileId`（默认 dsh-pet）+ `getPersonaProfile()`；settings / preview 两处带出档案；向导第 3 步与首页均改为档案卡展示与选择；播出展示名跟随档案中文名，AI 标识 / 授权 / 音色等合规字段不变 |
+| 角色档案 · 主播信息（0.12.0，参照 eciyuan.qq.com） | ✅ | `BUILTIN_PROFILES` 五份档案（夏夏 / 沈露白 / 谷雨 / 贝拉 四个鹅次元官网角色 + dsh-pet 插件中桌宠角色）：中文名 / 英文名 / #人设标签 / 年龄·身高·星座·MBTI / 简介 / 主题色；`PersonaSettings.profileId`（默认 dsh-pet）+ `getPersonaProfile()`；settings / preview 两处带出档案；「角色与声音」展示所选档案，工作台可快速切换角色；播出展示名跟随档案中文名，AI 标识 / 授权 / 音色等合规字段不变 |
+| 口型时间线与对话动作（0.17.0，RuiC-2D × LiveTalking） | ✅ | ①`src/avatar/lip-timeline.ts`——按采样位置记录 6 维 viseme、按播放位置短插值、闭唇压制开口、同话轮顺序号/跨话轮与换角色拒收、打断递增播出版本、首音分三段记账；②`src/avatar/dialogue-motion.ts`——弹幕/输入/思考/首音/尾音事件驱动视线与头肩，连发合并 + 重触发限频，说话期间动作降权不抢口型；③`BroadcastWindow` 播放版本与 `broadcast-window/interrupt`（切角色、停播、紧急停止一律作废旧帧）；④客户端 viseme 驱动 mouthForm（圆唇负/横展正），无 viseme 时行为不变；**实测口径见 [主播表情与口型：实现和验收](docs/avatar-motion-validation.md)**，音素级对齐与 ≤80ms 端到端误差仍为未验收项 |
 | 观众画像管理与治理面板（§6.4/§24.2，I） | ✅ | 观众伪名化概览/详情隔离读取/纠错/退出个性化/删除两步流（墓碑优先）；技能库全版本、记忆候选生命周期、发布链灰度、审计与决策；反馈状态推进 |
 | 大肥鱼桌宠形象（J，语音互动与模拟开播已于 0.13.0 移除） | ✅ | 内置形象目录含 2 款桌宠（默认选中，旧经典形象保留可回退）；本地预览渲染桌宠小窗（气泡字幕/悬浮动画/AI 标识常显）；音色试听用浏览器本机 TTS（录音不上传，最终音色以直播伴侣音轨为准） |
 | Live2D 桌宠渲染（0.14.0，对齐鹅次元形象层） | ✅ | vendor 运行时（Cubism Core/pixi/pixi-live2d-display）随插件分发；模型包本地数据目录管理（Cubism 导出后手动放入，限本地/学习用途）；待机动作/点击互动/说话期口型驱动；未安装或失败自动回退角色口型原型/立绘（0.16.0，原为 CSS 桌宠）；资产经 host-api `avatar/*` 下发（base64 + blob URL，客户端保持单文件契约） |
-| 一键部署本地模型（0.14.1） | ✅ | 向导「模型与云端」一键安装并验证 Ollama + 本地模型（`model/deploy` 端点 + `LocalModelDeployer` 子进程复用 `scripts/setup-ollama.mjs`，幂等可重入），进度日志实时回显；命令行 `pnpm setup:ollama` 等价 |
-| 云端服务商预设（0.14.0） | ✅ | 内置腾讯云混元 / DeepSeek 官方 OpenAI 兼容端点预设（向导选卡即填，端点免环境变量）；自定义服务商仍走 `DAFEIYU_CLOUD_BASE_URL`；密钥永不落库 |
+| 一键部署本地模型（0.14.1） | ✅ | 「设置 → 模型与云端」一键安装并验证 Ollama + 本地模型（`model/deploy` 端点 + `LocalModelDeployer` 子进程复用 `scripts/setup-ollama.mjs`，幂等可重入），进度日志实时回显；命令行 `pnpm setup:ollama` 等价 |
+| 云端服务商预设（0.14.0） | ✅ | 内置腾讯云混元 / DeepSeek 官方 OpenAI 兼容端点预设（选择预设后自动填入模型建议）；自定义服务商仍走 `DAFEIYU_CLOUD_BASE_URL`；密钥永不落库 |
 | 工作台与管理（§24.2–24.4） | ✅ | 工作台常驻实时预览、直播控制、学习、待处理与费用；管理含配置、训练记录、互动账本、观众、治理和诊断 |
 
 **待实机/宿主环节完成**：宿主内 install_bundle 安装与 Web UI 客户端半启用、continual-harness/live-studio 实适配、目标机 QLoRA 实跑、连续两小时真实集成试运行与新用户实测（§20.2/§25）。
@@ -71,10 +73,10 @@
 ```bash
 pnpm install
 pnpm setup:ollama # 安装或复用 Ollama，下载 qwen3:4b 并验证推理
-pnpm test        # 202 个单元/契约/集成测试（node:test）
+pnpm test        # 221 个单元/契约/集成测试（node:test）
 pnpm test:worker # Python worker 11 例（unittest，纯标准库）
 pnpm typecheck   # tsc --noEmit（strict + exactOptionalPropertyTypes）
-pnpm build       # tsdown → lib/index.js（ESM，宿主插件规范）
+pnpm build       # 宿主插件 + 播出页面；Mac 构建同时生成随包分发的原生窗口（需要 Xcode 命令行工具）
 ```
 
 插件入口：`createPlugin({ configPath?, dataDir?, log? })` → `{ runtime, blackboard, arbiter, policy, dispose() }`（cordis 风格别名 `activate`）。阶段 A 不 import 宿主专属包，宿主事件接线（`agent/pre-step` waterfall、`session/event` 等）在后续阶段接入。
@@ -121,16 +123,15 @@ installer/                 # G 阶段
 
 ## Web 面板（客户端半）
 
-- `client/client.js`（原生 React、无构建步）：侧边栏「大肥鱼直播」打开工作台；「管理」集中配置、训练记录、互动与账本、观众、治理和诊断。
-- 界面适配 DSH 主界面：样式经注入的 `<style>` 类（`dfy-*` 前缀）全部引用宿主 `design-platform` 的 `--dsw-*` 设计变量并带降级值——亮/暗主题随宿主 `body[data-ds-dark-theme]` 自动切换；侧边栏图标为单色剪影（`currentColor` 随宿主导航色）+ DeepSeek 蓝气泡，与宿主品牌视觉（鲸鱼剪影 logo）同语言
-- 工作台：开播/下播、训练演练、暂停/恢复学习、恢复稳定版本；紧急停止常显。状态自动更新，切换角色和形象即时预览并自动保存。
-- 首次配置（§24.1 五步）：①数据与自检（逐项 ok/原因/修复动作）→ ②直播接入（运行模式/内容类别/官方客户端入口/操作员登录声明）→ ③**角色档案（主播信息，参照 eciyuan.qq.com CHARACTERS）**：档案卡网格选择（夏夏 / 沈露白 / 谷雨 / 贝拉 四个鹅次元角色 + dsh-pet 插件中桌宠），每卡展示中文名 / 英文名 / #人设标签 / 年龄·身高·星座·MBTI，选中档案中文名即播出展示名；另含音色 / 试听 / 使用授权；AI 标识固定常显 → ④模型与云端（**一键部署本地模型**：安装 Ollama、默认经 ModelScope 国内镜像直连下载权重并导入（无需代理）后试运行验证；未安装时界面琥珀提示并可一键安装，进度条 + 进程输出实时回显，已就绪部分自动跳过；**API Key 界面维护**：保存/清除/掩码回显与来源徽章，环境变量优先，明文永不回传，保存即时生效；「测试连接」通过后才能保存云端配置；**额度/可用余额**区块自动查询 DeepSeek 余额或 OpenAI 兼容 billing（不支持的服务商如实标注）；**服务商预设选卡**：腾讯云混元 / DeepSeek 官方 / 自定义，预设自动填端点与模型名建议，云端覆盖重启生效；面板根带渲染错误边界，组件异常显示错误卡而非白屏）→ ⑤运行模式与数据用途确认
-- 主播互动：工作台在本地预览和开播确认后均可发送文字，立即显示问题，按顺序生成和朗读。支持多轮上下文、本地记忆、本地模型优先及为操作员配置云端兜底。直播中可用独立 Chrome 读取指定抖音直播间的互动，也可使用授权转发源。每种互动可手动或自动交给主播回复。管理区显示回复、模型和 Token。见[直播互动接入](docs/quick-start.md#直播互动接入)。
-- 实时预览：同屏切换角色和形象。Live2D 使用实际播放音频驱动口型。预录视频用于待机，语音回复时使用角色立绘与字幕。
-- 互动与账本：最近回复（50 条）逐条四类反馈（有用/答错/不像大肥鱼/响应太慢）+ 纠正说法；反馈状态列表（已收到/核实中/已修复/证据不足）与操作员核实推进；礼物账本汇总（收到/待结算/已结算/退款/未验证）与答谢点名开关
-- 观众（§6.4 管理入口）：伪名化观众概览（墓碑计数/权利请求）；画像详情（隔离读取、来源/置信/用途、互动可重放聚合）；观众纠错（viewer_stated 覆盖推测留审计链）、退出个性化、删除两步流（申请→验证后执行，未验证不删）
-- 治理（§24.2 高级设置）：技能库全版本（状态/权限数）、记忆候选（L2/L4 生命周期、正反证据数、复核时间）、发布链（灰度进度/active 标记/恢复稳定版本）、审计与政策决策最近记录
-- 诊断：向导同款自检重跑；脱敏诊断报告生成预览 + JSON 导出（导出前展示包含内容说明）
+- `client/client.js` 由 DSH 装载。在侧边栏打开「大肥鱼直播」，顶部可切换「工作台」「直播画面」「记录与学习」「设置」。界面随宿主切换亮暗主题。
+- **工作台**并排呈现角色预览和主播互动。开播、下播与当日概况放在预览上方，直播状态和紧急停止固定在顶部。可发文字或使用浏览器麦克风转写，开播后默认自动回复评论，可直接在互动区调整。见 [直播互动接入](docs/quick-start.md#直播互动接入)。
+- **直播画面**可在 Mac 上打开固定 9∶16 的独立播出窗口，直播伴侣通过「程序窗口」采集完整画面。角色、字幕和口型复用插件舞台，声音由 DSH 播放，插件内切页时继续更新。紧急停止或工作台连接中断会切换到安全画面。原生窗口和页面运行时随构建产物分发，使用时无需安装 OBS。见 [抖音直播画面与音频](docs/quick-start.md#抖音直播画面与音频)。
+
+口型与倾听动作已接入播放时钟和实时推送，能力范围、可复现检查及尚待验收的同步目标见 [表情与口型验收](docs/avatar-motion-validation.md)。
+
+夏夏、沈露白、谷雨、贝拉支持保留原图外貌的完整 2.5D 面部网格，联动眉眼、脸颊、下颌和口唇，并补建口腔内部。已生成模型位于本机 `data/models/eciyuan-*/face-rig.json`，随现有素材加载；制作与交互预览见 [四角色面部模型](docs/face-rig-models.md)。
+- **记录与学习**集中查看回复记录、反馈处理、礼物账本、观众画像、训练、治理与发布。训练演练和暂停学习在「训练」，恢复稳定版本在「治理与发布」的发布链。
+- **设置**可直接打开角色与声音、直播接入、模型与云端、数据用途和诊断。模型页包含 Ollama 安装、云端连接测试、密钥维护和额度查询。环境自检与脱敏报告统一在「诊断」。
 - 后端：`/api/dafeiyu/*` 经宿主 `connection/request`（同源认证共享 API；`src/host-api.ts`）——status、settings（六节读写 + `cloudKey` 密钥掩码状态 + `settings/cloud/key` 密钥维护 + `profile` 当前档案 + `catalogs.profiles`/`catalogs.cloudProviders` 目录）、preview（start/stop/chat/voice-test；`preview.persona` 带档案中文名/英文名/#标签）、avatar（catalog/vendor/model-file——Live2D 桌宠资产）、selfcheck、model/deploy（GET 部署状态轮询，附 `install` 安装探测 / POST 幂等启动）、diagnostics、replies、feedback（+advance）、gifts/summary、training/progress、costs、audience（overview/profile/correction/personalization-off/deletion 两步流）、governance（skills/memory/releases/audit）与四主操作端点
 - 面板变更需浏览器页刷新后生效；后端改动需 `pnpm build` 后重载宿主插件（本机 profile 以 `link:` 软链仓库，构建产物 `lib/index.js` 立即生效）
 

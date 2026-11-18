@@ -101,14 +101,14 @@ export class LiveSession {
   /** 开播前自检（形象/接入/规则包/账号模式/AI 标识/稳定版本/资源）→ 单一可操作原因。 */
   preflight(input: PreflightInput): PreflightResult {
     if (!input.personaConfigured) {
-      return { pass: false, reason: '主播形象未配置：在「角色档案」中选择角色并确认使用授权' }
+      return { pass: false, reason: '主播形象未配置：在「设置 → 角色与声音」中选择角色并确认使用授权' }
     }
     if (!input.platformConfigured) {
       return { pass: false, reason: '直播接入未配置：在「直播接入」确认已在官方客户端登录直播账号' }
     }
     const pack = checkPackValidity(this.pack, this.platform)
     if (!pack.valid) return { pass: false, reason: pack.reason ?? '政策包无效' }
-    if (!input.stableReleaseAvailable) return { pass: false, reason: '无稳定发布版本：先完成首次配置向导' }
+    if (!input.stableReleaseAvailable) return { pass: false, reason: '无稳定发布版本：请在「记录与学习 → 治理与发布」查看发布链' }
     if (!input.aiLabelVisible) return { pass: false, reason: 'AI 标识不可见：修复标识后才能开播（不可关闭）' }
     if (!input.resourceOk) return { pass: false, reason: '资源自检未通过：查看自检结果并降低负载' }
     if (!this.adapter.capabilities.allowedModes.includes('assisted')) {

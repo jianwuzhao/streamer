@@ -122,6 +122,22 @@ test('本地超时 → 云端一次成功；云端只调用一次且无重复播
   )
 })
 
+test('观众首次回复：云端用完优先时段后，本地仍可使用总时限内的剩余时间', async () => {
+  const config = cloudEnabledConfig()
+  let now = 0
+  const cloud = new FakeAdapter('cloud', 'cloud', 'stub', [new ModelCallError('LOCAL_TIMEOUT', '云端超时')])
+  const local = new FakeAdapter('gpu', 'local_gpu', 'qwen-4b', [ok('欢迎来窗边坐坐。')])
+  const generate = cloud.generate.bind(cloud)
+  cloud.generate = async () => {
+    now += config.models.localAttemptMs
+    return generate()
+  }
+  const { router, usage } = makeRouter({ config, cloud, localGpu: local, now: () => now })
+  const receipt = await router.route(makeReq('first-viewer'), { preferCloud: true, recentReplies: [] })
+  assert.equal(receipt.route, 'local_gpu')
+  assert.deepEqual(usage.map(({ route, reasonCode }) => [route, reasonCode]), [['cloud', 'LOCAL_TIMEOUT'], ['local_gpu', undefined]])
+})
+
 test('本地不可达 → CPU 回退尝试', async () => {
   const gpu = new FakeAdapter('gpu', 'local_gpu', 'qwen-4b', [
     new ModelCallError('LOCAL_UNAVAILABLE', 'ollama 不可达'),

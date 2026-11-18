@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { hash } from 'node:crypto'
 import { test } from 'node:test'
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -64,6 +65,34 @@ test('avatar：vendor 状态与读取——缺件如实标注，未知名拒绝'
   }
 })
 
+test('avatar：前景轮廓仅与原立绘配对使用，老素材或重新裁图时仍能播放口型', () => {
+  const { store, root, modelsDir } = makeFixture()
+  try {
+    const id = 'custom-avatar'
+    const dir = join(modelsDir, id)
+    const portrait = join(dir, 'portrait-frame.png')
+    const config = join(dir, 'mouth-model.json')
+    const image = 'portrait'
+    const mouth = { x: 0.5, y: 0.45, width: 0.1, tilt: 0 }
+    writeFileSync(portrait, image)
+    writeFileSync(config, JSON.stringify(mouth))
+    writeFileSync(join(dir, 'motion-mask.png'), 'mask')
+    assert.deepEqual(store.readPrototype(id), { image: Buffer.from(image).toString('base64'), mouth })
+
+    writeFileSync(config, JSON.stringify({ ...mouth, motionMaskSource: hash('sha256', image) }))
+    assert.deepEqual(store.readPrototype(id), {
+      image: Buffer.from(image).toString('base64'), mouth, motionMask: Buffer.from('mask').toString('base64'),
+    })
+    writeFileSync(join(dir, 'head-mask.png'), 'head')
+    assert.equal(store.readPrototype(id).headMask, Buffer.from('head').toString('base64'))
+    writeFileSync(portrait, 'new crop')
+    assert.equal(store.readPrototype(id).motionMask, undefined)
+    assert.equal(store.readPrototype(id).headMask, undefined)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('avatar：模型文件下发——正常读取 + 路径穿越/类型/大小防护', () => {
   const { store, root } = makeFixture()
   try {
@@ -83,6 +112,28 @@ test('avatar：模型文件下发——正常读取 + 路径穿越/类型/大小
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('avatar：眨眼定位只使用配对立绘的双眼坐标，缺失或越界时安全降级', () => {
+  const { store, root, modelsDir } = makeFixture()
+  try {
+    const dir = join(modelsDir, 'custom-avatar')
+    const mouth = { x: 0.5, y: 0.5, width: 0.1, tilt: 0, motionMaskSource: hash('sha256', 'portrait') }
+    const eye = { x: 0.4, y: 0.3, width: 0.06, height: 0.02, tilt: 0.1 }
+    const eyes = [eye, { ...eye, x: 0.6 }]
+    writeFileSync(join(dir, 'portrait-frame.png'), 'portrait')
+    const config = join(dir, 'mouth-model.json')
+    const save = (value: unknown) => writeFileSync(config, JSON.stringify({ ...mouth, eyes: value }))
+    save(eyes)
+    assert.deepEqual(store.readPrototype('custom-avatar').eyes, eyes)
+    for (const invalid of [[eye], [eye, { ...eye, x: 0.99 }], [eye, { ...eye, tilt: 4 }], [eye, { ...eye, height: 0 }]]) {
+      save(invalid)
+      assert.equal(store.readPrototype('custom-avatar').eyes, undefined)
+    }
+    save(eyes)
+    writeFileSync(join(dir, 'portrait-frame.png'), 'recropped')
+    assert.equal(store.readPrototype('custom-avatar').eyes, undefined)
+  } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
 test('avatar：模型目录符号链接——指向根外/别名他模型一律拒绝', () => {

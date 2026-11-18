@@ -2,9 +2,10 @@ import type { Browser, CDPSession } from 'playwright-core'
 import type { HostConversation } from '../live/conversation.ts'
 import { decodeDouyinPacket, douyinNetworkRoom, douyinRoomUrl } from './douyin-protocol.ts'
 
-export type BrowserFeedStatus = 'waiting' | 'connected' | 'error' | 'protocol' | 'browser_error' | 'room_error'
+export type BrowserFeedStatus = 'waiting' | 'connected' | 'error' | 'protocol' | 'browser_error' | 'room_error' | 'room_offline'
 type Close = () => Promise<void>
 type BrowserRun = { abort: AbortController; close?: Close; room?: string }
+const OFFLINE_RETRY_MS = 15_000
 
 function emptyPollingResponse(body: string): boolean {
   if (!body.trim()) return true
@@ -63,6 +64,7 @@ export class DouyinBrowserFeed {
     while (current()) {
       let browser: Browser | undefined
       let stopListening: (() => void) | undefined
+      let roomCheck: ReturnType<typeof setTimeout> | undefined
       let watching = true
       const alive = () => watching && current()
       try {
@@ -90,19 +92,38 @@ export class DouyinBrowserFeed {
         if (douyinRoomUrl(page.url()) !== roomUrl) {
           this.state = 'room_error'
         } else {
+          const offline = page.locator('#TipsLayout').getByText(/^(直播已结束|主播暂未开播|主播还未开播)$/)
+            .filter({ visible: true }).first()
+          const checkRoom = async () => {
+            if (!alive()) return
+            const offlineNow = await offline.isVisible().catch(() => false)
+            if (!alive()) return
+            if (offlineNow) {
+              // 提示位于播放器，避免把评论或推荐房间中的同名文字当成当前房间停播。
+              watching = false
+              this.state = 'room_offline'
+              delete active.room
+              await active.close?.()
+              return
+            }
+            roomCheck = setTimeout(checkRoom, 4000)
+            roomCheck.unref()
+          }
           page.on('framenavigated', (frame) => {
             if (frame === page.mainFrame() && douyinRoomUrl(frame.url()) !== roomUrl && current()) {
               this.state = 'room_error'
               void active.close?.()
             }
           })
+          void checkRoom()
           await closed
-          if (current() && (this.state as BrowserFeedStatus) !== 'room_error') this.state = 'error'
+          if (current() && this.state !== 'room_error' && this.state !== 'room_offline') this.state = 'error'
         }
       } catch {
         if (current()) this.state = browser ? 'error' : 'browser_error'
       } finally {
         watching = false
+        clearTimeout(roomCheck)
         stopListening?.()
         await active.close?.()
         delete active.close
@@ -114,7 +135,7 @@ export class DouyinBrowserFeed {
           signal.removeEventListener('abort', finish)
           resolve()
         }
-        const timer = setTimeout(finish, 3000)
+        const timer = setTimeout(finish, this.state === 'room_offline' ? OFFLINE_RETRY_MS : 3000)
         timer.unref()
         signal.addEventListener('abort', finish, { once: true })
         if (signal.aborted) finish()

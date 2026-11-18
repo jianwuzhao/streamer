@@ -11,6 +11,7 @@
  * - host-api-shared.ts：类型与公共助手
  */
 import type { DafeiyuPluginHandle } from './index.ts'
+import type { BroadcastWindow } from './live/broadcast-window.ts'
 import { ConversationError, INTERACTION_KINDS, MESSAGE_LIMIT, type InteractionKind } from './live/conversation.ts'
 import { BUILTIN_VOICES, resolveCloudBaseUrl } from './settings/catalogs.ts'
 import { SettingsValidationError, type Readiness } from './settings/store.ts'
@@ -80,8 +81,16 @@ export function buildStatus(handle: DafeiyuPluginHandle): DafeiyuStatus {
 }
 
 /** 生成 connection/request 处理器：非 /api/dafeiyu/ 前缀一律 next() 放行。 */
-export function createRequestHandler(handle: DafeiyuPluginHandle) {
+export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindow?: BroadcastWindow) {
   const { session, conversation, startInteraction, stopInteraction, interactionSource, interactionStatus } = handle.live
+  // 播出打断：停止/紧急停止时推进播出版本。没有已打开的窗口时是空操作
+  // （owner 未知就统一按「全部作废」，窗口下次 publish 会自然从新版本开始）。
+  let stageOwner: string | undefined
+  const interruptStage = () => {
+    if (!broadcastWindow) return
+    if (stageOwner === undefined) return
+    broadcastWindow.interrupt(stageOwner)
+  }
   const handler = async (req: ServerRequest, res: ServerResponse, next: () => Promise<void>): Promise<void> => {
     const url = req.url ?? ''
     if (!url.startsWith('/api/dafeiyu/')) return next()
@@ -106,7 +115,8 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
 
       if (method === 'POST') {
         // 预览输入类端点共用 8192 字节请求体上限（chat 文本 + role-speech 的 profileId/文本）
-        const boundedPreviewInput = path === 'preview/chat' || path.startsWith('preview/role-speech') || path.startsWith('interaction/')
+        const boundedPreviewInput = path === 'preview/chat' || path.startsWith('preview/role-speech') ||
+          path.startsWith('interaction/') || path.startsWith('broadcast-window/')
         const body = await readBody(req, boundedPreviewInput ? 8192 : Infinity)
         if (body === null) return json(res, 413, { ok: false, error: '请求体过大' })
         let parsed: unknown
@@ -120,6 +130,31 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
         }
         const args = parsed as Record<string, unknown>
         switch (path) {
+          case 'broadcast-window/open':
+          case 'broadcast-window/close':
+          case 'broadcast-window/interrupt':
+          case 'broadcast-window/frame': {
+            if (!broadcastWindow) return json(res, 404, { ok: false, error: '播出窗口不可用' })
+            if (typeof args.owner !== 'string' || !/^[0-9a-f-]{36}$/i.test(args.owner)) {
+              return json(res, 400, { ok: false, error: '播出窗口标识无效' })
+            }
+            // 记住当前舞台 owner，供停止/紧急停止时统一打断
+            stageOwner = args.owner
+            if (path === 'broadcast-window/frame') {
+              return json(res, 200, { ok: true, open: broadcastWindow.publish(args.owner, args) })
+            }
+            if (path === 'broadcast-window/interrupt') {
+              // 工作台主动打断（连发弹幕合并超限、切角色、操作员中止）：
+              // 递增播出版本并清空当前帧，之后旧版本上行帧会被 publish 拒收
+              return json(res, 200, { ok: true, playbackVersion: broadcastWindow.interrupt(args.owner) })
+            }
+            if (path === 'broadcast-window/close') {
+              broadcastWindow.close(args.owner)
+              return json(res, 200, { ok: true })
+            }
+            await broadcastWindow.open(args.owner)
+            return json(res, 200, { ok: true })
+          }
           case 'live/start': {
             // preflight 由操作员设置与实况状态拼装（§24.1/§23.2）：
             // - AI 标识恒可见（设置域 schema 为字面量 true，无法关闭）；
@@ -154,6 +189,8 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
             const status = await handle.live.session.stop()
             stopInteraction()
             conversation.reset()
+            // 结束直播同样是一次打断：递增播出版本，迟到帧不得恢复最后一句的口型
+            interruptStage()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
           case 'live/emergency-stop': {
@@ -161,6 +198,8 @@ export function createRequestHandler(handle: DafeiyuPluginHandle) {
             const status = handle.live.session.emergencyStop()
             stopInteraction()
             conversation.reset()
+            // 紧急停止立即作废在途口型与动作：版本递增后旧帧一律拒收，画面切安全稿
+            interruptStage()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
           case 'live/operator-confirm': {

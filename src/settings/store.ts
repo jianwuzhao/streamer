@@ -305,7 +305,7 @@ export class SettingsStore {
   personaReady(): Readiness {
     const persona = this.getPersona()
     if (!persona.usageRightConfirmed) {
-      return { ready: false, reason: '主播形象未配置：在「角色档案」中选择角色并确认使用授权' }
+      return { ready: false, reason: '主播形象未配置：在「设置 → 角色与声音」中选择角色并确认使用授权' }
     }
     return { ready: true }
   }

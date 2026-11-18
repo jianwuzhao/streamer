@@ -5,6 +5,7 @@ import { CloudDisabledError } from '../adapters/cloud.ts'
 import type { GenerateMessage } from '../adapters/model-adapter.ts'
 import type { ModelAdapter } from '../adapters/model-adapter.ts'
 import type { DafeiyuConfigType, FeatureGates } from '../config.ts'
+import type { HostInteraction } from '../live/interaction-replies.ts'
 import type { ProfileOption } from '../settings/catalogs.ts'
 import type { AnswerReceipt, AnswerRoute, ReasonCode } from '../types.ts'
 import type { GenerationRegistry } from './budget.ts'
@@ -50,8 +51,10 @@ export interface RouteContext {
     readonly history: readonly GenerateMessage[]
     readonly cloudHistory: readonly GenerateMessage[]
     readonly memory: readonly string[]
+    readonly interaction?: HostInteraction
   }
   readonly localOnly?: boolean
+  readonly preferCloud?: boolean
   readonly previewCharacter?: string
   readonly previewDescription?: string
   /** 近期已播出回复（重复检测） */

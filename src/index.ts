@@ -28,6 +28,7 @@ import { ReleaseController } from './governance/release.ts'
 import { TrainingSamplePipeline } from './training/samples.ts'
 import { TrainingScheduler } from './training/scheduler.ts'
 import { createRequestHandler } from './host-api.ts'
+import { BroadcastWindow } from './live/broadcast-window.ts'
 import { DouyinAssistedAdapter } from './platform/adapter.ts'
 import { DouyinBrowserFeed } from './platform/douyin-browser.ts'
 import { DanmakuFeed } from './platform/danmaku-feed.ts'
@@ -482,9 +483,13 @@ export function apply(
   const handle = createPlugin({
     log: (message, ...args) => ctx.logger?.info(`[dafeiyu] ${message}`, ...args),
   })
-  ctx.on?.('dispose' as never, (() => handle.dispose()) as never)
+  const broadcastWindow = new BroadcastWindow(handle, packageDir())
+  ctx.on?.('dispose' as never, (() => {
+    broadcastWindow.dispose()
+    handle.dispose()
+  }) as never)
   // Web 面板同源后端：/api/dafeiyu/*（connection/request 瀑布，未匹配路径放行）
-  const handler = createRequestHandler(handle)
+  const handler = createRequestHandler(handle, broadcastWindow)
   ctx.on?.('connection/request' as never, (async (req: unknown, res: unknown, next: () => Promise<void>) => {
     await handler(
       req as Parameters<typeof handler>[0],
