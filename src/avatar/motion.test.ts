@@ -256,3 +256,49 @@ test('面部网格输出按边缘渐隐裁剪，rect 四角透明、中心不透
 	assert.ok(true);
 });
 
+
+test('眨眼细节：左右眼轻微不同步、慢眨眼节奏、眉毛随闭眼联动、安全态归零', () => {
+	const motion = createAvatarMotion(() => 0.5)
+	// 驱动到第一次眨眼附近（blinkAt 初始约 800+0.5*2200=1900）
+	let pose
+	for (let t = 0; t < 2200; t += 8) pose = motion(t, { listening: true })
+	// 闭眼过程中左右眼值应存在且不必完全相等（错开 0–18ms）
+	assert.ok(Number.isFinite(pose.blinkLeft) && Number.isFinite(pose.blinkRight))
+	assert.ok(pose.blinkLeft >= 0 && pose.blinkLeft <= 1 && pose.blinkRight >= 0 && pose.blinkRight <= 1)
+	assert.ok(Math.abs(pose.blinkLeft - pose.blinkRight) < 0.35, '左右眼错开但幅度接近')
+	// 眉毛下压为有限值且在安全态归零
+	assert.ok(Number.isFinite(pose.browDip))
+	const safe = motion(2300, { safe: true, speaking: true, level: 1 })
+	assert.equal(safe.blinkLeft + safe.blinkRight + safe.browDip, 0)
+	// 减少动态时同样归零，但口型仍由音量驱动
+	const reduced = createAvatarMotion(() => 0.5)
+	let r
+	for (let t = 0; t < 400; t += 16) r = reduced(t, { speaking: true, level: 0.8, reducedMotion: true })
+	assert.equal(r.blinkLeft + r.blinkRight + r.browDip, 0)
+	assert.ok(r.opening > 0)
+})
+
+test('口型细节：开口驱动平滑、闭唇覆盖、形状维度不改变开合幅度', () => {
+	const motion = createAvatarMotion(() => 0.5)
+	// 微张（level 低）时开口很小，不应「张嘴就是一整排牙」
+	let small
+	for (let t = 0; t < 300; t += 16) small = motion(t, { speaking: true, level: 0.05 })
+	assert.ok(small.opening < 0.05, String(small.opening))
+	// 闭唇 viseme 覆盖音量余量
+	const closed = createAvatarMotion(() => 0.5)
+	let c
+	for (let t = 0; t < 300; t += 16) c = closed(t, { speaking: true, level: 1, viseme: { open: 0.9, closed: 1 } })
+	assert.equal(c.opening, 0)
+	// 句中短停顿保留约 15% 余量，长静音收口
+	const rest = createAvatarMotion(() => 0.5)
+	for (let t = 0; t <= 300; t += 16) rest(t, { speaking: true, level: 0.8 })
+	// 句中停顿：开口显著小于说话时（短停顿保留约 15% 余量，不做整帧硬收）
+	let speakingPose
+	for (let t = 0; t <= 300; t += 16) speakingPose = rest(t, { speaking: true, level: 0.8 })
+	let held = rest(336, { speaking: true, level: 0 })
+	assert.ok(held.opening < speakingPose.opening * 0.5, String(held.opening))
+	// 长静音彻底收口（>=180ms 后余量回收）
+	for (let t = 352; t < 900; t += 16) held = rest(t, { speaking: true, level: 0 })
+	assert.equal(held.opening, 0)
+})
+

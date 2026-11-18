@@ -113,6 +113,9 @@ function createAvatarMotion(random = Math.random) {
 	let modeBefore = 'idle', listenAt = -Infinity, nextListen = Infinity;
 	let nod = 0, emphasisAt = -Infinity, envelope = 0, previousLevel = 0;
 	let gaze = 0, blinkClose = 65, blinkHold = 18, blinkOpen = 115, initialized = false;
+	// 眨眼细节：左右眼轻微不同步（人眼并非完全同步），并让眉毛随闭眼轻微下压；
+	// 偶尔一次较长的「慢眨眼」让节奏不机械。
+	let blinkLeftLag = 0, blinkRightLag = 0, blinkSlow = false, browDip = 0;
 	return (now, input = {}) => {
 		if (!initialized) { blinkAt += now; initialized = true; }
 		const dt = clamp(previous === undefined ? 16 : now - previous, 0, 100);
@@ -136,11 +139,28 @@ function createAvatarMotion(random = Math.random) {
 		const mood = mode === 'speaking' ? clamp(input.emotion, -0.35, 0.35) : 0;
 		expression += (mood * (0.6 + envelope * 0.4) - expression) * (1 - Math.exp(-dt / 180));
 		if (now >= blinkAt) {
-			blinkStart = now; blinkClose = 55 + random() * 20; blinkHold = 10 + random() * 15; blinkOpen = 100 + random() * 35;
-			blinkAt = now + 2700 + random() * 3700;
+			blinkStart = now;
+			blinkSlow = random() < 0.18;
+			blinkClose = (blinkSlow ? 95 : 55) + random() * 20;
+			blinkHold = (blinkSlow ? 34 : 10) + random() * 15;
+			blinkOpen = (blinkSlow ? 190 : 100) + random() * 35;
+			// 左右眼错开 0–18ms，避免像开关一样完全同步
+			blinkLeftLag = random() * 18;
+			blinkRightLag = random() * 18;
+			blinkAt = now + (blinkSlow ? 3400 : 2700) + random() * 3700;
 		}
-		const blinkAge = now - blinkStart;
-		const blink = !Number.isFinite(blinkAge) ? 0 : blinkAge < blinkClose ? ease(blinkAge / blinkClose) : 1 - ease((blinkAge - blinkClose - blinkHold) / blinkOpen);
+		const blinkValue = (lag) => {
+			const age = now - blinkStart - lag;
+			if (!Number.isFinite(age) || age < 0) return 0;
+			if (age < blinkClose) return ease(age / blinkClose);
+			const opening = (age - blinkClose - blinkHold) / blinkOpen;
+			return clamp(1 - ease(opening));
+		};
+		const blink = blinkValue(0);
+		const blinkLeft = blinkValue(blinkLeftLag);
+		const blinkRight = blinkValue(blinkRightLag);
+		// 闭眼时眉毛轻微下压，睁眼回位（比纯眼皮闭合自然）
+		browDip += (blink * -0.12 - browDip) * (1 - Math.exp(-dt / 90));
 		if (now >= poseEnd) {
 			poseFrom = pose; poseTo = random() * 2 - 1;
 			poseAt = now; poseEnd = now + 1600 + random() * 2600;
@@ -155,14 +175,15 @@ function createAvatarMotion(random = Math.random) {
 		// Carry pose across turn boundaries, avoiding a snap back to the neutral head.
 		nod += (listenNod + speechNod - nod) * (1 - Math.exp(-dt / 95));
 		gaze += (pose * (mode === 'listening' ? 0.1 : 0.2) - gaze) * (1 - Math.exp(-dt / 180));
-		if (input.safe) { opening = 0; form = 0; expression = 0; lastVoice = -Infinity; held = 0; nod = 0; gaze = 0; envelope = 0; previousLevel = 0; emphasisAt = -Infinity; }
+		if (input.safe) { opening = 0; form = 0; expression = 0; lastVoice = -Infinity; held = 0; nod = 0; gaze = 0; envelope = 0; previousLevel = 0; emphasisAt = -Infinity; browDip = 0; }
 		const reduced = input.reducedMotion || input.safe;
 		// 有对齐口型时以 viseme 为准（闭唇/圆唇/横展），否则沿用音频估计的 level/form
 		const viseme = input.safe ? null : input.viseme;
 		const shaped = applyVisemePose(viseme, opening, form);
 		const finalOpening = shaped.opening < 0.003 ? 0 : shaped.opening;
 		return { mode, opening: finalOpening, form: shaped.form, expression,
-			blink: reduced ? 0 : clamp(blink), breath: reduced ? 0 : breath,
+			blink: reduced ? 0 : clamp(blink), blinkLeft: reduced ? 0 : clamp(blinkLeft), blinkRight: reduced ? 0 : clamp(blinkRight),
+			browDip: reduced ? 0 : browDip, breath: reduced ? 0 : breath,
 			gaze: reduced ? 0 : gaze, sway: reduced ? 0 : pose * 0.45, nod: reduced ? 0 : nod };
 	};
 }
@@ -421,23 +442,35 @@ function createFaceRigRenderer(PIXI, model, image) {
 				}
 			}
 			const m=model.mouth, w=m.width, open=Math.max(0,Math.min(1,controls.jawOpen||0));
+			const round=Math.max(0,Math.min(1,controls.mouthRound||0));
+			// 口型细节：口腔整体随开合度缩放，闭唇/微张时不露牙齿与舌头；
+			// 圆唇时收窄牙列，嘴角随 smile 轻微上扬，避免「张嘴就是一整排牙」。
+			const cavity=Math.max(0,Math.min(1,(open-0.06)/0.42));
 			oral.clear();oral.position.set(m.x,m.y);oral.rotation=Math.atan2(m.sin,m.cos);
 			oral.alpha=Math.min(1,open*7);
-			// Hidden anatomy is an authored approximation, clipped by the independently animated lips.
-			oral.beginFill(0x32171d).drawEllipse(0,w*.12,w*.65,w*.5).endFill();
-			const round=1-Math.max(0,controls.mouthRound||0)*.16;
-			const teethWidth=w*.72*round, toothHeight=w*.075;
-			oral.beginFill(0xcfc2b5).moveTo(-teethWidth/2,-w*.035)
-				.quadraticCurveTo(0,-w*.075,teethWidth/2,-w*.035).lineTo(teethWidth/2,w*.015)
-				.quadraticCurveTo(0,toothHeight,-teethWidth/2,w*.015).closePath().endFill();
-			for(let i=-2;i<=2;i++) {
-				const x=i*teethWidth/6;
-				oral.lineStyle(.45,0x998a80,.22).moveTo(x,-w*.025).lineTo(x,toothHeight*.6);
+			if(cavity<=0){app.renderer.render(app.stage);return;}
+			const height=w*(.10+.42*cavity);
+			const width=w*(.62-.16*round)*(.7+.3*cavity);
+			oral.beginFill(0x2b1219).drawEllipse(0,height*.34,width,height*.5).endFill();
+			const smile=Math.max(-0.4,Math.min(0.4,controls.smile||0));
+			const teethAlpha=Math.max(0,Math.min(1,(cavity-.28)*3));
+			if(teethAlpha>0){
+				const teethWidth=w*.70*(1-.16*round)*(.7+.3*cavity), toothHeight=w*.075*(.6+.4*cavity);
+				const lipTop=-w*.03+smile*w*.02;
+				oral.beginFill(0xcfc2b5,teethAlpha).moveTo(-teethWidth/2,lipTop)
+					.quadraticCurveTo(0,lipTop-w*.04,teethWidth/2,lipTop).lineTo(teethWidth/2,lipTop+toothHeight)
+					.quadraticCurveTo(0,lipTop+toothHeight*1.5,-teethWidth/2,lipTop+toothHeight).closePath().endFill();
+				for(let i=-2;i<=2;i++){
+					const x=i*teethWidth/6;
+					oral.lineStyle(.45,0x998a80,.22*teethAlpha).moveTo(x,lipTop+w*.005).lineTo(x,lipTop+toothHeight*.6);
+				}
+				oral.lineStyle(0);
 			}
-			oral.lineStyle(0);
-			const lower=w*.19*open+w*.02;
-			oral.beginFill(0xbca79b).drawRoundedRect(-teethWidth*.43,lower,teethWidth*.86,w*.06,w*.02).endFill();
-			oral.beginFill(0x8e4b52).drawEllipse(0,lower+w*.045-(controls.tongueRaise||0)*w*.045,w*.24,w*.09).endFill();
+			const tongueAlpha=Math.max(0,Math.min(1,(cavity-.5)*2.4));
+			if(tongueAlpha>0){
+				const lower=height*.34+height*.18-(controls.tongueRaise||0)*w*.045;
+				oral.beginFill(0x8e4b52,tongueAlpha).drawEllipse(0,lower,w*.22,w*.075*cavity).endFill();
+			}
 			app.renderer.render(app.stage);
 		},
 		draw(context, silhouette) {
@@ -672,6 +705,11 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-broadcast-art .dfy-pet-l2d{inset:0;position:absolute}
 .dfy-broadcast-art .dfy-l2d-hit,.dfy-broadcast-art .dfy-pet-l2d-note{display:none}
 .dfy-broadcast-art>.dfy-rig-surface,.dfy-role-stage>.dfy-rig-surface{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center}
+.dfy-idle-scene{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;opacity:0;transition:opacity 420ms ease;pointer-events:none}
+.dfy-room-person .dfy-idle-scene{object-fit:cover;object-position:center 40%}
+.dfy-idle-scene.dfy-idle-scene-on{opacity:1}
+.dfy-broadcast-art>.dfy-rig-surface.dfy-rig-scene-fade{transition:opacity 420ms ease}
+.dfy-broadcast-art>.dfy-rig-surface.dfy-rig-scene-hidden{opacity:0}
 .dfy-room-pet .dfy-broadcast-art>canvas.dfy-rig-surface{transform-origin:50% 68%}
 .dfy-rig-fade{transition:opacity 120ms ease-out}
 @media(prefers-reduced-motion:reduce){.dfy-rig-fade{transition:none}}
@@ -940,13 +978,14 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 						const add = blendDialogueTargets(speech.dialogue?.current?.targets,
 							{ safe: !!speech.safe, reducedMotion: reduced.matches, speaking: !!speech.speaking });
 						set("ParamMouthForm", pose.form * 0.35 + pose.expression);
-						set("ParamBrowLY", pose.expression * 0.25 + add.brow * 0.15, true);
-						set("ParamBrowRY", pose.expression * 0.25 + add.brow * 0.15, true);
+						set("ParamBrowLY", pose.expression * 0.25 + add.brow * 0.15 + pose.browDip * 0.5, true);
+						set("ParamBrowRY", pose.expression * 0.25 + add.brow * 0.15 + pose.browDip * 0.5, true);
 						if (!reduced.matches) {
 							// Multiply the existing eye state to preserve authored expressions and motion.
-							for (const id of ["ParamEyeLOpen", "ParamEyeROpen"]) {
+							const eyeStates = [["ParamEyeLOpen", pose.blinkLeft], ["ParamEyeROpen", pose.blinkRight]];
+							for (const [id, closed] of eyeStates) {
 								const p = face[id];
-								if (p) set(id, core.getParameterValueByIndex(p.index) * (1 - pose.blink));
+								if (p) set(id, core.getParameterValueByIndex(p.index) * (1 - closed));
 							}
 							set("ParamEyeBallX", pose.gaze + add.gaze * 0.6, true);
 							set("ParamEyeBallY", -pose.nod * 0.08 - add.nod * 0.05, true);
@@ -1152,7 +1191,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		return { figure, underlay, x: mouth.x * width, y: neck };
 	}
 
-	function RolePrototype({ persona, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, onError, onFrame, onMotionReady }) {
+	function RolePrototype({ persona, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, sceneHidden, onError, onFrame, onMotionReady }) {
 		const target = useRef(null);
 		const idleVideo = useRef(null);
 		const [rig, setRig] = useState(null);
@@ -1246,9 +1285,11 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			const torsoFade = mask ? context.createLinearGradient(0, shoulderY, 0, shoulderY + height * 0.13) : null;
 			torsoFade?.addColorStop(0, "transparent");
 			torsoFade?.addColorStop(1, "black");
-			const draw = (amount, breath = 0, sway = 0, nod = 0, blink = 0, form = 0, expression = 0, gaze = 0) => {
+			const draw = (amount, breath = 0, sway = 0, nod = 0, blink = 0, form = 0, expression = 0, gaze = 0,
+				blinkL = blink, blinkR = blink, browDip = 0) => {
 				face?.update({ jawOpen: amount, mouthRound: Math.max(0, -form), smile: expression,
-					blinkLeft: blink, blinkRight: blink, browLeft: expression * .6, browRight: expression * .5,
+					blinkLeft: blinkL, blinkRight: blinkR,
+					browLeft: expression * .6 + browDip, browRight: expression * .5 + browDip,
 					gazeX: gaze, gazeY: -nod, tongueRaise: amount * Math.max(0,form) * .3 });
 				context.clearRect(0, 0, width, height);
 				if (!mask) {
@@ -1302,7 +1343,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 						{ safe: !!speech.safe, reducedMotion: reduced.matches, speaking: !!speech.speaking });
 					draw(pose.opening, pose.breath, pose.sway + add.swing * 0.35, pose.nod + add.nod * 0.7,
 						Math.max(pose.blink, Math.max(0, pose.expression) * 0.25), pose.form + pose.expression * 0.4,
-						pose.expression + add.brow * 0.25, pose.gaze + add.gaze * 0.6);
+						pose.expression + add.brow * 0.25, pose.gaze + add.gaze * 0.6,
+						pose.blinkLeft, pose.blinkRight, pose.browDip);
 					if (!mask && dsh && !reduced.matches) {
 						surface.style.transform = `translate(${pose.sway}%, ${-pose.breath * 0.55 + pose.nod * 0.6}%) rotate(${pose.sway}deg)`;
 					} else surface.style.transform = "";
@@ -1316,8 +1358,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 		if (!rig) return h("span", { className: "dfy-role-initial" }, persona.name);
 		return h(react.Fragment, null,
-			rig.mask ? h("img", { src: rig.image.src, className: "dfy-rig-surface", alt: "", "aria-hidden": true }) : null,
-			h("canvas", { ref: target, "data-face-rig": rig.faceRig ? "full" : "prototype", "data-face-role": persona.profileId || persona.id, className: "dfy-rig-surface dfy-rig-fade", role: "img", "aria-label": persona.name + (rig.faceRig ? "完整面部预览" : "口型预览"),
+			rig.mask ? h("img", { src: rig.image.src, className: "dfy-rig-surface" + (sceneHidden ? " dfy-rig-scene-hidden" : ""), alt: "", "aria-hidden": true }) : null,
+			h("canvas", { ref: target, className: "dfy-rig-surface dfy-rig-fade" + (sceneHidden ? " dfy-rig-scene-hidden" : ""), "data-face-rig": rig.faceRig ? "full" : "prototype", "data-face-role": persona.profileId || persona.id, role: "img", "aria-label": persona.name + (rig.faceRig ? "完整面部预览" : "口型预览"),
 				style: { opacity: showIdle ? 0 : 1 } }),
 			idle ? h("video", { ref: idleVideo, className: "dfy-rig-surface dfy-rig-fade", src: idle, autoPlay: true, muted: true, playsInline: true, loop: true,
 				style: { opacity: showIdle ? 1 : 0 }, "aria-hidden": !showIdle, "aria-label": persona.name + "待机动画",
@@ -2283,13 +2325,42 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 		return {
 			roomBackdrop, model, prototype, markPrototypeMotion, setFailure, setPrototypeFailure,
+			scenes: catalog?.scenes ?? [],
 			missingMotion: !model && prototype && prototypeMotion?.id === modelId && !prototypeMotion.ready,
 		};
 	}
 
 	function BroadcastPicture({ persona, layout, artwork, visible = true, live, safe, speaking, listening, line, mouthLevel, viseme, dialogue, turns, onFrame }) {
-		const { roomBackdrop, model, prototype, markPrototypeMotion, setFailure, setPrototypeFailure } = artwork;
+		const { roomBackdrop, model, prototype, markPrototypeMotion, setFailure, setPrototypeFailure, scenes } = artwork;
 		const emotion = speaking ? avatarReplyEmotion(line) : 0;
+		// 官方角色动态视频：待机（不说/不听/非安全）时作为整体动画层，说话与倾听时
+		// 淡出回到 2.5D 网格（口型/表情由音频驱动）。视频静音循环，不引入音源。
+		const sceneId = persona?.media?.modelId;
+		const sceneUrl = !model && scenes.includes(sceneId) && !safe && visible ?
+			"/api/dafeiyu/avatar/scene?id=" + encodeURIComponent(sceneId) : null;
+		const [sceneReady, setSceneReady] = useState(false);
+		const [sceneFailed, setSceneFailed] = useState(false);
+		const sceneVideo = useRef(null);
+		useEffect(() => { setSceneReady(false); setSceneFailed(false); }, [sceneUrl]);
+		const reduced = useRef(window.matchMedia("(prefers-reduced-motion: reduce)")).current;
+		const showScene = !!sceneUrl && sceneReady && !sceneFailed && !speaking && !listening && !safe && !reduced.matches;
+		// 说话/倾听/安全/页面隐藏时暂停视频解码，回到待机再续播（避免整帧重影与无谓开销）
+		useEffect(() => {
+			const video = sceneVideo.current;
+			if (!video) return;
+			if (showScene && !document.hidden) video.play().catch(() => {});
+			else video.pause();
+		}, [showScene]);
+		useEffect(() => {
+			const onVisibility = () => {
+				const video = sceneVideo.current;
+				if (!video) return;
+				if (!document.hidden && showScene) video.play().catch(() => {});
+				else video.pause();
+			};
+			document.addEventListener("visibilitychange", onVisibility);
+			return () => document.removeEventListener("visibilitychange", onVisibility);
+		}, [showScene]);
 		return h("div", { className: "dfy-broadcast" + (persona?.media?.modelId === "dsh-pet" ? " dfy-room-pet" : " dfy-room-person") + (layout === "landscape" ? " dfy-broadcast-landscape" : ""),
 			"aria-label": layout === "landscape" ? "直播画面 1920×1080" : "直播画面 1080×1920",
 			style: { "--stage-color": persona?.theme?.primary, "--stage-dark": persona?.theme?.bg } },
@@ -2298,9 +2369,12 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		!safe && visible ? h(BroadcastOverlay, { live, speaking, persona, turns }) : null,
 		safe ? h("div", { className: "dfy-broadcast-safe" }, "播出已暂停") : visible ?
 			h("div", { className: "dfy-broadcast-art" },
+				sceneUrl ? h("video", { key: sceneUrl, ref: sceneVideo, className: "dfy-idle-scene" + (showScene ? " dfy-idle-scene-on" : ""),
+					src: sceneUrl, muted: true, playsInline: true, loop: true, autoPlay: true, "aria-hidden": true,
+					onPlaying: () => setSceneReady(true), onError: () => setSceneFailed(true) }) : null,
 				model ? h(Live2DScene, { key: model.id, entry: model, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, onFrame,
 					onFail: () => setFailure(model.id), onLipSync: (ok) => { if (!ok && prototype) setFailure(model.id); } }) :
-					prototype ? h(RolePrototype, { key: persona.profileId, persona, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, onFrame,
+					prototype ? h(RolePrototype, { key: persona.profileId, persona, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, sceneHidden: showScene, onFrame,
 						onMotionReady: markPrototypeMotion, onError: () => setPrototypeFailure(persona.profileId) }) :
 						persona?.media?.portraitUrl ? h("img", { src: persona.media.portraitUrl, alt: persona.name }) :
 							persona ? h("span", { className: "dfy-role-initial" }, persona.name) : null) : null,
