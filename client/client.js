@@ -4,22 +4,6 @@
  *
  * 布局：工作台、采集画面、记录与学习、设置共用导航和直播安全操作。
  * 主题：dfy-* 类全部引用宿主 --dsw-* 设计变量并带降级值，亮/暗随 body[data-ds-dark-theme] 切换。 */
-// RuiC-2D/LiveTalking 口型参数 → 渲染姿态：闭唇优先，圆唇/横展决定 mouthForm 符号。
-// 参数来自 src/avatar/lip-timeline.ts（纯数据，渲染端只做符号与缩放映射）。
-// 未提供 viseme 时行为与旧版完全一致（音频估计的 level/form 路径不变）。
-function applyVisemePose(viseme, opening, form) {
-	if (!viseme) return { opening, form };
-	const unit = (v) => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
-	const open = unit(viseme.open), closed = unit(viseme.closed);
-	const round = unit(viseme.round), wide = unit(viseme.wide);
-	// 闭唇（b/p/m）压制开口：听觉上音量余量不能把嘴顶开
-	const gated = (1 - closed) * Math.min(1, Math.max(opening, open));
-	if (open === 0 && closed === 0 && round === 0 && wide === 0) return { opening: gated, form };
-	// 圆唇（o/u）为负、横展（e/i）为正，与 Live2D ParamMouthForm 方向一致
-	const shape = Math.max(-1, Math.min(1, wide - round));
-	return { opening: gated, form: open + closed + round + wide > 0 ? shape : form };
-}
-
 // 音频估计口型只提供「形状」维度（圆唇/横展），不提供开合幅度——
 // 开合仍由 createAvatarMotion 的平滑与呼吸余量决定，因此未接入对齐时间线时
 // 行为与旧版逐位一致。对齐时间线（src/avatar/lip-timeline.ts）接入后额外
@@ -46,6 +30,76 @@ function applyVisemePose(viseme, opening, form) {
 		opening: open > 0 ? Math.min(1, Math.max(gated, open * (1 - closed))) : gated,
 		// 圆唇（o/u）为负、横展（e/i）为正，与 Live2D ParamMouthForm 方向一致
 		form: Math.max(-1, Math.min(1, wide - round)),
+	};
+}
+
+// 对话动作状态机（与 src/avatar/dialogue-motion.ts 语义对齐；client 是无构建单文件，不能
+// import TS 模块，故内联一份等价实现，测试同样经 vm 执行本文件覆盖）。
+// 弹幕/输入/思考/首音/尾音事件 → 姿态目标；连发弹幕合并 + 重触发限频；
+// 说话期间动作降权不抢口型；打断/安全回中性并递增版本（渲染端据此丢弃旧插值）。
+function createDialogueMotion(random = Math.random) {
+	const NEUTRAL = { gazeX: 0, gazeY: 0, sway: 0, nod: 0, brow: 0, tilt: 0, blendMs: 320 };
+	const RETRIGGER_MS = 1800, THINK_MS = 900, NOD_MS = 260;
+	let phase = "listening", current = NEUTRAL, version = 0;
+	let lastInteract = -Infinity, lastNod = -Infinity, lastEvent = -Infinity, side = 1;
+	const commit = (targets) => { current = targets; version += 1; return targets; };
+	const apply = (event, at) => {
+		if (!Number.isFinite(at)) return current;
+		const now = at < lastEvent ? lastEvent : at;
+		lastEvent = now;
+		if (event === "danmaku") {
+			// 合并窗口与重触发限频合并为同一间隔判定（700ms 合并窗 < 1800ms 限频）
+			if (phase === "safe" || now - lastInteract < RETRIGGER_MS) return current;
+			lastInteract = now; side = -side;
+			const scale = phase === "speaking" ? 0.35 : 1;
+			return commit({ gazeX: side * 0.34 * scale, gazeY: -0.12 * scale, sway: side * 0.08 * scale,
+				nod: Math.min(current.nod, 0.42 * scale), brow: -0.16 * scale, tilt: side * 0.09 * scale, blendMs: 420 });
+		}
+		if (event === "input-start" || event === "input-pause") {
+			if (phase === "safe" || phase === "speaking" || now - lastNod < RETRIGGER_MS) return current;
+			lastNod = now;
+			return commit({ gazeX: current.gazeX * 0.5, gazeY: 0, sway: 0, nod: 0.72, brow: -0.1, tilt: 0, blendMs: NOD_MS });
+		}
+		if (event === "think") {
+			if (phase === "safe" || phase === "thinking") return current;
+			phase = "thinking";
+			return commit({ gazeX: 0.18, gazeY: -0.2, sway: 0.05, nod: 0, brow: -0.18, tilt: 0.12, blendMs: THINK_MS });
+		}
+		if (event === "speak") {
+			if (phase === "safe" || phase === "speaking") return current;
+			phase = "speaking";
+			return commit({ gazeX: current.gazeX * 0.4, gazeY: 0, sway: current.sway * 0.4, nod: 0, brow: 0.04,
+				tilt: current.tilt * 0.4, blendMs: 280 });
+		}
+		if (event === "tail") {
+			if (phase === "safe") return current;
+			phase = "closing";
+			return commit({ gazeX: current.gazeX * 0.3, gazeY: 0.05, sway: 0, nod: 0.16, brow: 0.1, tilt: 0, blendMs: 520 });
+		}
+		if (event === "interrupt") { phase = "listening"; version += 1; current = NEUTRAL; return current; }
+		if (event === "safe") { phase = "safe"; version += 1; current = NEUTRAL; return current; }
+		if (event === "resume") {
+			if (phase !== "safe") return current;
+			phase = "listening"; lastInteract = lastNod = -Infinity;
+			return commit({ ...NEUTRAL, blendMs: 260 });
+		}
+		return current;
+	};
+	return { apply, interrupt: (at) => apply("interrupt", at ?? lastEvent),
+		get phase() { return phase; }, get targets() { return current; }, get version() { return version; } };
+}
+
+// 对话动作目标 → 渲染端叠加量：安全/减少动态归零，说话期间降权，任何输入有界。
+function blendDialogueTargets(targets, input = {}) {
+	if (input.safe || input.reducedMotion || !targets) return { swing: 0, nod: 0, gaze: 0, brow: 0 };
+	const clamp11 = (n) => Number.isFinite(n) ? Math.max(-1, Math.min(1, n)) : 0;
+	const clamp01 = (n) => Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0;
+	const weight = input.speaking ? 0.45 : 1;
+	return {
+		swing: clamp11(targets.sway + targets.tilt * 0.5) * weight,
+		nod: clamp01(targets.nod) * weight,
+		gaze: clamp11(targets.gazeX) * weight,
+		brow: clamp11(targets.brow) * weight,
 	};
 }
 
@@ -791,12 +845,12 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		return settings;
 	}
 
-	function Live2DScene({ entry, onFail, speaking, listening, emotion, mouthLevel, viseme, onLipSync, onFrame }) {
+	function Live2DScene({ entry, onFail, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, onLipSync, onFrame }) {
 		const host = useRef(null);
 		const modelRef = useRef(null);
 		const speechRef = useRef({ speaking: false, mouthLevel: null });
 		const [ready, setReady] = useState(false);
-		speechRef.current = { speaking, listening, emotion, mouthLevel, viseme };
+		speechRef.current = { speaking, listening, emotion, mouthLevel, viseme, dialogue, safe };
 		useEffect(() => {
 			const controller = new AbortController();
 			const urls = new Set();
@@ -863,20 +917,23 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 							viseme: speech.viseme?.sample?.() ?? speech.viseme ?? visemeFromSample(sample),
 							level: Math.max(0, (sample.level - (calibration.threshold ?? 0.03)) * (calibration.gain ?? 1.1)) });
 						for (const { index, closed, open } of mouths) core.setParameterValueByIndex(index, closed + (open - closed) * pose.opening);
+						// 对话动作叠加：弹幕视线/思考侧头/收尾点头（安全与减少动态时 blend 自身归零）
+						const add = blendDialogueTargets(speech.dialogue?.current?.targets,
+							{ safe: !!speech.safe, reducedMotion: reduced.matches, speaking: !!speech.speaking });
 						set("ParamMouthForm", pose.form * 0.35 + pose.expression);
-						set("ParamBrowLY", pose.expression * 0.25, true);
-						set("ParamBrowRY", pose.expression * 0.25, true);
+						set("ParamBrowLY", pose.expression * 0.25 + add.brow * 0.15, true);
+						set("ParamBrowRY", pose.expression * 0.25 + add.brow * 0.15, true);
 						if (!reduced.matches) {
 							// Multiply the existing eye state to preserve authored expressions and motion.
 							for (const id of ["ParamEyeLOpen", "ParamEyeROpen"]) {
 								const p = face[id];
 								if (p) set(id, core.getParameterValueByIndex(p.index) * (1 - pose.blink));
 							}
-							set("ParamEyeBallX", pose.gaze, true);
-							set("ParamEyeBallY", -pose.nod * 0.08, true);
-							set("ParamAngleX", pose.sway * 2.5, true);
-							set("ParamAngleY", -pose.nod * 4, true);
-							set("ParamAngleZ", pose.sway * 1.5, true);
+							set("ParamEyeBallX", pose.gaze + add.gaze * 0.6, true);
+							set("ParamEyeBallY", -pose.nod * 0.08 - add.nod * 0.05, true);
+							set("ParamAngleX", pose.sway * 2.5 + add.swing * 1.2, true);
+							set("ParamAngleY", -pose.nod * 4 - add.nod * 2, true);
+							set("ParamAngleZ", pose.sway * 1.5 + add.swing * 0.8, true);
 							set("ParamBreath", pose.breath);
 						}
 						if (onFrame && !app.renderer.gl?.isContextLost()) onFrame();
@@ -1076,14 +1133,14 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		return { figure, underlay, x: mouth.x * width, y: neck };
 	}
 
-	function RolePrototype({ persona, speaking, listening, emotion, mouthLevel, viseme, onError, onFrame, onMotionReady }) {
+	function RolePrototype({ persona, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, onError, onFrame, onMotionReady }) {
 		const target = useRef(null);
 		const idleVideo = useRef(null);
 		const [rig, setRig] = useState(null);
 		const [idle, setIdle] = useState(null);
 		const [idleReady, setIdleReady] = useState(false);
 		const speechRef = useRef({});
-		speechRef.current = { speaking, listening, emotion, mouthLevel, viseme };
+		speechRef.current = { speaking, listening, emotion, mouthLevel, viseme, dialogue, safe };
 		const motion = useRef(null);
 		motion.current ??= createAvatarMotion();
 		const id = persona.media?.modelId;
@@ -1221,7 +1278,12 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					const sample = speech.mouthLevel?.sample?.() || { level: speech.mouthLevel?.() || 0 };
 					const pose = motion.current(now, { ...speech, ...sample, reducedMotion: reduced.matches,
 						viseme: speech.viseme?.sample?.() ?? speech.viseme ?? visemeFromSample(sample) });
-					draw(pose.opening, pose.breath, pose.sway, pose.nod, Math.max(pose.blink, Math.max(0, pose.expression) * 0.25), pose.form + pose.expression * 0.4, pose.expression, pose.gaze);
+					// 对话动作叠加：弹幕视线/思考侧头/收尾点头（安全与减少动态时 blend 自身归零）
+					const add = blendDialogueTargets(speech.dialogue?.current?.targets,
+						{ safe: !!speech.safe, reducedMotion: reduced.matches, speaking: !!speech.speaking });
+					draw(pose.opening, pose.breath, pose.sway + add.swing * 0.35, pose.nod + add.nod * 0.7,
+						Math.max(pose.blink, Math.max(0, pose.expression) * 0.25), pose.form + pose.expression * 0.4,
+						pose.expression + add.brow * 0.25, pose.gaze + add.gaze * 0.6);
 					if (!mask && dsh && !reduced.matches) {
 						surface.style.transform = `translate(${pose.sway}%, ${-pose.breath * 0.55 + pose.nod * 0.6}%) rotate(${pose.sway}deg)`;
 					} else surface.style.transform = "";
@@ -2206,7 +2268,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		};
 	}
 
-	function BroadcastPicture({ persona, layout, artwork, visible = true, live, safe, speaking, listening, line, mouthLevel, viseme, turns, onFrame }) {
+	function BroadcastPicture({ persona, layout, artwork, visible = true, live, safe, speaking, listening, line, mouthLevel, viseme, dialogue, turns, onFrame }) {
 		const { roomBackdrop, model, prototype, markPrototypeMotion, setFailure, setPrototypeFailure } = artwork;
 		const emotion = speaking ? avatarReplyEmotion(line) : 0;
 		return h("div", { className: "dfy-broadcast" + (persona?.media?.modelId === "dsh-pet" ? " dfy-room-pet" : " dfy-room-person") + (layout === "landscape" ? " dfy-broadcast-landscape" : ""),
@@ -2217,9 +2279,9 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		!safe && visible ? h(BroadcastOverlay, { live, speaking, persona, turns }) : null,
 		safe ? h("div", { className: "dfy-broadcast-safe" }, "播出已暂停") : visible ?
 			h("div", { className: "dfy-broadcast-art" },
-				model ? h(Live2DScene, { key: model.id, entry: model, speaking, listening, emotion, mouthLevel, viseme, onFrame,
+				model ? h(Live2DScene, { key: model.id, entry: model, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, onFrame,
 					onFail: () => setFailure(model.id), onLipSync: (ok) => { if (!ok && prototype) setFailure(model.id); } }) :
-					prototype ? h(RolePrototype, { key: persona.profileId, persona, speaking, listening, emotion, mouthLevel, viseme, onFrame,
+					prototype ? h(RolePrototype, { key: persona.profileId, persona, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, onFrame,
 						onMotionReady: markPrototypeMotion, onError: () => setPrototypeFailure(persona.profileId) }) :
 						persona?.media?.portraitUrl ? h("img", { src: persona.media.portraitUrl, alt: persona.name }) :
 							persona ? h("span", { className: "dfy-role-initial" }, persona.name) : null) : null,
@@ -2285,7 +2347,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const latest = useRef({ level: 0, form: 0, sampledAt: 0 });
 		const mouthLevel = useCallback(() => Date.now() - latest.current.sampledAt < 160 ? latest.current.level : 0, []);
 		mouthLevel.sample = () => ({ level: mouthLevel(), form: mouthLevel() ? latest.current.form : 0 });
-		const metrics = useRef({ frameAges: [], renderIntervals: [], lastRender: 0, staleFrames: 0 });
+		const frameVersion = useRef(0);
+	const metrics = useRef({ frameAges: [], renderIntervals: [], lastRender: 0, staleFrames: 0 });
 		const onFrame = useCallback(() => {
 			const now = performance.now(), m = metrics.current;
 			if (m.lastRender) { m.renderIntervals.push(now - m.lastRender); if (m.renderIntervals.length > 600) m.renderIntervals.shift(); }
@@ -2300,6 +2363,28 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const live = preview?.liveStatus === "live_confirmed";
 		const artwork = useBroadcastArtwork(persona, catalog);
 		const safe = !preview || frame.safe || frame.profileId !== persona?.profileId;
+		// 对话动作（方案第 4 条）：独立窗口由 SSE 帧边沿（倾听/说话/安全）与互动轮次驱动，
+		// 与工作台共享同一状态机语义；弹幕到达 → 视线移向互动区。
+		const dialogue = useRef(null);
+		dialogue.current ??= createDialogueMotion();
+		const seenTurns = useRef(new Set());
+		useEffect(() => {
+			const fresh = turns.filter((turn) => turn.source === "danmaku" && !seenTurns.current.has(turn.id));
+			if (!fresh.length) return;
+			for (const turn of fresh) seenTurns.current.add(turn.id);
+			dialogue.current.apply("danmaku", performance.now());
+		}, [turns]);
+		const frameEdge = useRef({ speaking: false, listening: false, safe: true });
+		useEffect(() => {
+			const now = performance.now();
+			const edge = frameEdge.current;
+			if (frame.safe) dialogue.current.apply("safe", now);
+			else if (edge.safe) dialogue.current.apply("resume", now);
+			if (frame.speaking && !edge.speaking) dialogue.current.apply("speak", now);
+			else if (!frame.speaking && edge.speaking) dialogue.current.apply("tail", now);
+			else if (frame.listening && !edge.listening && !frame.speaking) dialogue.current.apply("think", now);
+			frameEdge.current = { speaking: !!frame.speaking, listening: !!frame.listening, safe: !!frame.safe };
+		}, [frame.speaking, frame.listening, frame.safe]);
 
 		useEffect(() => {
 			window.webkit?.messageHandlers?.broadcastReady?.postMessage("ready");
@@ -2313,7 +2398,11 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				try {
 					const result = JSON.parse(event.data);
 					received = performance.now();
-					latest.current = result;
+					// 播放版本跳变（切角色/打断/紧急停止）：旧口型立即作废并收口，
+					// 直到工作台发来新版本的新鲜样本；字幕与状态照常跟随。
+					const jumped = frameVersion.current !== 0 && result.version !== undefined && result.version !== frameVersion.current;
+					if (result.version !== undefined) frameVersion.current = result.version;
+					latest.current = jumped ? { ...result, level: 0, form: 0, sampledAt: 0 } : result;
 					setFrame((old) => old.safe === result.safe && old.profileId === result.profileId && old.speaking === result.speaking &&
 						old.listening === result.listening && old.subtitle === result.subtitle ? old : result);
 				} catch { reset(); }
@@ -2368,7 +2457,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 		return h("main", { className: "dfy-root dfy-output-window" },
 			h(BroadcastPicture, { persona, layout: "portrait", artwork, live, safe,
-				speaking: frame.speaking, listening: frame.listening, line: frame.subtitle, mouthLevel, turns, onFrame }));
+				speaking: frame.speaking, listening: frame.listening, line: frame.subtitle, mouthLevel, dialogue, turns, onFrame }));
 	}
 
 	function BroadcastStage({ status, settings, preview, catalog, visible, emergency, controls, publish }) {
@@ -2400,8 +2489,40 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			catalogReady: !!catalog && !!preview, missingMotion: artwork.missingMotion,
 			lastInteractionAt });
 
+		// 对话动作（方案第 4 条）：弹幕到达 → 视线移向互动区；等待回复 → 思考侧头；
+		// 首音 → 说话收敛；尾音 → 收尾点头。连发弹幕由状态机内部合并限频，
+		// 刷屏不会变成不停点头；说话期间动作降权，不与口型抢注意力。
+		const dialogue = useRef(null);
+		dialogue.current ??= createDialogueMotion();
+		const seenTurns = useRef(new Set());
 		useEffect(() => {
-			if (!live) { setTurns([]); return; }
+			const fresh = turns.filter((turn) => turn.source === "danmaku" && !seenTurns.current.has(turn.id));
+			if (!fresh.length) return;
+			for (const turn of fresh) seenTurns.current.add(turn.id);
+			dialogue.current.apply("danmaku", performance.now());
+		}, [turns]);
+		const speechPhase = useRef("idle");
+		const wasSafe = useRef(false);
+		useEffect(() => {
+			const now = performance.now();
+			if (safe) {
+				if (!wasSafe.current) dialogue.current.apply("safe", now);
+				wasSafe.current = true;
+				speechPhase.current = "idle";
+				return;
+			}
+			if (wasSafe.current) { wasSafe.current = false; dialogue.current.apply("resume", now); }
+			const phase = speech.phase;
+			if (phase === speechPhase.current) return;
+			const previous = speechPhase.current;
+			speechPhase.current = phase;
+			if (phase === "pending") dialogue.current.apply("think", now);
+			else if (phase === "speaking") dialogue.current.apply("speak", now);
+			else if (previous === "speaking" || previous === "pending") dialogue.current.apply("tail", now);
+		}, [speech.phase, safe]);
+
+		useEffect(() => {
+			if (!live) { setTurns([]); seenTurns.current.clear(); return; }
 			if (!visible || safe) return;
 			const controller = new AbortController();
 			let timer;
@@ -2429,6 +2550,12 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			unlock.current = null;
 			handlers.current.speech.stop();
 			active.current = null;
+			dialogue.current.interrupt(performance.now());
+			// 暂停播出声音 = 打断：让独立窗口作废在途口型与动作（旧版本上行帧随后被拒收）
+			fetch("/api/dafeiyu/broadcast-window/interrupt", {
+				method: "POST", headers: jsonHeaders, keepalive: true,
+				body: JSON.stringify({ owner: owner.current }),
+			}).catch(() => {});
 			setLine("");
 			setArmed(false);
 		}, []);
@@ -2564,7 +2691,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				h("p", { className: "dfy-stage-health", role: "status" }, health.notice)),
 			h("div", { className: "dfy-inline-stage-frame" },
 				h(BroadcastPicture, { persona, layout, artwork, visible, live, safe, speaking, listening, line,
-					mouthLevel: speech.level, turns, onFrame: health.onFrame })));
+					mouthLevel: speech.level, dialogue, turns, onFrame: health.onFrame })));
 	}
 
 	const REPLY_SOURCE = { local_gpu: "本地模型", local_cpu: "本地模型（CPU）", cloud: "云端模型", fallback: "预设回复" };

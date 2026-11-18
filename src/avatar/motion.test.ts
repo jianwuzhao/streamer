@@ -176,3 +176,55 @@ test('音频估计口型：只给形状维度，开合仍走原平滑，无形�
 	assert.deepEqual(zeroViseme.at(-1), legacy.at(-1))
 })
 
+
+test('对话动作状态机：弹幕视线交替且限频合并，思考/说话/收尾阶段推进，安全与打断回中性', () => {
+	const { createDialogueMotion, blendDialogueTargets } = runInNewContext(
+		client + '\n;({ createDialogueMotion, blendDialogueTargets })',
+		{ window: { __ModuleLoader__: { load() {} } } },
+	)
+	const motion = createDialogueMotion(() => 0.5)
+	// 弹幕：视线移向互动区，且连续两次方向交替
+	const first = motion.apply('danmaku', 1000)
+	assert.ok(first.gazeX !== 0)
+	// 限频窗口内的刷屏被合并（引用同一对象 = 姿态未变）
+	assert.equal(motion.apply('danmaku', 1600), first)
+	assert.equal(motion.apply('danmaku', 2000), first)
+	const second = motion.apply('danmaku', 3000)
+	assert.ok(Math.sign(second.gazeX) !== Math.sign(first.gazeX))
+	// 阶段推进：思考侧头 → 说话收敛 → 收尾点头
+	const thinking = motion.apply('think', 4000)
+	assert.ok(thinking.tilt > 0 && thinking.gazeY < 0)
+	const speaking = motion.apply('speak', 5000)
+	assert.ok(Math.abs(speaking.tilt) < thinking.tilt && speaking.nod === 0)
+	const closing = motion.apply('tail', 6000)
+	assert.ok(closing.nod > 0)
+	// 打断：回到中性并递增版本（vm realm 对象不做原型严格比较，逐字段断言）
+	const before = motion.version
+	const neutral = motion.interrupt(7000)
+	assert.deepEqual({ ...neutral }, { gazeX: 0, gazeY: 0, sway: 0, nod: 0, brow: 0, tilt: 0, blendMs: 320 })
+	assert.ok(motion.version > before)
+	// 安全态拒收一切事件；resume 恢复倾听
+	motion.apply('safe', 8000)
+	assert.equal(motion.apply('danmaku', 9000).gazeX, 0)
+	assert.equal(motion.apply('think', 9100).tilt, 0)
+	motion.apply('resume', 9200)
+	assert.ok(motion.apply('danmaku', 9500).gazeX !== 0)
+})
+
+test('对话动作合成：安全/减少动态归零，说话期间降权，参数有界', () => {
+	const { createDialogueMotion, blendDialogueTargets } = runInNewContext(
+		client + '\n;({ createDialogueMotion, blendDialogueTargets })',
+		{ window: { __ModuleLoader__: { load() {} } } },
+	)
+	const motion = createDialogueMotion(() => 0.5)
+	const targets = motion.apply('danmaku', 1000)
+	const normal = blendDialogueTargets(targets)
+	assert.ok(normal.gaze !== 0 && normal.swing !== 0)
+	const zeros = (input: Record<string, unknown>) => ({ ...blendDialogueTargets(targets, input as any) })
+	assert.deepEqual(zeros({ safe: true }), { swing: 0, nod: 0, gaze: 0, brow: 0 })
+	assert.deepEqual(zeros({ reducedMotion: true }), { swing: 0, nod: 0, gaze: 0, brow: 0 })
+	assert.deepEqual({ ...blendDialogueTargets(null) }, { swing: 0, nod: 0, gaze: 0, brow: 0 })
+	const speaking = blendDialogueTargets(targets, { speaking: true })
+	assert.ok(Math.abs(speaking.gaze) < Math.abs(normal.gaze))
+})
+
