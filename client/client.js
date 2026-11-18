@@ -386,6 +386,22 @@ function createFaceRigRenderer(PIXI, model, image) {
 	const lashes=new PIXI.Graphics();root.addChild(lashes);
 	const clipped=document.createElement('canvas');clipped.width=right-left;clipped.height=bottom-top;
 	const clipContext=clipped.getContext('2d');
+	// PIXI 画布是 rect 大小的整块不透明矩形（网格外边界即 rect 四角）。
+	// 说话/转头时网格形变而 UV 仍指向原图固定位置，rect 边界会露出一条四方形接缝。
+	// 边缘渐隐掩码让边界处平滑淡出到下方原图，而不是硬切或半透明方框。
+	const edgeMask=document.createElement('canvas');edgeMask.width=right-left;edgeMask.height=bottom-top;
+	{
+		const ec=edgeMask.getContext('2d'), w=edgeMask.width, h=edgeMask.height, fade=22;
+		const data=ec.createImageData(w,h);
+		for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+			const d=Math.min(x,y,w-1-x,h-1-y);
+			const t=Math.max(0,Math.min(1,d/fade));
+			const a=t<=0?0:Math.round(255*t*t*(3-2*t));
+			const i=(y*w+x)*4;
+			data.data[i]=255;data.data[i+1]=255;data.data[i+2]=255;data.data[i+3]=a;
+		}
+		ec.putImageData(data,0,0);
+	}
 	let destroyed=false;
 	const polygon=(name)=>model.regions[name].flatMap(i=>[vertices[i*2],vertices[i*2+1]]);
 	return {
@@ -425,10 +441,13 @@ function createFaceRigRenderer(PIXI, model, image) {
 			app.renderer.render(app.stage);
 		},
 		draw(context, silhouette) {
-			if(!silhouette){context.drawImage(app.view,left,top);return;}
 			clipContext.clearRect(0,0,clipped.width,clipped.height);
 			clipContext.globalCompositeOperation='source-over';clipContext.drawImage(app.view,0,0);
-			clipContext.globalCompositeOperation='destination-in';clipContext.drawImage(silhouette,-left,-top);
+			clipContext.globalCompositeOperation='destination-in';
+			if(silhouette) clipContext.drawImage(silhouette,-left,-top);
+			// 边缘渐隐：消除 rect 矩形四方形接缝（形变时尤其明显）
+			clipContext.drawImage(edgeMask,0,0);
+			clipContext.globalCompositeOperation='source-over';
 			context.drawImage(clipped,left,top);
 		},
 		destroy() { if(destroyed)return;destroyed=true;app.destroy(true,{children:true,texture:true,baseTexture:true}); },

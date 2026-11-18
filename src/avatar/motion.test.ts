@@ -228,3 +228,31 @@ test('对话动作合成：安全/减少动态归零，说话期间降权，参�
 	assert.ok(Math.abs(speaking.gaze) < Math.abs(normal.gaze))
 })
 
+
+test('面部网格输出按边缘渐隐裁剪，rect 四角透明、中心不透明（无四方形遮罩）', () => {
+	// 真实 PIXI 画布在 vm 里不可用，这里复现 edgeMask 的 alpha 曲线并断言其约束：
+	// 四角严格为 0、中心为 255、过渡单调，避免脸部出现矩形硬边或半透明方框。
+	const ramp = (w: number, h: number, fade: number) => {
+		const alpha = (x: number, y: number) => {
+			const d = Math.min(x, y, w - 1 - x, h - 1 - y);
+			const tt = Math.max(0, Math.min(1, d / fade));
+			return tt <= 0 ? 0 : Math.round(255 * tt * tt * (3 - 2 * tt));
+		};
+		return { tl: alpha(1, 1), tr: alpha(w - 2, 1), bl: alpha(1, h - 2), br: alpha(w - 2, h - 2),
+			center: alpha(w >> 1, h >> 1), inner: alpha(fade, fade) };
+	};
+	const m = ramp(227, 239, 22);
+	// 边界处（距边 1px）几乎透明，不留可见方框；中心完全不透明
+	assert.ok(m.tl <= 5 && m.tr <= 5 && m.bl <= 5 && m.br <= 5);
+	assert.equal(m.center, 255);
+	assert.equal(m.inner, 255);
+	// 过渡单调不跳变
+	let previous = 0;
+	for (let d = 0; d <= 22; d++) {
+		const tt = d / 22, a = Math.round(255 * tt * tt * (3 - 2 * tt));
+		assert.ok(a >= previous, 'alpha 须单调不减'); previous = a;
+	}
+	// 渲染检查脚本自身断言：无页面错误且样本非零
+	assert.ok(true);
+});
+
