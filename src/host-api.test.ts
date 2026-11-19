@@ -1117,3 +1117,30 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
     rmSync(dataDir, { recursive: true, force: true })
   }
 })
+
+test('host-api：配置导出、只读预览、确认导入、大小限制与开播/预览保护', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-backup-api-'))
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  try {
+    const handler = createRequestHandler(plugin)
+    plugin.settings.saveCloudKey('do-not-export-this-secret')
+    const exported = await call(handler, 'GET', '/api/dafeiyu/settings/export')
+    assert.equal(exported.code, 200)
+    assert.ok(!JSON.stringify(exported.payload).includes('do-not-export'))
+    const backup = exported.payload.backup
+    backup.sections.scene.title = '导入的标题'
+    assert.equal((await call(handler, 'POST', '/api/dafeiyu/settings/import/validate', { backup })).code, 200)
+    assert.notEqual(plugin.settings.getScene().title, '导入的标题')
+    assert.equal((await call(handler, 'POST', '/api/dafeiyu/settings/import', { backup })).code, 400)
+    assert.equal((await call(handler, 'POST', '/api/dafeiyu/settings/import', { backup, confirm: true })).code, 200)
+    assert.equal(plugin.settings.getScene().title, '导入的标题')
+    assert.equal((await call(handler, 'POST', '/api/dafeiyu/settings/import', { backup: {}, confirm: true })).code, 400)
+    assert.equal((await call(handler, 'POST', '/api/dafeiyu/settings/import', { padding: 'x'.repeat(131072) })).code, 413)
+    await configureWizardBasics(handler)
+    await call(handler, 'POST', '/api/dafeiyu/preview/start')
+    assert.equal((await call(handler, 'POST', '/api/dafeiyu/settings/import', { backup, confirm: true })).code, 409)
+    await call(handler, 'POST', '/api/dafeiyu/preview/stop')
+    await call(handler, 'POST', '/api/dafeiyu/live/start', { idempotencyKey: 'backup-live' })
+    assert.equal((await call(handler, 'POST', '/api/dafeiyu/settings/import/validate', { backup })).code, 409)
+  } finally { plugin.dispose(); rmSync(dataDir, { recursive: true, force: true }) }
+})

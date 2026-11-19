@@ -622,6 +622,11 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-muted{color:var(--dsw-alias-label-tertiary,#5b6f6c)}
 .dfy-caption{color:var(--dsw-alias-label-tertiary,#5b6f6c);font-size:11.5px}
 .dfy-actions{display:flex;flex-wrap:wrap;gap:8px}
+.dfy-stack{display:grid;gap:12px;min-width:0}
+.dfy-stack>p,.dfy-stack>dl{margin:0}
+.dfy-stack dl{display:grid;gap:8px}
+.dfy-stack dl>div{display:grid;grid-template-columns:88px minmax(0,1fr);gap:12px}
+.dfy-stack dd{margin:0}
 .dfy-btn{appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:32px;padding:6px 12px;border-radius:8px;border:.5px solid var(--dsw-alias-border-l2,#d8e2e0);background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#17303c);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:background .15s,filter .15s,opacity .15s}
 .dfy-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(15,94,87,.07))}
 .dfy-btn:disabled{opacity:.45;cursor:not-allowed}
@@ -3841,11 +3846,89 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		{ id: "training", label: "训练", View: TrainingTab },
 		{ id: "gov", label: "治理与发布", View: GovernanceTab },
 	];
+	function ConfigBackupStep({ reload }) {
+		const [pending, setPending] = useState(false);
+		const [preview, setPreview] = useState(null);
+		const [note, setNote] = useState("");
+		const fileInput = useRef(null);
+		const exportConfig = async () => {
+			setPending(true); setNote("");
+			try {
+				const r = await api("settings/export");
+				if (!r.ok) throw new Error(r.error);
+				const url = URL.createObjectURL(new Blob([JSON.stringify(r.backup, null, 2) + "\n"], { type: "application/json" }));
+				const link = document.createElement("a");
+				link.href = url; link.download = "dafeiyu-settings-" + r.backup.exportedAt.replace(/[:.]/g, "-") + ".json";
+				document.body.appendChild(link); link.click(); link.remove();
+				setTimeout(() => URL.revokeObjectURL(url), 1000);
+				setNote("配置已导出；文件包含直播间与自定义端点，请妥善保管。");
+			} catch (err) { setNote("导出失败 · " + err.message); }
+			finally { setPending(false); }
+		};
+		const readConfig = async (event) => {
+			const file = event.target.files?.[0]; event.target.value = "";
+			setPreview(null); setNote("");
+			if (!file) return;
+			setPending(true);
+			try {
+				if (file.size > 131000) throw new Error("配置文件不能超过 128 KB");
+				const backup = JSON.parse(await file.text());
+				const r = await api("settings/import/validate", { backup });
+				if (!r.ok) throw new Error(r.issues?.join("；") || r.error);
+				setPreview(r.backup);
+			} catch (err) { setNote("导入失败 · " + err.message); }
+			finally { setPending(false); }
+		};
+		const importConfig = async () => {
+			setPending(true); setNote("");
+			try {
+				const r = await api("settings/import", { backup: preview, confirm: true });
+				if (!r.ok) throw new Error(r.issues?.join("；") || r.error);
+				setPreview(null); await reload();
+				setNote("配置已导入。请重新确认角色使用授权、平台登录和数据用途，并在模型与云端测试连接后启用云端。");
+			} catch (err) { setNote("导入失败 · " + err.message); }
+			finally { setPending(false); }
+		};
+		return h("div", { className: "dfy-stack" },
+			h("p", { className: "dfy-caption" }, "备份角色、直播接入、画面、模型、数据用途和礼物设置。API Key、环境变量、角色素材、对话、观众画像与训练数据不包含在内。"),
+			h("p", { className: "dfy-caption" }, "导入将覆盖以上六项设置；密钥保留在本机。请先下播并退出本地预览。导入后云端关闭，授权与登录声明需重新确认。"),
+			h("div", { className: "dfy-actions" },
+				h(Btn, { onClick: exportConfig, disabled: pending }, "导出配置"),
+				h(Btn, { onClick: () => fileInput.current?.click(), disabled: pending }, "选择配置文件")),
+			h("input", { ref: fileInput, type: "file", accept: ".json,application/json", hidden: true, "aria-label": "选择配置备份 JSON 文件", onChange: readConfig, disabled: pending }),
+			preview ? h("section", { "aria-label": "导入预览", className: "dfy-stack" },
+				h("strong", null, "导入预览 · v" + preview.version),
+				h("p", { className: "dfy-caption" }, "导出时间：" + preview.exportedAt),
+				h("dl", null, Object.entries({ "角色": preview.sections.persona.personaName,
+					"直播间": preview.sections.platform.roomUrl || "未填写", "画面标题": preview.sections.scene.title,
+					"云端模型": preview.sections.cloud.model || "未填写", "云端端点": preview.sections.cloud.baseUrl || "服务商预设",
+					"礼物点名": preview.sections.gifts.nameMention ? "开启" : "关闭" }).map(([key, value]) =>
+					h("div", { key, style: { overflowWrap: "anywhere" } }, h("dt", null, key), h("dd", null, value)))),
+				h("div", { className: "dfy-actions" },
+					h(Btn, { tone: "primary", disabled: pending, onClick: importConfig }, pending ? "处理中…" : "确认覆盖并导入"),
+					h(Btn, { disabled: pending, onClick: () => setPreview(null) }, "取消"))) : null,
+			note ? h("p", { role: "status", className: "dfy-caption" }, note) : null);
+	}
+
+	function CommunityStep() {
+		const link = (url, text) => h("a", { href: url, target: "_blank", rel: "noopener noreferrer" }, text);
+		return h("div", { className: "dfy-stack" },
+			h("p", null, "大肥鱼 · 本地优先的 AI 直播控制台"),
+			h("p", { className: "dfy-caption" }, "提交使用场景、期待的操作与验收方式；在已有需求下补充意见，避免重复提交。赞助自愿，不代表功能交付承诺。"),
+			h("div", { className: "dfy-actions" },
+				link("https://github.com/jianwuzhao/streamer/issues", "需求墙 / Feature wall"),
+				link("https://github.com/jianwuzhao/streamer/issues/new?template=feature_request.yml", "提交需求 / Request a feature"),
+				link("https://github.com/jianwuzhao/streamer#赞助", "赞助 / Sponsor"),
+				link("https://github.com/jianwuzhao/streamer/blob/master/README.en.md", "English guide")));
+	}
+
 	const SETTINGS_PAGES = [
 		{ id: "persona", label: "角色与声音", View: PersonaStep },
 		{ id: "platform", label: "直播接入", View: PlatformStep },
 		{ id: "cloud", label: "模型与云端", View: CloudStep },
 		{ id: "data", label: "数据用途", View: DataUsageStep },
+		{ id: "backup", label: "配置备份", View: ConfigBackupStep },
+		{ id: "community", label: "支持与需求", View: CommunityStep },
 		{ id: "diag", label: "诊断", View: DiagTab },
 	];
 	const PAGES = [

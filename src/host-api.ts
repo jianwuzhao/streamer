@@ -95,6 +95,11 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
         return json(res, 200, { ok: true, status: buildStatus(handle) })
       }
 
+      if (method === 'GET' && path === 'settings/export') {
+        res.setHeader('cache-control', 'no-store')
+        return json(res, 200, { ok: true, backup: handle.settings.exportBackup() })
+      }
+
       if (method === 'GET') {
         if (path === 'interaction') {
           res.setHeader('cache-control', 'no-store')
@@ -109,7 +114,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
         // 预览输入类端点共用 8192 字节请求体上限（chat 文本 + role-speech 的 profileId/文本）
         const boundedPreviewInput = path === 'preview/chat' || path.startsWith('preview/role-speech') ||
           path.startsWith('interaction/') || path.startsWith('broadcast-window/')
-        const body = await readBody(req, boundedPreviewInput ? 8192 : Infinity)
+        const body = await readBody(req, path.startsWith('settings/import') ? 131072 : boundedPreviewInput ? 8192 : Infinity)
         if (body === null) return json(res, 413, { ok: false, error: '请求体过大' })
         let parsed: unknown
         try {
@@ -122,6 +127,28 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
         }
         const args = parsed as Record<string, unknown>
         switch (path) {
+          case 'settings/import/validate':
+          case 'settings/import': {
+            if (!['unconfigured', 'stopped', 'ended', 'recoverable_fault'].includes(session.current)) {
+              return json(res, 409, { ok: false, error: '请先下播并退出本地预览，再导入配置' })
+            }
+            try {
+              if (path === 'settings/import/validate') {
+                return json(res, 200, { ok: true, backup: handle.settings.validateBackup(args.backup) })
+              }
+              if (args.confirm !== true) return json(res, 400, { ok: false, error: '请先预览并确认覆盖当前设置' })
+              handle.settings.importBackup(args.backup)
+              broadcastWindow?.interrupt()
+              conversation.snapshot()
+              return json(res, 200, { ok: true, readiness: handle.settings.readiness() })
+            } catch (err) {
+              if (err instanceof SettingsValidationError) {
+                return json(res, 400, { ok: false, error: err.message, issues: err.issues })
+              }
+              throw err
+            }
+          }
+
           case 'broadcast-window/open':
           case 'broadcast-window/close':
           case 'broadcast-window/interrupt':

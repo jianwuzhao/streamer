@@ -1,16 +1,16 @@
-# docs（§25 文档集占位）
+# 文档 / Documentation
 
-用户说明作为产品交付的一部分随实际界面和版本生成并验收。当前阶段 A 仅建立目录；以下文档随对应阶段补齐：
+[中文说明](../README.md) · [English guide](../README.en.md) · [需求墙 / Feature wall](https://github.com/jianwuzhao/streamer/issues)
 
-| 文档 | 内容 | 计划阶段 |
-| --- | --- | --- |
-| `quick-start.md` | 安装、首次向导、预览、平台确认、开播/下播全流程 | F |
-| `training.md` | 自动学习、一键训练、样本不足、进度、发布与取消恢复 | D/F |
-| `feedback-and-gifts.md` | 反馈纠错、答谢设置、账本含义、退款/异常及官方入口 | B/F |
-| `skills-and-memory.md` | 查看技能和记忆、纠错、版本恢复、观众退出与删除 | B/C |
-| `douyin-policy.md` | 账号模式、AI 标识、内容与打赏边界、规则来源及更新日期 | F |
-| `troubleshooting.md` | 无权限、无声音、模型超时、显存不足、训练失败、断流恢复 | F/G |
-| `privacy-and-data.md` | 数据存放、用途、保留期、云端出域、训练授权、删除与备份 | B |
-| `operations.md` | 技术安装清单、适配契约、迁移、健康检查、日志与验收证据 | G |
-
-配套设计稿：[大肥鱼直播插件用户使用说明（设计稿）](../大肥鱼直播插件_用户使用说明_设计稿.md)
+| 文档 / Document | 内容 / Contents |
+| --- | --- |
+| [快速开始](quick-start.md) | 安装、配置、预览与直播 / Install, configure, preview and broadcast |
+| [实现状态与架构](implementation-status.md) | 模块、治理语义、配置与环境变量 / Modules, governance and environment variables |
+| [配置导入导出](../README.md#配置导入与导出) | 备份范围、恢复步骤与限制 / Backup and restore scope and limits |
+| [English backup guide](../README.en.md#import-and-export-configuration) | Configuration export and restore |
+| [更新记录 / Changelog](../CHANGELOG.md) | 版本变化 / Version history |
+| [参与方式 / Contributing](../CONTRIBUTING.md) | 提需求、报故障与代码贡献 / Requests, bugs and contributions |
+| [发行流程 / Releases](releases/README.md) | 构建、归档与社区目录投稿 / Build, package and catalog submission |
+| [角色模型](face-rig-models.md) | 面部模型与本地预览 / Face models and local preview |
+| [动作验证](avatar-motion-validation.md) | 动作检查记录 / Motion checks |
+| [骨骼主播方案](rigged-avatar-refactor-plan.md) | 三维角色样板与边界 / Rigged-avatar prototype |

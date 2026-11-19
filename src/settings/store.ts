@@ -34,7 +34,7 @@ function httpUrl(message: string) {
   }, message)
 }
 
-export const PersonaSettings = z.object({
+const PersonaSettingsObject = z.object({
   /** 选中的角色档案（参照 eciyuan.qq.com CHARACTERS）；主播信息由该档案驱动展示 */
   profileId: z.preprocess((value) => value === 'lanxu' ? RIGGED_MODEL_ID : value, z.enum(profileIds).default('dsh-pet')),
   /** 播出展示名：默认取所选档案中文名；保留为可覆盖字段以兼容既有设置/回退 */
@@ -57,8 +57,11 @@ export const PersonaSettings = z.object({
   aiLabelText: z.string().trim().min(1, 'AI 标识文案不能为空').max(16, 'AI 标识文案不超过 16 字').default('AI 生成内容'),
   /** §23.2 输出检查最小集：AI 标识不可关闭——只接受 true。 */
   aiLabelVisible: z.literal(true).default(true),
-}).transform((value) => value.profileId === RIGGED_MODEL_ID && value.personaName === '澜序' ?
-  { ...value, personaName: RIGGED_PROFILE_NAME } : value)
+})
+const normalizePersona = (value: z.infer<typeof PersonaSettingsObject>) => value.profileId === RIGGED_MODEL_ID && value.personaName === '澜序' ?
+  { ...value, personaName: RIGGED_PROFILE_NAME } : value
+export const PersonaSettings = PersonaSettingsObject.transform(normalizePersona)
+const PortablePersonaSettings = PersonaSettingsObject.strict().transform(normalizePersona)
 export type PersonaSettingsType = z.infer<typeof PersonaSettings>
 
 export const PlatformSettings = z.object({
@@ -125,6 +128,23 @@ export const GiftsSettings = z.object({
   nameMention: z.boolean().default(true),
 })
 export type GiftsSettingsType = z.infer<typeof GiftsSettings>
+
+/** Portable operator settings only: never serialize secrets, environment or runtime data. */
+const PortableSections = z.object({
+  persona: PortablePersonaSettings,
+  platform: PlatformSettings.strict(),
+  scene: SceneSettings.strict(),
+  cloud: CloudSettings.strict(),
+  dataUsage: DataUsageSettings.strict(),
+  gifts: GiftsSettings.strict(),
+}).strict()
+
+const SettingsBackup = z.object({
+  format: z.literal('dsh-dafeiyu-settings'),
+  version: z.literal(1),
+  exportedAt: z.iso.datetime(),
+  sections: PortableSections,
+}).strict()
 
 export type SettingsSectionKey = 'persona' | 'platform' | 'scene' | 'cloud' | 'cloud_secret' | 'data_usage' | 'gifts'
 
@@ -214,6 +234,51 @@ export class SettingsStore {
       key === 'cloud_secret' ? '云端密钥经界面更新（审计不含密钥值）' : `${key} 更新`,
     )
     return next
+  }
+
+  exportBackup() {
+    return SettingsBackup.parse({
+      format: 'dsh-dafeiyu-settings', version: 1, exportedAt: this.clock(),
+      sections: {
+        persona: this.getPersona(), platform: this.getPlatform(), scene: this.getScene(),
+        cloud: this.getCloud(), dataUsage: this.getDataUsage(), gifts: this.getGifts(),
+      },
+    })
+  }
+
+  validateBackup(input: unknown) {
+    try {
+      const backup = SettingsBackup.parse(input)
+      // Permission declarations belong to this machine/account; a restored endpoint
+      // must be tested before enabling it with an already-stored credential.
+      backup.sections.persona.usageRightConfirmed = false
+      backup.sections.platform.operatorLoginConfirmedAt = null
+      backup.sections.dataUsage.confirmed = false
+      backup.sections.cloud.enabled = false
+      return backup
+    } catch (err) {
+      throw new SettingsValidationError('配置备份校验失败，请使用本插件导出的 v1 JSON 文件', zodIssues(err as z.ZodError))
+    }
+  }
+
+  importBackup(input: unknown) {
+    const backup = this.validateBackup(input)
+    this.db.exec('SAVEPOINT settings_import')
+    try {
+      this.savePersona(backup.sections.persona)
+      this.savePlatform(backup.sections.platform)
+      this.saveScene(backup.sections.scene)
+      this.saveCloud(backup.sections.cloud)
+      this.saveDataUsage(backup.sections.dataUsage)
+      this.saveGifts(backup.sections.gifts)
+      run(this.db, "INSERT INTO audit (action, summary) VALUES ('settings', '导入 v1 配置备份（不含密钥与运行数据）')")
+      this.db.exec('RELEASE settings_import')
+    } catch (err) {
+      this.db.exec('ROLLBACK TO settings_import')
+      this.db.exec('RELEASE settings_import')
+      throw err
+    }
+    return backup
   }
 
   getPersona(): PersonaSettingsType {

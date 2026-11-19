@@ -1,0 +1,27 @@
+name: 需求墙 / Feature request
+description: 提出使用场景与功能建议 / Propose an improvement
+title: '[需求 / Feature] '
+body:
+  - type: textarea
+    id: use_case
+    attributes:
+      label: 使用场景与当前困难 / Use case and obstacle
+      description: 请先搜索已有需求，不要填写密钥或观众个人信息。 / Search existing requests; exclude secrets and personal data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望的操作与结果 / Desired interaction and result
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 如何验收 / Acceptance criteria
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 系统、插件与宿主版本 / OS, plugin and host versions

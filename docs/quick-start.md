@@ -125,3 +125,9 @@ Windows PowerShell 使用 `$env:DAFEIYU_OLLAMA_PROXY = 'http://127.0.0.1:7890'; 
 ## 6. 目标机（实机验收）
 
 安装 Ollama 并运行 `ollama pull qwen3:4b`。训练端运行 `pip install -e training-worker`，再按 [训练组件说明](../training-worker/README.md) 执行 QLoRA 窗口与实机验收（§20.2-D）。
+
+## 配置备份与需求反馈
+
+在「设置 → 配置备份」导出 JSON，迁移时选择文件、检查摘要并确认覆盖。仅恢复六类面板设置，不携带密钥、运行数据库、模型和角色素材。下播并退出预览后才能导入；恢复后重新确认授权、登录、数据用途，并测试云端连接。详见 [备份说明](../README.md#配置导入与导出)。
+
+在「设置 → 支持与需求」打开需求墙、提交功能建议、查看赞助方式或英文说明。不要把 API Key 或原始配置备份提交到公开 Issues。

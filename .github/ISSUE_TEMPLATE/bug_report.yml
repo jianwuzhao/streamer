@@ -1,0 +1,27 @@
+name: 故障反馈 / Bug report
+description: 提交可复现的问题 / Report a reproducible problem
+title: '[故障 / Bug] '
+body:
+  - type: input
+    id: versions
+    attributes:
+      label: 系统、插件与宿主版本 / OS, plugin and host versions
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: 预期与实际结果 / Expected and actual results
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 脱敏诊断 / Sanitized diagnostics
+      description: 不要上传 API Key、完整配置备份、Cookie 或观众信息。 / Do not upload keys, unreviewed backups, cookies or audience data.

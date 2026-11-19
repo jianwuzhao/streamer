@@ -284,3 +284,66 @@ test('settings：云端密钥界面维护——保存/掩码/清除与 env 优�
     rmSync(dataDir, { recursive: true, force: true })
   }
 })
+
+test('配置备份：跨存储恢复六节，不导出密钥；重置授权与云端开关', () => {
+  const source = makeStore(), target = makeStore()
+  try {
+    source.store.savePersona({ personaName: '测试主播', usageRightConfirmed: true })
+    source.store.savePlatform({ roomUrl: 'https://live.douyin.com/123', operatorLoginConfirmedAt: '2026-11-12T10:00:00Z' })
+    source.store.saveScene({ title: '恢复的画面' })
+    source.store.saveCloud({ enabled: true, model: 'custom-model' })
+    source.store.saveDataUsage({ confirmed: true })
+    source.store.saveGifts({ nameMention: false })
+    source.store.saveCloudKey('source-secret-123456')
+    target.store.saveCloudKey('target-secret-654321')
+    const backup = source.store.exportBackup()
+    assert.ok(!JSON.stringify(backup).includes('secret'))
+    const before = target.store.exportBackup()
+    target.store.validateBackup(backup)
+    assert.deepEqual(target.store.exportBackup().sections, before.sections)
+    target.store.importBackup(backup)
+    assert.equal(target.store.getPersona().personaName, '测试主播')
+    assert.equal(target.store.getScene().title, '恢复的画面')
+    assert.equal(target.store.getCloud().model, 'custom-model')
+    assert.equal(target.store.getGifts().nameMention, false)
+    assert.equal(target.store.getPersona().usageRightConfirmed, false)
+    assert.equal(target.store.getPlatform().operatorLoginConfirmedAt, null)
+    assert.equal(target.store.getDataUsage().confirmed, false)
+    assert.equal(target.store.getCloud().enabled, false)
+    assert.equal(target.store.getCloudSecretRaw(), 'target-secret-654321')
+    assert.equal(new SettingsStore(target.db).getScene().title, '恢复的画面')
+  } finally {
+    for (const fixture of [source, target]) { fixture.db.close(); rmSync(fixture.dataDir, { recursive: true, force: true }) }
+  }
+})
+
+test('配置备份：非法版本、秘密、未知字段、缺节、隐私与 AI 标识篡改均拒绝且零写入', () => {
+  const { store, db, dataDir } = makeStore()
+  try {
+    const backup = store.exportBackup()
+    const invalid = [null, [], {}, { ...backup, version: 2 }, { ...backup, cloud_secret: { apiKey: 'hidden' } },
+      { ...backup, sections: { ...backup.sections, scene: { ...backup.sections.scene, title: '' } } },
+      { ...backup, sections: { ...backup.sections, persona: { ...backup.sections.persona, aiLabelVisible: false } } },
+      { ...backup, sections: { ...backup.sections, cloud: { ...backup.sections.cloud, apiKey: 'hidden' } } },
+      { ...backup, sections: { ...backup.sections, dataUsage: { ...backup.sections.dataUsage, profileTrainingDenied: false } } },
+      { ...backup, sections: { persona: backup.sections.persona } }]
+    for (const input of invalid) assert.throws(() => store.importBackup(input), SettingsValidationError)
+    assert.equal((db.prepare('SELECT count(*) AS n FROM operator_settings').get() as { n: number }).n, 0)
+    assert.equal((db.prepare('SELECT count(*) AS n FROM audit').get() as { n: number }).n, 0)
+  } finally { db.close(); rmSync(dataDir, { recursive: true, force: true }) }
+})
+
+test('配置备份：写入中途失败时回滚设置与审计', () => {
+  const { store, db, dataDir } = makeStore()
+  try {
+    store.saveScene({ title: '当前设置' })
+    const before = db.prepare('SELECT * FROM operator_settings').all()
+    const audit = db.prepare('SELECT * FROM audit').all()
+    const backup = store.exportBackup()
+    backup.sections.scene.title = '即将回滚'
+    db.exec("CREATE TRIGGER fail_import BEFORE INSERT ON operator_settings WHEN NEW.key = 'gifts' BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+    assert.throws(() => store.importBackup(backup), /test failure/)
+    assert.deepEqual(db.prepare('SELECT * FROM operator_settings').all(), before)
+    assert.deepEqual(db.prepare('SELECT * FROM audit').all(), audit)
+  } finally { db.close(); rmSync(dataDir, { recursive: true, force: true }) }
+})
