@@ -145,11 +145,37 @@ export class AvatarAssetStore {
   private readonly modelsDir: string
   private readonly vendorDir: string
   private readonly dshPetDir?: string | undefined
+  private readonly rigged?: { readonly directory: string; readonly runtime: string } | undefined
 
-  constructor(opts: { modelsDir: string; vendorDir: string; dshPetDir?: string }) {
+  constructor(opts: { modelsDir: string; vendorDir: string; dshPetDir?: string; rigged?: { directory: string; runtime: string } }) {
     this.modelsDir = opts.modelsDir
     this.vendorDir = opts.vendorDir
     this.dshPetDir = opts.dshPetDir
+    this.rigged = opts.rigged
+  }
+
+  hasRiggedAvatar(): boolean {
+    if (!this.rigged || !existsSync(this.rigged.runtime) || !existsSync(join(this.rigged.directory, 'xiaxia.glb'))) return false
+    try {
+      const image = this.resolveAsset('eciyuan-xiaxia', 'portrait-frame.png', MODEL_FILE_EXTENSIONS)
+      // UVs are authored against this exact source frame.
+      return hash('sha256', readFileSync(image.path)) === 'e37c84b875448ba1200c5357c7508d1a4610985d23ca40ae6582bf4e81c0a59d'
+    } catch { return false }
+  }
+
+  readRiggedAsset(asset: string): { body: Buffer; type: string } {
+    if (asset === 'poster') {
+      const image = this.resolveAsset('eciyuan-xiaxia', 'portrait-frame.png', MODEL_FILE_EXTENSIONS)
+      return { body: readFileSync(image.path), type: 'image/png' }
+    }
+    const paths = this.rigged && {
+      runtime: [this.rigged.runtime, 'text/javascript; charset=utf-8'],
+      model: [join(this.rigged.directory, 'xiaxia.glb'), 'model/gltf-binary'],
+      background: [join(this.rigged.directory, 'xiaxia-background.jpg'), 'image/jpeg'],
+    }
+    const file = asset === 'runtime' || asset === 'model' || asset === 'background' ? paths?.[asset] : undefined
+    if (!file?.[0] || !file[1] || !existsSync(file[0])) throw new AvatarAssetError('三维角色资源不可用', 404)
+    return { body: readFileSync(file[0]), type: file[1] }
   }
 
   /** vendor 文件是否齐备（缺件时客户端自动回退 CSS 桌宠） */

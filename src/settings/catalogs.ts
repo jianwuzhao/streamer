@@ -33,6 +33,9 @@ export interface ProfileMedia {
   readonly modelId: string
 }
 
+export const RIGGED_MODEL_ID = 'xiaxia-3d'
+export const RIGGED_PROFILE_NAME = '夏夏 · 重构版'
+
 /**
  * 角色档案（参照腾讯《鹅次元》官网 eciyuan.qq.com 的 CHARACTERS 角色介绍：
  * 中文名 / 英文名 / # 一句人设标签 / 年龄·身高·星座·性格 MBTI 信息列表）。
@@ -161,6 +164,22 @@ export const BUILTIN_PROFILES: readonly ProfileOption[] = [
     theme: { bg: '#3a1420', primary: '#8a2b45', accent: '#ffb3c6' },
     media: eciyuanMedia('beila', 'eciyuan-beila'),
     source: 'eciyuan',
+    style: 'classic',
+  },
+  {
+    id: RIGGED_MODEL_ID,
+    name: RIGGED_PROFILE_NAME,
+    enName: 'XIAXIA 3D',
+    tagline: '新传专业大二学生 · 三维骨骼形象',
+    age: '19 岁',
+    height: '162cm',
+    zodiac: '白羊座',
+    mbti: 'ENFP',
+    bio: '元气满满的校园搭子，懂梗、爱聊天，倾听时会点头，回复时会用手势配合。',
+    speakingStyle: '活泼热情，像同学聊天一样自然接梗，多用轻松的口语。',
+    theme: { bg: '#3a2440', primary: '#7b4b8a', accent: '#ffd6ec' },
+    media: { ...eciyuanMedia('xiaxia', RIGGED_MODEL_ID), portraitUrl: '/api/dafeiyu/avatar/rigged?id=xiaxia-3d&asset=poster' },
+    source: 'plugin',
     style: 'classic',
   },
 ]

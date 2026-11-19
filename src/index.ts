@@ -172,6 +172,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   const avatar = new AvatarAssetStore({
     modelsDir: join(dataDir, 'models'),
     dshPetDir: join(packageDir(), 'client', 'assets', 'dsh-pet'),
+    rigged: { directory: join(packageDir(), 'client', 'assets', 'rigged-avatar'), runtime: join(packageDir(), 'lib', 'rigged-avatar.iife.js') },
     vendorDir: process.env.DAFEIYU_VENDOR_DIR ?? join(packageDir(), 'client', 'vendor'),
   })
   const configuredGates = getFeatureGates(config)

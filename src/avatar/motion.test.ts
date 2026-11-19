@@ -22,6 +22,19 @@ test('实际 PCM 播放位置驱动开口：静音、短音节和尾部边界，
   assert.equal(avatarPcmFeatures(data, 0, 0).level, 0)
 })
 
+test('同音量的气声和擦音开口更小，重音的开口仍有大小变化', () => {
+  for (const rate of [16000, 24000, 48000]) {
+    const tone = (frequency: number, amplitude: number) => Float32Array.from({ length: rate / 4 },
+      (_, i) => amplitude * Math.sin(2 * Math.PI * i * frequency / rate))
+    const vowel = avatarPcmFeatures(tone(180, .16), rate, .125)
+    const strong = avatarPcmFeatures(tone(180, .28), rate, .125)
+    const hiss = avatarPcmFeatures(tone(4800, .16), rate, .125)
+    assert.ok(hiss.level < vowel.level * .5)
+    assert.ok(strong.level > vowel.level && strong.level < .98)
+    assert.ok(vowel.form < 0 && hiss.form > 0)
+  }
+})
+
 test('优先输出设备时钟，时钟缺失或设备切换使用显式延迟回退，暂停时不驱动', () => {
   const context = { state: 'running', currentTime: 4, outputLatency: 0.08,
     getOutputTimestamp: () => ({ contextTime: 3.9, performanceTime: 1000 }) }
@@ -76,8 +89,23 @@ test('表情强度有界且严肃语境优先，未播出回复与原始输入�
 const hookWindow: any = { __ModuleLoader__: { load({ factory }: any) {
   hookWindow.client = factory(() => ({ Component: class {} }))
 } } }
-const hookMath = runInNewContext(client.replace('\n\t\tapply, inject:', '\n\t\twaitForRoleOutput,\n\t\tapply, inject:') + '\n;window.client', {
+const hookMath = runInNewContext(client.replace('\n\t\tapply, inject:', '\n\t\twaitForRoleOutput, roleCaptionProgress,\n\t\tapply, inject:') + '\n;window.client', {
   window: hookWindow, performance, setTimeout, clearTimeout,
+})
+
+test('字幕按实际播放时钟推进，流式缓冲间隙暂停，已有总时长时按完整音频计算', () => {
+  const { roleCaptionProgress } = hookMath
+  const playing = { captionEstimate: 10, captionDuration: 4, captionComplete: false,
+    timeline: [{ start: 1, end: 3, offset: 0 }, { start: 5, end: 7, offset: 2 }],
+    context: { state: 'running', currentTime: 3 } }
+  assert.equal(roleCaptionProgress(playing), .2)
+  playing.context.currentTime = 4.5
+  assert.equal(roleCaptionProgress(playing), .2)
+  playing.timeline.shift()
+  playing.captionComplete = true
+  playing.context.currentTime = 6
+  assert.equal(roleCaptionProgress(playing), .75)
+  assert.equal(roleCaptionProgress({ audio: { duration: 4, currentTime: 1 } }), .25)
 })
 
 test('语音源结束后等待输出设备尾音，不提前清空口型；取消立即释放等待', async () => {
@@ -162,7 +190,7 @@ test('音频估计口型：只给形状维度，开合仍走原平滑，无形�
 		for (let time = 0; time < 640; time += 16) poses.push(motion(time, { speaking: true, ...input }))
 		return poses
 	}
-	// visemeFromSample 的等价输入：form < 0 → 圆唇；form > 0 → 横展
+	// 显式形状输入：圆唇为负，横展为正
 	const roundOnly = drive(createAvatarMotion(() => 0.5), { level: 0.7, form: 0, viseme: { round: 0.9 } })
 	const wideOnly = drive(createAvatarMotion(() => 0.5), { level: 0.7, form: 0, viseme: { wide: 0.9 } })
 	const roundForm = roundOnly.at(-1).form
@@ -209,6 +237,53 @@ test('对话动作状态机：弹幕视线交替且限频合并，思考/说话/
 	assert.equal(motion.apply('think', 9100).tilt, 0)
 	motion.apply('resume', 9200)
 	assert.ok(motion.apply('danmaku', 9500).gazeX !== 0)
+})
+
+test('对话动作渐进到目标，收尾点头回正，打断立即清掉旧姿态', () => {
+	const { createDialogueMotion, createDialogueBlend } = runInNewContext(
+		client + '\n;({ createDialogueMotion, createDialogueBlend })',
+		{ window: { __ModuleLoader__: { load() {} } } },
+	)
+	const motion = createDialogueMotion()
+	const blend = createDialogueBlend()
+	motion.apply('think', 0)
+	assert.equal(blend(0, motion, {}).swing, 0)
+	const middle = blend(450, motion, {}).swing
+	assert.ok(middle > 0 && middle < blend(900, motion, {}).swing)
+	motion.apply('tail', 1000)
+	assert.equal(blend(1000, motion, {}).nod, 0)
+	assert.ok(blend(1260, motion, {}).nod > 0.15)
+	assert.ok(blend(1520, motion, {}).nod < 1e-6)
+	motion.apply('think', 1600)
+	blend(1600, motion, {})
+	assert.ok(blend(2050, motion, {}).swing > 0)
+	motion.interrupt(2060)
+	assert.equal(blend(2060, motion, {}).swing, 0)
+})
+
+test('肢体跟随倾听和回复，句首手势交替且安全与减少动态时归零', () => {
+	const { createBodyMotion } = runInNewContext(client + '\n;({ createBodyMotion })',
+		{ window: { __ModuleLoader__: { load() {} } } })
+	const motion = createBodyMotion()
+	const pose = { breath: 0, sway: 0, nod: 0, mode: 'listening' }
+	const dialogue = { swing: 0, nod: 0 }
+	const run = (from: number, until: number) => {
+		for (let now = from; now < until; now += 16) motion(now, pose, dialogue, false)
+		return motion(until, pose, dialogue, false)
+	}
+	const listening = run(0, 800)
+	assert.ok(listening.lean > .3 && listening.lift > .2)
+	pose.mode = 'speaking'
+	const first = run(816, 1500)
+	assert.ok(first.left > .6 && first.right < first.left)
+	pose.mode = 'idle'
+	assert.ok(run(1516, 4000).left < .001)
+	pose.mode = 'speaking'
+	const next = run(4016, 4680)
+	assert.ok(next.right > .6 && next.left < next.right)
+	assert.deepEqual({ ...motion(4700, pose, dialogue, true) }, { lean: 0, lift: 0, left: 0, right: 0 })
+	pose.mode = 'safe'
+	assert.deepEqual({ ...motion(4720, pose, dialogue, false) }, { lean: 0, lift: 0, left: 0, right: 0 })
 })
 
 test('对话动作合成：安全/减少动态归零，说话期间降权，参数有界', () => {

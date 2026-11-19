@@ -12,6 +12,7 @@ import type { DafeiyuPluginHandle } from '../index.ts'
 const LOCAL_HOST = '127.0.0.1'
 const COOKIE = 'dafeiyu_stage'
 const FRAME_TIMEOUT_MS = 1_500
+const SPEECH_SAMPLE_TIMEOUT_MS = 160
 const EMPTY_SPEECH = { speaking: false, subtitle: '', level: 0, form: 0 }
 const PAGE = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -26,13 +27,11 @@ interface WindowSession {
   viewers: Set<ServerResponse>
   started?: Promise<void>
   child?: ChildProcessWithoutNullStreams
-  frame?: { receivedAt: number; profileId: string; speaking: boolean; subtitle: string; level: number; safe: boolean; form: number; sampledAt: number; listening: boolean; version: number }
+  frame?: { receivedAt: number; profileId: string; speaking: boolean; subtitle: string; captionProgress: number | undefined; level: number; safe: boolean; form: number; sampledAt: number; listening: boolean; version: number }
   /** 本次播放版本：切角色/打断/紧急停止时递增，旧版本帧一律拒收 */
   playbackVersion: number
   /** 版本号变更依据：上次生效的角色与安全态（用于自动递增） */
   versionKey: string
-  /** 被拒收的过期帧数（诊断用） */
-  staleFrames: number
 }
 
 /** The native viewer has a private loopback origin with read-only access to stage data and assets. */
@@ -60,7 +59,7 @@ export class BroadcastWindow {
           throw new Error('另一个工作台已打开播出窗口，请先关闭该窗口')
         }
         existing.owner = owner
-        delete existing.frame
+        this.interrupt(owner)
       }
       existing.child?.stdin.write('show\n')
       return
@@ -74,7 +73,7 @@ export class BroadcastWindow {
     })
     const session: WindowSession = {
       owner, server, openedAt: Date.now(), token: randomBytes(32).toString('hex'), viewers: new Set(),
-      playbackVersion: 1, versionKey: '', staleFrames: 0,
+      playbackVersion: 1, versionKey: this.stageKey(),
     }
     this.session = session
     server.on('error', () => this.dispose(session))
@@ -90,33 +89,26 @@ export class BroadcastWindow {
   publish(owner: string, input: Record<string, unknown>): boolean {
     const session = this.session
     if (!session || session.owner !== owner) return false
+    this.syncStage(session)
+    if (input.playbackVersion !== session.playbackVersion) return false
+    const profileId = this.handle.settings.getPersonaProfile().id
+    if (input.profileId !== profileId) return false
+    const now = Date.now()
+    const sampledAt = input.sampledAt
+    if (typeof sampledAt !== 'number' || !Number.isFinite(sampledAt) || sampledAt > now ||
+        now - sampledAt >= FRAME_TIMEOUT_MS || (session.frame && sampledAt < session.frame.sampledAt)) return false
     const level = typeof input.level === 'number' && Number.isFinite(input.level) ? input.level : 0
-    const profileId = typeof input.profileId === 'string' ? input.profileId : ''
-    const safe = input.safe === true
-    // 切角色（工作台已确认角色与帧角色不符）或进出安全画面都意味着「新的播放」：
-    // 递增版本，让渲染端丢弃上一段在途的口型与动作，避免迟到帧恢复上一句。
-    const versionKey = `${profileId}|${safe ? 'safe' : 'live'}`
-    if (session.versionKey !== '' && session.versionKey !== versionKey) {
-      session.playbackVersion += 1
-    }
-    session.versionKey = versionKey
-    // 工作台可以显式声明它所属的播放版本；声明了旧版本的帧（迟到上传）直接拒收。
-    const declared = typeof input.playbackVersion === 'number' && Number.isFinite(input.playbackVersion) ?
-      input.playbackVersion : undefined
-    if (declared !== undefined && declared < session.playbackVersion) {
-      session.staleFrames += 1
-      return false
-    }
     session.frame = {
-      receivedAt: Date.now(),
+      receivedAt: now,
       profileId,
       speaking: input.speaking === true,
       subtitle: typeof input.subtitle === 'string' ? input.subtitle.slice(0, 500) : '',
+      captionProgress: typeof input.captionProgress === 'number' && Number.isFinite(input.captionProgress) ?
+        Math.max(0, Math.min(1, input.captionProgress)) : undefined,
       level: Math.max(0, Math.min(1, level)),
-      safe,
+      safe: input.safe === true || this.handle.live.session.current === 'safe_scene',
       form: typeof input.form === 'number' && Number.isFinite(input.form) ? Math.max(-1, Math.min(1, input.form)) : 0,
-      sampledAt: typeof input.sampledAt === 'number' && Number.isFinite(input.sampledAt) &&
-        Math.abs(Date.now() - input.sampledAt) < 2_000 ? input.sampledAt : Date.now(),
+      sampledAt,
       listening: input.listening === true,
       version: session.playbackVersion,
     }
@@ -127,21 +119,36 @@ export class BroadcastWindow {
   /** 当前播放版本（工作台据此对齐自己的口型/动作代次）。 */
   playbackVersion(owner: string): number | null {
     const session = this.session
-    return !session || session.owner !== owner ? null : session.playbackVersion
+    if (!session || session.owner !== owner) return null
+    this.syncStage(session)
+    return session.playbackVersion
   }
 
   /**
    * 打断：作废当前帧并递增播放版本。
    * 已推送的口型/字幕立即清空，在途的旧帧与旧版本上传随后都会被拒收。
    */
-  interrupt(owner: string): number | null {
+  interrupt(owner = this.session?.owner): number | null {
     const session = this.session
     if (!session || session.owner !== owner) return null
     session.playbackVersion += 1
-    session.versionKey = ''
+    session.versionKey = this.stageKey()
     delete session.frame
     for (const viewer of session.viewers) this.pushFrame(session, viewer)
     return session.playbackVersion
+  }
+
+  private stageKey(): string {
+    const profile = this.handle.settings.getPersonaProfile().id
+    return `${profile}|${this.handle.live.session.current === 'safe_scene'}`
+  }
+
+  private syncStage(session: WindowSession): void {
+    const key = this.stageKey()
+    if (session.versionKey === key) return
+    session.versionKey = key
+    session.playbackVersion += 1
+    delete session.frame
   }
 
   close(owner: string): void {
@@ -205,15 +212,16 @@ export class BroadcastWindow {
   }
 
   private frame(session: WindowSession) {
+    this.syncStage(session)
     const frame = session.frame
     const fresh = frame && Date.now() - frame.receivedAt < FRAME_TIMEOUT_MS ? frame : undefined
     const profileId = this.handle.settings.getPersonaProfile().id
     const safe = this.handle.live.session.current === 'safe_scene' || !fresh || fresh.safe || fresh.profileId !== profileId
     // Heartbeat liveness is separate from speech freshness. Never hold a stale open mouth.
-    const current = fresh && Date.now() - fresh.sampledAt < 160
+    const current = fresh && Date.now() - fresh.sampledAt < SPEECH_SAMPLE_TIMEOUT_MS
     const speech = !safe && current && fresh.speaking ?
-      { speaking: true, subtitle: fresh.subtitle, level: fresh.level, form: fresh.form } : EMPTY_SPEECH
-    return { ...speech, safe, profileId, listening: !safe && !!fresh?.listening,
+      { speaking: true, subtitle: fresh.subtitle, captionProgress: fresh.captionProgress, level: fresh.level, form: fresh.form } : EMPTY_SPEECH
+    return { ...speech, safe, profileId, listening: !safe && !speech.speaking && !!fresh && (fresh.listening || fresh.speaking),
       sampledAt: fresh?.sampledAt ?? 0, sentAt: Date.now(), version: session.playbackVersion }
   }
 

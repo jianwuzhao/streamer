@@ -138,9 +138,9 @@ test('host-api：settings 读写/目录/AI 标识不可关闭（400 + issues）'
     assert.equal(got.payload.ok, true)
     assert.deepEqual(got.payload.settings.catalogs.avatars.map((avatar: { id: string }) => avatar.id), ['dsh-pet'])
     assert.ok(got.payload.settings.catalogs.voices.length >= 4)
-    // 角色档案（主播信息）目录：鹅次元角色 + dsh-pet 插件中档案
-    assert.equal(got.payload.settings.catalogs.profiles.length, 5)
+    assert.equal(got.payload.settings.catalogs.profiles.length, 6)
     assert.ok(got.payload.settings.catalogs.profiles.some((p: { id: string; source: string }) => p.id === 'dsh-pet' && p.source === 'plugin'))
+    assert.ok(got.payload.settings.catalogs.profiles.some((p: { id: string; name: string }) => p.id === 'xiaxia-3d' && p.name === '夏夏 · 重构版'))
     assert.equal(got.payload.settings.profile.id, 'dsh-pet')
     assert.equal(got.payload.settings.profile.name, 'DSH 蓝发女仆')
     assert.equal(got.payload.settings.persona.personaName, 'DSH 蓝发女仆')
@@ -427,6 +427,60 @@ test('host-api：Live2D 桌宠资产路由（catalog/vendor/model-file 与安全
     assert.equal(escape.code, 400)
   } finally {
     delete process.env.DAFEIYU_VENDOR_DIR
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('host-api：夏夏重构版资源以固定白名单提供，GLB 含连续手臂蒙皮和眨眼形状目标', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-rigged-api-'))
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  try {
+    const handler = createRequestHandler(plugin)
+    const path = '/api/dafeiyu/avatar/rigged'
+    const response = makeRes()
+    await handler(makeReq('GET', path + '?id=xiaxia-3d&asset=model'), response, async () => {})
+    assert.equal(response.statusCode, 200)
+    assert.equal(response.headers['content-type'], 'model/gltf-binary')
+    const glb = Buffer.from(response.body)
+    assert.equal(glb.toString('ascii', 0, 4), 'glTF')
+    const model = JSON.parse(glb.toString('utf8', 20, 20 + glb.readUInt32LE(12)))
+    assert.ok(model.skins.some((skin: { joints: number[] }) => skin.joints.length >= 25))
+    const targets = (name: string) => {
+      const node = model.nodes.find((entry: { name?: string }) => entry.name === name)
+      return model.meshes[node?.mesh]?.extras?.targetNames
+    }
+    assert.deepEqual(targets('PhotoFace'), ['blinkLeft', 'blinkRight'])
+    for (const side of ['L', 'R']) {
+      for (const name of ['PhotoSleeve' + side, 'Hand' + side]) {
+        const part = model.nodes.find((node: { name?: string }) => node.name === name)
+        assert.equal(typeof part?.skin, 'number')
+        const [surface] = model.meshes[part.mesh].primitives
+        assert.equal(typeof surface.indices, 'number')
+        assert.equal(typeof surface.attributes.JOINTS_0, 'number')
+        if (name.startsWith('Hand')) {
+          assert.equal(surface.attributes.TEXCOORD_0, undefined)
+          assert.equal(surface.targets, undefined)
+        } else {
+          assert.equal(typeof surface.attributes.TEXCOORD_0, 'number')
+          assert.deepEqual(targets(name), ['cuffFit'])
+          assert.equal(typeof surface.targets[0].POSITION, 'number')
+        }
+      }
+      const nodes = model.nodes as { name?: string; children?: number[] }[]
+      const wrist = nodes.find((node) => node.name === 'Wrist' + side)
+      assert.ok(wrist)
+      assert.equal(wrist.children?.filter((index) => nodes[index]?.name?.startsWith('metacarpal')).length, 4)
+      for (let digit = 0; digit < 5; digit++) {
+        const finger = nodes.find((node) => node.name === 'Finger' + side + digit)
+        const middle = finger?.children?.map((index) => nodes[index]).find((node) => node?.name === 'Tip' + side + digit)
+        assert.ok(middle?.children?.some((index) => nodes[index]?.name === 'Distal' + side + digit))
+      }
+    }
+    for (const query of ['?id=xiaxia-3d&asset=../index.js', '?id=eciyuan-xiaxia&asset=model']) {
+      assert.equal((await call(handler, 'GET', path + query)).code, 404)
+    }
+  } finally {
+    plugin.dispose()
     rmSync(dataDir, { recursive: true, force: true })
   }
 })

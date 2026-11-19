@@ -4,17 +4,6 @@
  *
  * 布局：工作台、采集画面、记录与学习、设置共用导航和直播安全操作。
  * 主题：dfy-* 类全部引用宿主 --dsw-* 设计变量并带降级值，亮/暗随 body[data-ds-dark-theme] 切换。 */
-// 音频估计口型只提供「形状」维度（圆唇/横展），不提供开合幅度——
-// 开合仍由 createAvatarMotion 的平滑与呼吸余量决定，因此未接入对齐时间线时
-// 行为与旧版逐位一致。对齐时间线（src/avatar/lip-timeline.ts）接入后额外
-// 提供 open/closed/teeth，那时才真正区分音素。
-function visemeFromSample(sample) {
-	if (!sample || !Number.isFinite(sample.form)) return null;
-	const form = Math.max(-1, Math.min(1, sample.form));
-	if (form === 0) return null;
-	return form < 0 ? { round: -form } : { wide: form };
-}
-
 // RuiC-2D/LiveTalking 口型参数 → 渲染姿态：闭唇优先，圆唇/横展决定 mouthForm 符号。
 // 参数来自 src/avatar/lip-timeline.ts（纯数据，渲染端只做符号与缩放映射）。
 function applyVisemePose(viseme, opening, form) {
@@ -40,7 +29,7 @@ function applyVisemePose(viseme, opening, form) {
 function createDialogueMotion(random = Math.random) {
 	const NEUTRAL = { gazeX: 0, gazeY: 0, sway: 0, nod: 0, brow: 0, tilt: 0, blendMs: 320 };
 	const RETRIGGER_MS = 1800, THINK_MS = 900, NOD_MS = 260;
-	let phase = "listening", current = NEUTRAL, version = 0;
+	let phase = "listening", current = NEUTRAL, version = 0, reset = 0;
 	let lastInteract = -Infinity, lastNod = -Infinity, lastEvent = -Infinity, side = 1;
 	const commit = (targets) => { current = targets; version += 1; return targets; };
 	const apply = (event, at) => {
@@ -76,8 +65,11 @@ function createDialogueMotion(random = Math.random) {
 			phase = "closing";
 			return commit({ gazeX: current.gazeX * 0.3, gazeY: 0.05, sway: 0, nod: 0.16, brow: 0.1, tilt: 0, blendMs: 520 });
 		}
-		if (event === "interrupt") { phase = "listening"; version += 1; current = NEUTRAL; return current; }
-		if (event === "safe") { phase = "safe"; version += 1; current = NEUTRAL; return current; }
+		if (event === "interrupt" || event === "safe") {
+			phase = event === "safe" ? "safe" : "listening";
+			reset += 1;
+			return commit(NEUTRAL);
+		}
 		if (event === "resume") {
 			if (phase !== "safe") return current;
 			phase = "listening"; lastInteract = lastNod = -Infinity;
@@ -86,7 +78,7 @@ function createDialogueMotion(random = Math.random) {
 		return current;
 	};
 	return { apply, interrupt: (at) => apply("interrupt", at ?? lastEvent),
-		get phase() { return phase; }, get targets() { return current; }, get version() { return version; } };
+		get phase() { return phase; }, get targets() { return current; }, get version() { return version; }, get reset() { return reset; } };
 }
 
 // 对话动作目标 → 渲染端叠加量：安全/减少动态归零，说话期间降权，任何输入有界。
@@ -100,6 +92,72 @@ function blendDialogueTargets(targets, input = {}) {
 		nod: clamp01(targets.nod) * weight,
 		gaze: clamp11(targets.gazeX) * weight,
 		brow: clamp11(targets.brow) * weight,
+	};
+}
+
+function createDialogueBlend() {
+	const neutral = blendDialogueTargets();
+	let current = neutral, from = neutral, target, started = 0, reset;
+	return (now, motion, input) => {
+		if (!motion || input.safe || input.reducedMotion) {
+			current = neutral;
+			target = null;
+			return current;
+		}
+		if (reset !== motion.reset) { current = neutral; target = null; reset = motion.reset; }
+		if (target !== motion.targets) {
+			target = motion.targets;
+			from = current;
+			started = now;
+		}
+		const goal = blendDialogueTargets(target, input);
+		const t = Math.max(0, Math.min(1, (now - started) / target.blendMs));
+		const ease = t * t * (3 - 2 * t);
+		const tail = motion.phase === "closing" ? Math.sin(Math.PI * t) ** 2 : ease;
+		current = Object.fromEntries(Object.keys(neutral).map((key) =>
+			[key, from[key] * (1 - ease) + goal[key] * tail]));
+		return current;
+	};
+}
+
+function createBodyMotion() {
+	const rest = { lean: 0, lift: 0, left: 0, right: 0 };
+	let body = rest, previous, mode = "idle", started = 0, cueAt = -Infinity, side = 1;
+	const pulse = (age, duration) => age > 0 && age < duration ? Math.sin(Math.PI * age / duration) ** 2 : 0;
+	return (now, pose, dialogue, reduced) => {
+		const dt = Math.min(90, Math.max(0, now - (previous ?? now - 16)));
+		previous = now;
+		if (reduced || pose.mode === "safe") {
+			body = rest;
+			mode = pose.mode;
+			started = -Infinity;
+			cueAt = -Infinity;
+			return body;
+		}
+		if (mode !== pose.mode) {
+			mode = pose.mode;
+			started = now;
+			if (mode === "speaking" && now - cueAt > 1600) {
+				cueAt = now;
+				side *= -1;
+			}
+		}
+		const listening = mode === "listening";
+		const speaking = mode === "speaking";
+		const cue = speaking ? pulse(now - cueAt, 1250) : 0;
+		const attention = listening ? pulse(now - started, 1350) : 0;
+		const emphasis = pose.nod + dialogue.nod * .5;
+		const lift = pose.breath * .18 + emphasis * .63 + attention * .35 + cue * .31;
+		const lean = (listening ? .34 : speaking ? .17 : 0) + dialogue.swing * .75 + side * cue * .38 + pose.sway * .15;
+		const gesture = cue * .9 + (speaking ? pose.nod * .75 : attention * .19);
+		const mix = 1 - Math.exp(-dt / 110);
+		body = {
+			lean: body.lean + (lean - body.lean) * mix,
+			lift: body.lift + (lift - body.lift) * mix,
+			left: body.left + (gesture * (side < 0 ? 1 : .32) - body.left) * mix,
+			right: body.right + (gesture * (side > 0 ? 1 : .32) - body.right) * mix,
+		};
+		return body;
 	};
 }
 
@@ -131,7 +189,7 @@ function createAvatarMotion(random = Math.random) {
 		const rest = mode === 'speaking' && now - lastVoice < 180 ? Math.min(0.09, held * 0.15) : 0;
 		const desired = voiced ? clamp((level - 0.025) * 1.15) : rest;
 		opening += (desired - opening) * (1 - Math.exp(-dt / (desired > opening ? 12 : 28)));
-		form += ((voiced ? clamp(input.form, -1, 1) : 0) - form) * (1 - Math.exp(-dt / 30));
+		form += ((voiced ? clamp(input.form, -1, 1) : 0) - form) * (1 - Math.exp(-dt / 42));
 		// Facial affect follows the phrase envelope, not each rapid jaw movement.
 		envelope += (level - envelope) * (1 - Math.exp(-dt / 240));
 		if (voiced && level - previousLevel > 0.22 && now - emphasisAt > 1100) emphasisAt = now;
@@ -199,16 +257,27 @@ function avatarReplyEmotion(text) {
 function avatarPcmFeatures(data, sampleRate, time) {
 	if (!data?.length || !Number.isFinite(sampleRate) || sampleRate <= 0 || !Number.isFinite(time) || time < 0 || time >= data.length / sampleRate) return { level: 0, form: 0 };
 	const center = Math.floor(time * sampleRate);
-	const start = Math.max(0, center - Math.ceil(sampleRate * 0.005));
-	const end = Math.min(data.length, center + Math.ceil(sampleRate * 0.005));
-	let energy = 0, crossings = 0;
+	const radius = Math.ceil(sampleRate * 0.012);
+	const start = Math.max(0, center - radius);
+	const end = Math.min(data.length, center + radius + 1);
+	const lowPass = 1 - Math.exp(-2 * Math.PI * 1100 / sampleRate);
+	let energy = 0, lowEnergy = 0, total = 0, low = data[start];
 	for (let i = start; i < end; i++) {
-		energy += data[i] * data[i];
-		if (i > start && (data[i] >= 0) !== (data[i - 1] >= 0)) crossings++;
+		const weight = 1 - Math.abs(i - center) / (radius + 1);
+		const sample = data[i];
+		low += lowPass * (sample - low);
+		energy += weight * sample * sample;
+		lowEnergy += weight * low * low;
+		total += weight;
 	}
-	const level = Math.min(1, Math.max(0, (Math.sqrt(energy / (end - start)) - 0.009) * 12));
-	// Spectral proxy only: this is NOT phoneme recognition or a measured viseme score.
-	const form = level > 0.035 ? Math.max(-1, Math.min(1, crossings / (end - start) * sampleRate / 2200 - 0.65)) : 0;
+	if (!energy) return { level: 0, form: 0 };
+	const lowFraction = Math.min(1, lowEnergy / energy);
+	const rms = Math.sqrt(energy / total);
+	// A soft ceiling lets loud vowels keep their dynamics. Sibilants and breath
+	// still move the mouth, with less jaw opening than low-band voiced sounds.
+	const voiced = Math.min(1, Math.max(0, (lowFraction - 0.13) / 0.57));
+	const level = (1 - Math.exp(-16 * Math.max(0, rms - 0.006))) * (0.33 + 0.67 * voiced);
+	const form = level > 0.035 ? Math.max(-0.5, Math.min(0.6, (0.8 - lowFraction) * 2)) : 0;
 	return { level, form };
 }
 
@@ -381,11 +450,39 @@ function createFaceRigModel(source, triangulate) {
 function deformFaceRig(model, controls, vertices = new Float32Array(model.points.length)) {
 	vertices.set(model.points);
 	for(const [name,target] of Object.entries(model.targets)) {
-		const raw=controls[name], weight=Number.isFinite(raw)?Math.max(name==='smile'||name.startsWith('brow')?-1:0,Math.min(1,raw)):0;
+		const min = name === 'mouthRound' ? -.35 : name === 'smile' || name.startsWith('brow') ? -1 : 0;
+		const raw = controls[name], weight = Number.isFinite(raw) ? Math.max(min, Math.min(1, raw)) : 0;
 		if(!weight)continue;
 		for(let i=0;i<vertices.length;i++)vertices[i]+=target[i]*weight;
 	}
 	return vertices;
+}
+
+function lipAperture(model, vertices) {
+	const { x, y, cos, sin } = model.mouth;
+	const lip = model.regions.innerLips.map((i) => {
+		const dx = vertices[i * 2] - x, dy = vertices[i * 2 + 1] - y;
+		return [dx * cos + dy * sin, -dx * sin + dy * cos];
+	});
+	const left = Math.min(...lip.map(([u]) => u)), right = Math.max(...lip.map(([u]) => u));
+	const center = (left + right) / 2;
+	let top = Infinity, bottom = -Infinity;
+	for (let i = 0; i < lip.length; i++) {
+		const [u, v] = lip[i], [nextU, nextV] = lip[(i + 1) % lip.length];
+		if ((u <= center) === (nextU <= center)) continue;
+		const atCenter = v + (nextV - v) * (center - u) / (nextU - u);
+		top = Math.min(top, atCenter);
+		bottom = Math.max(bottom, atCenter);
+	}
+	return { left, right, center, top, bottom, height: Math.max(0, bottom - top) };
+}
+
+function faceMouthControls(opening, form) {
+	return {
+		jawOpen: .78 * opening ** 1.12,
+		mouthRound: -form * (form > 0 ? .33 : .72),
+		tongueRaise: opening * Math.max(0, form) * .3,
+	};
 }
 
 function createFaceRigRenderer(PIXI, model, image) {
@@ -441,35 +538,36 @@ function createFaceRigRenderer(PIXI, model, image) {
 
 				}
 			}
-			const m=model.mouth, w=m.width, open=Math.max(0,Math.min(1,controls.jawOpen||0));
-			const round=Math.max(0,Math.min(1,controls.mouthRound||0));
-			// 口型细节：口腔整体随开合度缩放，闭唇/微张时不露牙齿与舌头；
-			// 圆唇时收窄牙列，嘴角随 smile 轻微上扬，避免「张嘴就是一整排牙」。
-			const cavity=Math.max(0,Math.min(1,(open-0.06)/0.42));
-			oral.clear();oral.position.set(m.x,m.y);oral.rotation=Math.atan2(m.sin,m.cos);
-			oral.alpha=Math.min(1,open*7);
-			if(cavity<=0){app.renderer.render(app.stage);return;}
-			const height=w*(.10+.42*cavity);
-			const width=w*(.62-.16*round)*(.7+.3*cavity);
-			oral.beginFill(0x2b1219).drawEllipse(0,height*.34,width,height*.5).endFill();
-			const smile=Math.max(-0.4,Math.min(0.4,controls.smile||0));
-			const teethAlpha=Math.max(0,Math.min(1,(cavity-.28)*3));
-			if(teethAlpha>0){
-				const teethWidth=w*.70*(1-.16*round)*(.7+.3*cavity), toothHeight=w*.075*(.6+.4*cavity);
-				const lipTop=-w*.03+smile*w*.02;
-				oral.beginFill(0xcfc2b5,teethAlpha).moveTo(-teethWidth/2,lipTop)
-					.quadraticCurveTo(0,lipTop-w*.04,teethWidth/2,lipTop).lineTo(teethWidth/2,lipTop+toothHeight)
-					.quadraticCurveTo(0,lipTop+toothHeight*1.5,-teethWidth/2,lipTop+toothHeight).closePath().endFill();
-				for(let i=-2;i<=2;i++){
-					const x=i*teethWidth/6;
-					oral.lineStyle(.45,0x998a80,.22*teethAlpha).moveTo(x,lipTop+w*.005).lineTo(x,lipTop+toothHeight*.6);
+			const m = model.mouth;
+			const open = controls.jawOpen || 0;
+			const { left, right, center, top, bottom, height } = lipAperture(model, vertices);
+			oral.clear();
+			oral.position.set(m.x, m.y);
+			oral.rotation = Math.atan2(m.sin, m.cos);
+			if (open > .04 && height > .5) {
+				const span = right - left;
+				const round = Math.max(0, controls.mouthRound || 0);
+				// The lip polygon masks every layer. Darken the full opening first so
+				// the source's closed-lip texture doesn't show through as a second mouth.
+				oral.alpha = Math.min(1, (open - .04) * 9);
+				oral.beginFill(0x301a20).drawRect(left - 1, top - span, span + 2, height + 2 * span).endFill();
+				oral.beginFill(0x201218, .7).drawEllipse(center, top + height * .49, span * .31, height * .38).endFill();
+
+				const reveal = Math.max(0, Math.min(1, (open - .24) / .35));
+				const half = span * (.32 - round * .11);
+				const tooth = Math.min(height * .28, span * .064);
+				if (reveal > 0) {
+					oral.beginFill(0xcab7ad, reveal * .82)
+						.moveTo(center - half, top - tooth * .75).quadraticCurveTo(center, top - tooth, center + half, top - tooth * .75)
+						.quadraticCurveTo(center + half, top + tooth * .6, center, top + tooth)
+						.quadraticCurveTo(center - half, top + tooth * .6, center - half, top - tooth * .75).closePath().endFill();
 				}
-				oral.lineStyle(0);
-			}
-			const tongueAlpha=Math.max(0,Math.min(1,(cavity-.5)*2.4));
-			if(tongueAlpha>0){
-				const lower=height*.34+height*.18-(controls.tongueRaise||0)*w*.045;
-				oral.beginFill(0x8e4b52,tongueAlpha).drawEllipse(0,lower,w*.22,w*.075*cavity).endFill();
+				const tongue = Math.max(0, (open - .43) / .33);
+				if (tongue > 0) {
+					const lift = (controls.tongueRaise || 0) * height * .15;
+					oral.beginFill(0x75424a, Math.min(.62, tongue * .62))
+						.drawEllipse(center, bottom - height * .09 - lift, span * .23, height * .22).endFill();
+				}
 			}
 			app.renderer.render(app.stage);
 		},
@@ -489,7 +587,7 @@ function createFaceRigRenderer(PIXI, model, image) {
 
 window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 	const react = require("react");
-	const { useState, useEffect, useCallback, useRef, createElement: h } = react;
+	const { useState, useEffect, useLayoutEffect, useCallback, useRef, createElement: h } = react;
 
 	const PANEL_ID = "dafeiyu-live";
 	const DSW_BLUE = "var(--dsw-static-deepseek-500, #4176e6)";
@@ -579,16 +677,27 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-pet-l2d-note{position:absolute;bottom:6px;left:8px;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:rgba(255,255,255,.55);pointer-events:none}
 .dfy-role-preview{border:.5px solid var(--dsw-alias-border-l2,#d8e2e0);border-radius:14px;overflow:hidden;background:var(--dsw-alias-bg-layer-1,#fff)}
 .dfy-role-stage{position:relative;display:grid;place-items:center;min-height:220px;aspect-ratio:16/10;overflow:hidden}
-.dfy-role-stage .dfy-idle-video-hidden{visibility:hidden}
+.dfy-role-art,.dfy-broadcast-avatar{position:absolute;inset:0;display:grid;place-items:center}
+.dfy-role-art[hidden],.dfy-broadcast-avatar[hidden],.dfy-rig-surface[hidden]{display:none}
 .dfy-stage-voice{position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:8px;border-radius:7px;padding:5px 8px;background:#17303c;color:#fff;font-size:12px}
 .dfy-speech-meter{width:38px;height:4px;border-radius:4px;background:#54616a;overflow:hidden}
 .dfy-speech-meter i{display:block;width:100%;height:100%;background:#94e2d9;transform:scaleX(.05);transform-origin:left}
 .dfy-stage-message{position:absolute;z-index:4;left:12px;right:12px;bottom:12px;margin:0;padding:7px 9px;background:#17303c;color:#fff;border-radius:7px;font-size:12px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .dfy-role-stage :is(img,video){display:block;width:100%;height:100%;position:absolute;inset:0;object-fit:cover;object-position:center}
+.dfy-rigged-avatar,.dfy-rigged-poster,.dfy-rigged-canvas{position:absolute;inset:0;width:100%;height:100%}
+.dfy-rigged-avatar{display:grid;place-items:center;overflow:hidden;background:var(--stage-dark,#6d5b50)}
+.dfy-rigged-poster{object-fit:cover}
+.dfy-rigged-poster[hidden]{display:none}
+.dfy-rigged-canvas{display:block}
 .dfy-role-initial{font-size:28px;font-weight:700}
 .dfy-role-caption{padding:10px 12px;display:grid;gap:4px}
 .dfy-role-caption p{margin:0;overflow-wrap:anywhere}
-.dfy-role-caption-speaking{background:var(--dsw-alias-interactive-bg-hover,#e7f4ef)}
+.dfy-speech-caption{box-sizing:border-box;min-width:0;height:calc(3.9em + 2px);padding:.55em .85em;overflow:hidden;
+  background:rgba(18,34,48,.70);-webkit-backdrop-filter:blur(14px) saturate(125%);backdrop-filter:blur(14px) saturate(125%);
+  color:#fff;border:1px solid rgba(255,255,255,.32);border-radius:.85em;box-shadow:0 5px 20px #10263635;
+  font-weight:600;line-height:1.4;text-align:center}
+.dfy-caption-scroll{height:100%;overflow:hidden}
+.dfy-caption-scroll p{min-height:100%;display:grid;align-content:center;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
 .dfy-role-audio{display:grid;gap:5px}
 .dfy-role-audio audio{width:100%;height:36px}
 .dfy-l2d-hit{position:absolute;inset:0;background:transparent;border:0;cursor:pointer}
@@ -701,27 +810,24 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-broadcast .dfy-pet-ai{z-index:4;top:5%;right:6%;font-size:clamp(10px,2.6cqw,22px)}
 .dfy-broadcast-landscape .dfy-pet-ai{font-size:clamp(10px,1.45cqw,22px)}
 .dfy-broadcast-art{position:absolute;inset:11% 5% 17%;display:grid;place-items:center}
-.dfy-broadcast-art>img,.dfy-broadcast-art>video{max-width:100%;max-height:100%;width:100%;height:100%;object-fit:contain;position:absolute;inset:0}
+.dfy-broadcast-avatar>img,.dfy-broadcast-art>video{max-width:100%;max-height:100%;width:100%;height:100%;object-fit:contain;position:absolute;inset:0}
 .dfy-broadcast-art .dfy-pet-l2d{inset:0;position:absolute}
 .dfy-broadcast-art .dfy-l2d-hit,.dfy-broadcast-art .dfy-pet-l2d-note{display:none}
-.dfy-broadcast-art>.dfy-rig-surface,.dfy-role-stage>.dfy-rig-surface{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center}
-.dfy-idle-scene{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;opacity:0;transition:opacity 420ms ease;pointer-events:none}
+.dfy-broadcast-avatar>.dfy-rig-surface,.dfy-role-art>.dfy-rig-surface{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center}
+.dfy-idle-scene{opacity:0;pointer-events:none}
 .dfy-room-person .dfy-idle-scene{object-fit:cover;object-position:center 40%}
 .dfy-idle-scene.dfy-idle-scene-on{opacity:1}
-.dfy-broadcast-art>.dfy-rig-surface.dfy-rig-scene-fade{transition:opacity 420ms ease}
-.dfy-broadcast-art>.dfy-rig-surface.dfy-rig-scene-hidden{opacity:0}
-.dfy-room-pet .dfy-broadcast-art>canvas.dfy-rig-surface{transform-origin:50% 68%}
-.dfy-rig-fade{transition:opacity 120ms ease-out}
-@media(prefers-reduced-motion:reduce){.dfy-rig-fade{transition:none}}
-.dfy-broadcast-caption{position:absolute;z-index:2;bottom:10%;left:8%;right:8%;margin:0;text-align:center;text-wrap:pretty;overflow-wrap:anywhere;line-height:1.45;font-weight:650;font-size:clamp(13px,4.5cqw,38px);text-shadow:0 2px 6px #000;background:#091c1bdc;border-radius:12px;padding:.42em .75em;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.dfy-room-pet .dfy-broadcast-avatar>canvas.dfy-rig-surface{transform-origin:50% 68%}
+.dfy-broadcast-caption{position:absolute;z-index:3;bottom:7%;left:6%;right:6%;font-size:clamp(13px,4cqw,38px)}
 .dfy-broadcast-landscape .dfy-broadcast-caption{font-size:clamp(13px,2.6cqw,37px)}
 .dfy-broadcast-safe{position:absolute;inset:0;display:grid;place-items:center;font-size:clamp(18px,5cqw,42px);font-weight:650}
 .dfy-broadcast{background:#b2c3cd}
 .dfy-broadcast-art{inset:0}
-.dfy-room-person .dfy-broadcast-art>.dfy-rig-surface,.dfy-room-person .dfy-broadcast-art>img{object-fit:cover;object-position:center 42%}
+.dfy-room-person .dfy-broadcast-avatar>.dfy-rig-surface,.dfy-room-person .dfy-broadcast-avatar>img{object-fit:cover;object-position:center 42%}
 .dfy-room-pet .dfy-broadcast-art{inset:34% 5% 9%}
 .dfy-room-backdrop{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:blur(22px) brightness(.8);transform:scale(1.12)}
 .dfy-broadcast:after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(#10263655,transparent 30%,transparent 65%,#1026368c);z-index:1}
+.dfy-broadcast-reference:after{content:none}
 .dfy-room-overlay{position:absolute;inset:4% 5% auto;z-index:3;color:#173047;font-size:clamp(10px,3cqw,27px)}
 .dfy-room-heading{display:flex;align-items:baseline;flex-wrap:wrap;gap:.35em .6em;color:white;text-shadow:0 2px 8px #10263690;margin-bottom:.8em;padding-right:28%}
 .dfy-room-heading strong{font-size:1.65em;letter-spacing:.05em}
@@ -730,7 +836,6 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-room-card p{font-size:.83em;line-height:1.5;margin:.25em 0;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}
 .dfy-room-card p b{margin-right:.5em}
 .dfy-broadcast .dfy-pet-ai{top:4%;right:5%;font-size:clamp(9px,2.5cqw,22px);background:#243b51b5}
-.dfy-broadcast-caption{bottom:7%;left:6%;right:6%;z-index:3;background:#f4f8ffed;color:#18344c;text-shadow:none;border:1px solid #ffffffb0;border-radius:.8em;box-shadow:0 5px 24px #10263625;font-size:clamp(13px,4cqw,38px);padding:.65em .85em}
 .dfy-broadcast-safe{z-index:3;background:#173047}
 .dfy-broadcast-landscape .dfy-room-overlay{inset:5% auto auto 4%;width:33%;font-size:clamp(10px,1.6cqw,22px)}
 .dfy-broadcast-landscape .dfy-room-heading{padding-right:0}
@@ -954,6 +1059,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					});
 					onLipSync?.(mouths.length > 0);
 					const motion = createAvatarMotion();
+					const dialogueBlend = createDialogueBlend();
+					const bodyMotion = createBodyMotion();
 					const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
 					const parameter = (id) => {
 						const index = core.getParameterIndex(id);
@@ -961,7 +1068,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 						return { index, min: core.getParameterMinimumValue(index), max: core.getParameterMaximumValue(index) };
 					};
 					const face = Object.fromEntries(["ParamEyeLOpen", "ParamEyeROpen", "ParamAngleX", "ParamAngleY", "ParamAngleZ",
-						"ParamBreath", "ParamMouthForm", "ParamBrowLY", "ParamBrowRY", "ParamEyeBallX", "ParamEyeBallY"].map((id) => [id, parameter(id)]));
+						"ParamBreath", "ParamMouthForm", "ParamBrowLY", "ParamBrowRY", "ParamEyeBallX", "ParamEyeBallY",
+						"ParamBodyAngleX", "ParamBodyAngleY", "ParamBodyAngleZ"].map((id) => [id, parameter(id)]));
 					const set = (id, value, additive = false) => {
 						const p = face[id];
 						if (p) core.setParameterValueByIndex(p.index, Math.max(p.min, Math.min(p.max,
@@ -970,13 +1078,15 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					internal.on("beforeModelUpdate", () => {
 						const speech = speechRef.current;
 						const sample = speech.mouthLevel?.sample?.() || { level: speech.mouthLevel?.() || 0 };
-						const pose = motion(performance.now(), { ...speech, ...sample, reducedMotion: reduced.matches,
-							viseme: speech.viseme?.sample?.() ?? speech.viseme ?? visemeFromSample(sample),
+						const now = performance.now();
+						const pose = motion(now, { ...speech, ...sample, reducedMotion: reduced.matches,
+							viseme: speech.viseme?.sample?.() ?? speech.viseme,
 							level: Math.max(0, (sample.level - (calibration.threshold ?? 0.03)) * (calibration.gain ?? 1.1)) });
 						for (const { index, closed, open } of mouths) core.setParameterValueByIndex(index, closed + (open - closed) * pose.opening);
 						// 对话动作叠加：弹幕视线/思考侧头/收尾点头（安全与减少动态时 blend 自身归零）
-						const add = blendDialogueTargets(speech.dialogue?.current?.targets,
+						const add = dialogueBlend(now, speech.dialogue?.current,
 							{ safe: !!speech.safe, reducedMotion: reduced.matches, speaking: !!speech.speaking });
+						const body = bodyMotion(now, pose, add, reduced.matches);
 						set("ParamMouthForm", pose.form * 0.35 + pose.expression);
 						set("ParamBrowLY", pose.expression * 0.25 + add.brow * 0.15 + pose.browDip * 0.5, true);
 						set("ParamBrowRY", pose.expression * 0.25 + add.brow * 0.15 + pose.browDip * 0.5, true);
@@ -992,6 +1102,9 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 							set("ParamAngleX", pose.sway * 2.5 + add.swing * 1.2, true);
 							set("ParamAngleY", -pose.nod * 4 - add.nod * 2, true);
 							set("ParamAngleZ", pose.sway * 1.5 + add.swing * 0.8, true);
+							set("ParamBodyAngleX", (body.right - body.left) * 2.5, true);
+							set("ParamBodyAngleY", body.lift * 3.2, true);
+							set("ParamBodyAngleZ", body.lean * 2.4, true);
 							set("ParamBreath", pose.breath);
 						}
 						if (onFrame && !app.renderer.gl?.isContextLost()) onFrame();
@@ -1191,20 +1304,104 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		return { figure, underlay, x: mouth.x * width, y: neck };
 	}
 
-	function RolePrototype({ persona, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, sceneHidden, onError, onFrame, onMotionReady }) {
+	function prepareBodySleeves(image, profileId) {
+		// Areas drawn from each portrait. Keep held props, the mixing bowl and
+		// the surfboard outside the localized arm gesture.
+		const regions = {
+			xiaxia: [[.15, .84, .22, .24, "left"], [.87, .83, .22, .23, "right"]],
+			lubai: [[.76, .70, .21, .16, "right"]],
+			guyu: [[.13, .61, .15, .14, "left"], [.80, .69, .18, .20, "right"]],
+			beila: [[.40, .55, .14, .12, "left"], [.82, .46, .17, .13, "right"]],
+		};
+		const width = image.naturalWidth, height = image.naturalHeight;
+		return (regions[profileId] || []).map(([cx, cy, rx, ry, side]) => {
+			const x = Math.floor((cx - rx) * width), y = Math.floor((cy - ry) * height);
+			const patch = document.createElement("canvas");
+			const feather = document.createElement("canvas");
+			patch.width = feather.width = Math.ceil(rx * width * 2);
+			patch.height = feather.height = Math.ceil(ry * height * 2);
+			const buffer = patch.getContext("2d");
+			const stencil = feather.getContext("2d");
+			stencil.scale(patch.width, patch.height);
+			const fade = stencil.createRadialGradient(.5, .5, .07, .5, .5, .5);
+			fade.addColorStop(0, "black");
+			fade.addColorStop(.45, "#000a");
+			fade.addColorStop(1, "transparent");
+			stencil.fillStyle = fade;
+			stencil.fillRect(0, 0, 1, 1);
+			return { x, y, side, patch, feather, buffer };
+		});
+	}
+
+	function useIdleScene(src, enabled, onFrame) {
+		const videoRef = useRef(null);
+		const [allowed, setAllowed] = useState(() => !document.hidden && !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+		const [playing, setPlaying] = useState(null);
+		const [failed, setFailed] = useState(null);
+		const canPlay = !!src && src !== failed && enabled && allowed;
+		// Both surfaces switch in the same render, once this source is playing.
+		const active = canPlay && playing === src;
+
+		useEffect(() => {
+			const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+			const update = () => setAllowed(!document.hidden && !reduced.matches);
+			update();
+			document.addEventListener("visibilitychange", update);
+			reduced.addEventListener("change", update);
+			return () => {
+				document.removeEventListener("visibilitychange", update);
+				reduced.removeEventListener("change", update);
+			};
+		}, []);
+		useLayoutEffect(() => {
+			setPlaying(null);
+			const video = videoRef.current;
+			if (!canPlay || !video) return;
+			let cancelled = false;
+			video.play().catch(() => { if (!cancelled) setPlaying(null); });
+			return () => { cancelled = true; video.pause(); };
+		}, [src, canPlay]);
+
+		useEffect(() => {
+			const video = videoRef.current;
+			if (!active || !video || !onFrame) return;
+			if (video.requestVideoFrameCallback) {
+				let frame;
+				const report = () => { onFrame(); frame = video.requestVideoFrameCallback(report); };
+				frame = video.requestVideoFrameCallback(report);
+				return () => video.cancelVideoFrameCallback(frame);
+			}
+			let frame;
+			let lastTime = -1;
+			const report = () => {
+				if (lastTime !== video.currentTime) { lastTime = video.currentTime; onFrame(); }
+				frame = requestAnimationFrame(report);
+			};
+			frame = requestAnimationFrame(report);
+			return () => cancelAnimationFrame(frame);
+		}, [src, active, onFrame]);
+
+		return { active, props: src && src !== failed ? {
+			key: src, ref: videoRef, src, muted: true, playsInline: true, loop: true, preload: "metadata", "aria-hidden": !active,
+			className: "dfy-idle-scene" + (active ? " dfy-idle-scene-on" : ""),
+			onPlaying: (event) => { if (canPlay && !event.currentTarget.paused) setPlaying(src); },
+			onWaiting: () => setPlaying(null),
+			onPause: (event) => { if (event.currentTarget.paused) setPlaying(null); },
+			onError: () => { setPlaying(null); setFailed(src); },
+		} : null };
+	}
+
+	function RolePrototype({ persona, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, visible = true, idleAllowed = true, onError, onFrame, onMotionReady }) {
 		const target = useRef(null);
-		const idleVideo = useRef(null);
 		const [rig, setRig] = useState(null);
 		const [idle, setIdle] = useState(null);
-		const [idleReady, setIdleReady] = useState(false);
+		const idleScene = useIdleScene(rig && idle, visible && idleAllowed && !speaking && !listening && !safe, onFrame);
 		const speechRef = useRef({});
-		speechRef.current = { speaking, listening, emotion, mouthLevel, viseme, dialogue, safe };
+		speechRef.current = { speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, visible: visible && !idleScene.active };
 		const motion = useRef(null);
 		motion.current ??= createAvatarMotion();
 		const id = persona.media?.modelId;
 		const dsh = id === "dsh-pet";
-		const onStage = !!onFrame;
-		const showIdle = idleReady && !speaking && !listening;
 		useEffect(() => {
 			const controller = new AbortController();
 			let url;
@@ -1218,7 +1415,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					image.src = "data:image/png;base64," + data.image;
 					await image.decode();
 					const decodeMask = async (base64) => {
-						if (!onStage || !base64) return null;
+						if (!base64) return null;
 						const candidate = new Image();
 						candidate.src = "data:image/png;base64," + base64;
 						await candidate.decode().catch(() => {});
@@ -1227,9 +1424,9 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					const [mask, silhouette] = await Promise.all([decodeMask(data.motionMask), decodeMask(data.headMask)]);
 					if (controller.signal.aborted) return;
 					const head = mask && silhouette ? preparePrototypeHead(image, silhouette, data.mouth) : null;
-					const faceStack = data.faceRig ? await ensureLive2DStack() : null;
+					const faceStack = data.faceRig ? await ensureLive2DStack().catch(() => null) : null;
 					if (controller.signal.aborted) return;
-					setRig({ image, mouth: data.mouth, eyes: data.eyes || [], mask, head, faceRig: data.faceRig, PIXI: faceStack?.PIXI });
+					setRig({ image, mouth: data.mouth, eyes: data.eyes || [], mask, head, faceRig: faceStack ? data.faceRig : null, PIXI: faceStack?.PIXI });
 					onMotionReady?.(id, dsh || !!mask);
 				} catch (error) {
 					if (!controller.signal.aborted) { console.warn("形象加载失败", error.message); onError?.(); }
@@ -1245,25 +1442,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					}).catch(() => {});
 			}
 			return () => { controller.abort(); if (url) URL.revokeObjectURL(url); };
-		}, [id, dsh, onStage, onMotionReady]);
-
-		useEffect(() => {
-			const video = idleVideo.current;
-			if (!onFrame || !showIdle || !video) return;
-			if (!video.requestVideoFrameCallback) { setIdleReady(false); return; }
-			let last = performance.now();
-			let frame;
-			const update = (now) => {
-				last = now;
-				onFrame();
-				frame = video.requestVideoFrameCallback(update);
-			};
-			frame = video.requestVideoFrameCallback(update);
-			const timer = setInterval(() => {
-				if (performance.now() - last > 1600) setIdleReady(false);
-			}, 400);
-			return () => { clearInterval(timer); video.cancelVideoFrameCallback(frame); };
-		}, [onFrame, showIdle, idle]);
+		}, [id, dsh, onMotionReady]);
 
 		useEffect(() => {
 			const surface = target.current;
@@ -1275,33 +1454,61 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			if (!context) return;
 			let face;
 			try { face = rig.faceRig ? createFaceRigRenderer(rig.PIXI, rig.faceRig, image) : null; }
-			catch (error) { console.warn("面部渲染器初始化失败", error.message); onError?.(); return; }
+			catch (error) {
+				console.warn("完整面部渲染器不可用，继续使用原型口型", error.message);
+				surface.dataset.faceRig = "prototype";
+			}
 			const drawMouth = face ? () => {} : paintMouth(context, image, mouth, dsh);
 			const drawEyes = face ? () => {} : paintEyes(context, image, eyes);
 			const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+			const dialogueBlend = createDialogueBlend();
+			const bodyMotion = createBodyMotion();
 			let frame;
 			let lastPose = 0;
+			const centerX = mouth.x * width;
 			const shoulderY = height * Math.min(1, mouth.y + 0.11);
-			const torsoFade = mask ? context.createLinearGradient(0, shoulderY, 0, shoulderY + height * 0.13) : null;
-			torsoFade?.addColorStop(0, "transparent");
-			torsoFade?.addColorStop(1, "black");
+			const pivot = height * ({ beila: .71, guyu: .82, lubai: .86 }[persona.profileId] ?? .95);
+			const torsoFade = mask ? context.createLinearGradient(0, 0, 0, height) : null;
+			torsoFade?.addColorStop(Math.min(.84, shoulderY / height - .018), "transparent");
+			torsoFade?.addColorStop(Math.min(.93, shoulderY / height + .075), "black");
+			torsoFade?.addColorStop(Math.min(.97, pivot / height + .01), "black");
+			torsoFade?.addColorStop(Math.min(1, pivot / height + .09), "transparent");
+			const sleeves = mask ? prepareBodySleeves(image, persona.profileId) : [];
 			const draw = (amount, breath = 0, sway = 0, nod = 0, blink = 0, form = 0, expression = 0, gaze = 0,
-				blinkL = blink, blinkR = blink, browDip = 0) => {
-				face?.update({ jawOpen: amount, mouthRound: Math.max(0, -form), smile: expression,
+				blinkL = blink, blinkR = blink, browDip = 0, body = { lean: 0, lift: 0, left: 0, right: 0 }) => {
+				face?.update({ ...faceMouthControls(amount, form), smile: expression,
 					blinkLeft: blinkL, blinkRight: blinkR,
 					browLeft: expression * .6 + browDip, browRight: expression * .5 + browDip,
-					gazeX: gaze, gazeY: -nod, tongueRaise: amount * Math.max(0,form) * .3 });
+					gazeX: gaze, gazeY: -nod });
 				context.clearRect(0, 0, width, height);
+				const skew = mask ? -.046 * body.lean : 0;
+				const roll = mask ? .012 * (body.right - body.left) : 0;
+				const stretch = mask ? 1 + breath * .013 + body.lift * .038 : 1;
+				const dx = -skew * pivot, dy = -roll * centerX - (stretch - 1) * pivot;
 				if (!mask) {
 					context.drawImage(image, 0, 0);
-				} else if (breath > 0) {
-					// Fade in below the shoulders and let the head move on its own layer.
-					const pivot = height * 0.9;
+				} else if (breath > 0 || body.lift > 0 || body.lean !== 0) {
 					context.save();
-					context.translate(0, pivot);
-					context.scale(1, 1 + breath * 0.016);
-					context.drawImage(image, 0, -pivot);
+					context.transform(1, roll, skew, stretch, dx, dy);
+					context.drawImage(image, 0, 0);
 					context.restore();
+					for (const { x, y, side, patch, feather, buffer } of sleeves) {
+						const amount = body[side];
+						if (amount < .018) continue;
+						const inward = (side === "left" ? 1 : -1) * width * .017 * amount;
+						const rise = height * .021 * amount;
+						buffer.resetTransform();
+						buffer.clearRect(0, 0, patch.width, patch.height);
+						buffer.save();
+						buffer.setTransform(1, roll, skew, stretch, dx - x + inward, dy - y - rise);
+						buffer.drawImage(image, 0, 0);
+						buffer.restore();
+						buffer.save();
+						buffer.globalCompositeOperation = "destination-in";
+						buffer.drawImage(feather, 0, 0);
+						buffer.restore();
+						context.drawImage(patch, x, y);
+					}
 					context.save();
 					context.globalCompositeOperation = "destination-in";
 					context.fillStyle = torsoFade;
@@ -1319,8 +1526,11 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				if (head) {
 					context.drawImage(head.underlay, 0, 0);
 					context.save();
-					context.translate(head.x + sway * width * 0.002, head.y - breath * height * 0.001 + nod * height * 0.006);
-					context.rotate(sway * 0.011);
+					const shoulderX = skew * (head.y - pivot);
+					const shoulderY = (stretch - 1) * (head.y - pivot);
+					context.translate(head.x + shoulderX + sway * width * 0.002,
+						head.y + shoulderY + nod * height * 0.006);
+					context.rotate(sway * 0.011 + roll * .35);
 					context.translate(-head.x, -head.y);
 					context.drawImage(head.figure, 0, 0);
 					face?.draw(context, head.figure);
@@ -1330,41 +1540,36 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				}
 			};
 			draw(0);
-			if (!showIdle) {
-				const tick = (now) => {
-					frame = requestAnimationFrame(tick);
-					if (context.isContextLost?.() || now - lastPose < 16) return;
-					const speech = speechRef.current;
-					const sample = speech.mouthLevel?.sample?.() || { level: speech.mouthLevel?.() || 0 };
-					const pose = motion.current(now, { ...speech, ...sample, reducedMotion: reduced.matches,
-						viseme: speech.viseme?.sample?.() ?? speech.viseme ?? visemeFromSample(sample) });
-					// 对话动作叠加：弹幕视线/思考侧头/收尾点头（安全与减少动态时 blend 自身归零）
-					const add = blendDialogueTargets(speech.dialogue?.current?.targets,
-						{ safe: !!speech.safe, reducedMotion: reduced.matches, speaking: !!speech.speaking });
-					draw(pose.opening, pose.breath, pose.sway + add.swing * 0.35, pose.nod + add.nod * 0.7,
-						Math.max(pose.blink, Math.max(0, pose.expression) * 0.25), pose.form + pose.expression * 0.4,
-						pose.expression + add.brow * 0.25, pose.gaze + add.gaze * 0.6,
-						pose.blinkLeft, pose.blinkRight, pose.browDip);
-					if (!mask && dsh && !reduced.matches) {
-						surface.style.transform = `translate(${pose.sway}%, ${-pose.breath * 0.55 + pose.nod * 0.6}%) rotate(${pose.sway}deg)`;
-					} else surface.style.transform = "";
-					lastPose = now;
-					onFrame?.();
-				};
+			const tick = (now) => {
 				frame = requestAnimationFrame(tick);
-			}
+				const speech = speechRef.current;
+				if (!speech.visible || context.isContextLost?.() || now - lastPose < 16) return;
+				const sample = speech.mouthLevel?.sample?.() || { level: speech.mouthLevel?.() || 0 };
+				const pose = motion.current(now, { ...speech, ...sample, reducedMotion: reduced.matches,
+					viseme: speech.viseme?.sample?.() ?? speech.viseme });
+				// 对话动作叠加：弹幕视线/思考侧头/收尾点头（安全与减少动态时 blend 自身归零）
+				const add = dialogueBlend(now, speech.dialogue?.current,
+					{ safe: !!speech.safe, reducedMotion: reduced.matches, speaking: !!speech.speaking });
+				const body = bodyMotion(now, pose, add, reduced.matches);
+				draw(pose.opening, pose.breath, pose.sway + add.swing * 0.35, pose.nod + add.nod * 0.7,
+					Math.max(pose.blink, Math.max(0, pose.expression) * 0.25), pose.form + pose.expression * 0.4,
+					pose.expression + add.brow * 0.25, pose.gaze + add.gaze * 0.6,
+					pose.blinkLeft, pose.blinkRight, pose.browDip, body);
+				if (!mask && dsh && !reduced.matches) {
+					surface.style.transform = `translate(${pose.sway}%, ${-pose.breath * 0.55 + pose.nod * 0.6}%) rotate(${pose.sway}deg)`;
+				} else surface.style.transform = "";
+				lastPose = now;
+				onFrame?.();
+			};
+			frame = requestAnimationFrame(tick);
 			return () => { cancelAnimationFrame(frame); face?.destroy(); };
-		}, [rig, dsh, onStage, onFrame, showIdle]);
+		}, [rig, dsh, onFrame, persona.profileId]);
 
 		if (!rig) return h("span", { className: "dfy-role-initial" }, persona.name);
 		return h(react.Fragment, null,
-			rig.mask ? h("img", { src: rig.image.src, className: "dfy-rig-surface" + (sceneHidden ? " dfy-rig-scene-hidden" : ""), alt: "", "aria-hidden": true }) : null,
-			h("canvas", { ref: target, className: "dfy-rig-surface dfy-rig-fade" + (sceneHidden ? " dfy-rig-scene-hidden" : ""), "data-face-rig": rig.faceRig ? "full" : "prototype", "data-face-role": persona.profileId || persona.id, role: "img", "aria-label": persona.name + (rig.faceRig ? "完整面部预览" : "口型预览"),
-				style: { opacity: showIdle ? 0 : 1 } }),
-			idle ? h("video", { ref: idleVideo, className: "dfy-rig-surface dfy-rig-fade", src: idle, autoPlay: true, muted: true, playsInline: true, loop: true,
-				style: { opacity: showIdle ? 1 : 0 }, "aria-hidden": !showIdle, "aria-label": persona.name + "待机动画",
-				onPlaying: () => setIdleReady(true), onPause: () => setIdleReady(false), onWaiting: () => setIdleReady(false),
-				onError: () => { setIdle(null); setIdleReady(false); } }) : null);
+			rig.mask ? h("img", { src: rig.image.src, className: "dfy-rig-surface", hidden: idleScene.active, alt: "", "aria-hidden": true }) : null,
+			h("canvas", { ref: target, className: "dfy-rig-surface", hidden: idleScene.active, "data-face-rig": rig.faceRig ? "full" : "prototype", "data-face-role": persona.profileId || persona.id, role: "img", "aria-label": persona.name + (rig.faceRig ? "完整面部预览" : "口型预览") }),
+			idleScene.props ? h("video", { ...idleScene.props, className: idleScene.props.className + " dfy-rig-surface", "aria-label": persona.name + "待机动画" }) : null);
 	}
 
 	function SpeechMeter({ level }) {
@@ -1383,52 +1588,140 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		return h("span", { className: "dfy-speech-meter", "aria-hidden": true }, h("i", { ref: bar }));
 	}
 
-	function EciyuanPreview({ persona, entry, sceneUrl, prototype, fallback, speaking, listening, subtitle, mouthLevel, message }) {
+	function SpeechCaption({ line, progress, className = "" }) {
+		const viewport = useRef(null);
+		useLayoutEffect(() => {
+			const element = viewport.current;
+			const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+			let reached = 0, frame, height, limit, lineHeight, offset = 0, last = performance.now();
+			element.scrollTop = 0;
+			const scroll = (now) => {
+				frame = undefined;
+				reached = Math.max(reached, Math.min(1, progress?.() || 0));
+				const position = reached * (height + limit) - height * .55;
+				const target = reached >= .97 ? limit : Math.max(0, Math.min(limit, Math.floor(position / lineHeight) * lineHeight));
+				offset += (target - offset) * (1 - Math.exp(-Math.max(0, now - last) / 48));
+				last = now;
+				const moving = !reduced.matches && Math.abs(target - offset) > .5;
+				if (!moving) offset = target;
+				element.scrollTop = offset;
+				if (reached < .97 || moving) frame = requestAnimationFrame(scroll);
+			};
+			const measure = () => {
+				height = element.clientHeight;
+				limit = element.scrollHeight - height;
+				lineHeight = parseFloat(getComputedStyle(element).lineHeight);
+				cancelAnimationFrame(frame);
+				if (limit > 0 && lineHeight > 0) scroll(performance.now());
+			};
+			const observer = new ResizeObserver(measure);
+			observer.observe(element);
+			observer.observe(element.firstElementChild);
+			measure();
+			return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+		}, [line, progress]);
+		return h("div", { className: "dfy-speech-caption " + className, role: "status" },
+			h("div", { ref: viewport, className: "dfy-caption-scroll" }, h("p", null, line)));
+	}
+
+	let riggedRuntime;
+
+	function loadRiggedRuntime(id) {
+		if (riggedRuntime) return riggedRuntime;
+		riggedRuntime = new Promise((resolve, reject) => {
+			const script = document.createElement("script");
+			script.src = "/api/dafeiyu/avatar/rigged?id=" + encodeURIComponent(id) + "&asset=runtime";
+			script.onload = () => {
+				script.remove();
+				if (window.__DafeiyuRiggedAvatar) resolve(window.__DafeiyuRiggedAvatar);
+				else reject(new Error("三维渲染器未就绪"));
+			};
+			script.onerror = () => { script.remove(); reject(new Error("三维渲染器无法加载")); };
+			document.head.appendChild(script);
+		}).catch((error) => { riggedRuntime = null; throw error; });
+		return riggedRuntime;
+	}
+
+	function RiggedRole({ persona, speaking, listening, emotion, mouthLevel, safe, onFrame }) {
+		const host = useRef(null);
+		const [status, setStatus] = useState("loading");
+		const [posterFailed, setPosterFailed] = useState(false);
+		const input = useRef(null);
+		input.current = { speaking, listening, emotion, mouthLevel, safe, onFrame };
+		const id = persona.media.modelId;
+		useEffect(() => {
+			const controller = new AbortController();
+			const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+			const face = createAvatarMotion();
+			let stage, frame, previous = 0;
+			const fail = () => {
+				cancelAnimationFrame(frame);
+				stage?.dispose();
+				stage = null;
+				if (!controller.signal.aborted) setStatus("failed");
+			};
+			void (async () => {
+				try {
+					const runtime = await loadRiggedRuntime(id);
+					controller.signal.throwIfAborted();
+					stage = await runtime.mount(host.current,
+						"/api/dafeiyu/avatar/rigged?id=" + encodeURIComponent(id) + "&asset=model", controller.signal, fail);
+					if (controller.signal.aborted) { stage.dispose(); stage = null; return; }
+					const draw = (now) => {
+						try {
+							if (now - previous >= 15) {
+								const state = input.current;
+								const sample = state.mouthLevel?.sample?.() || { level: state.mouthLevel?.() || 0 };
+								const pose = face(now, { ...state, ...sample, reducedMotion: reduced.matches });
+								stage.render({ pose });
+								state.onFrame?.();
+								previous = now;
+							}
+							frame = requestAnimationFrame(draw);
+						} catch (error) { console.warn("三维角色渲染失败", error.message); fail(); }
+					};
+					draw(performance.now());
+					if (stage) setStatus("ready");
+				} catch (error) {
+					if (!controller.signal.aborted) { console.warn("三维角色加载失败", error.message); fail(); }
+				}
+			})();
+			return () => { controller.abort(); cancelAnimationFrame(frame); stage?.dispose(); };
+		}, [id]);
+		return h("div", { className: "dfy-rigged-avatar", ref: host, role: "img", "aria-label": persona.name + "原图姿势与动态口型",
+			"data-rigged-role": persona.profileId, "data-rigged-status": status },
+			!posterFailed ? h("img", { className: "dfy-rigged-poster", src: persona.media.portraitUrl, alt: "", hidden: status === "ready",
+				onError: () => setPosterFailed(true) }) : status !== "ready" ? h("span", { className: "dfy-role-initial" }, persona.name) : null);
+	}
+
+	function EciyuanPreview({ persona, entry, sceneUrl, prototype, rigged, fallback, speaking, listening, subtitle, captionProgress, mouthLevel, message }) {
 		const [failure, setFailure] = useState("");
-		const [sceneFailed, setSceneFailed] = useState(false);
 		const [portraitUnavailable, setPortraitUnavailable] = useState(false);
 		const [mouthReady, setMouthReady] = useState(null);
 		const [prototypeFailed, setPrototypeFailed] = useState(false);
-		const model = entry && !failure && (mouthReady !== false || !prototype || prototypeFailed);
-		const rig = !model && prototype && !prototypeFailed;
-		const scene = !model && !rig && sceneUrl && !sceneFailed;
-		const video = useRef(null);
-		useEffect(() => {
-			if (!scene || !video.current) return;
-			const element = video.current;
-			const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
-			const update = () => {
-				if (document.hidden || motion.matches || speaking) element.pause();
-				else element.play().catch(() => {});
-			};
-			update();
-			document.addEventListener("visibilitychange", update);
-			motion.addEventListener("change", update);
-			return () => {
-				element.pause();
-				document.removeEventListener("visibilitychange", update);
-				motion.removeEventListener("change", update);
-			};
-		}, [scene, speaking]);
+		const model = !rigged && entry && !failure && (mouthReady !== false || !prototype || prototypeFailed);
+		const rig = !rigged && !model && prototype && !prototypeFailed;
+		const attending = (listening || !!message) && !speaking;
+		const emotion = speaking ? avatarReplyEmotion(subtitle) : 0;
+		const { dialogue, engaged } = useDialoguePresentation({ speaking, listening: attending, profileId: persona.profileId, allowTail: false });
+		const scene = useIdleScene(!rigged && !model && !rig && sceneUrl, !speaking && !engaged);
 		return h("div", { className: "dfy-role-preview" },
 			h("div", { className: "dfy-role-stage", style: { background: persona.theme?.bg, color: persona.theme?.accent } },
 				h("span", { className: "dfy-pet-ai" }, persona.aiLabelText || "AI 生成内容"),
-				model ? h(Live2DScene, { entry, speaking, listening: (listening || !!message) && !speaking, emotion: speaking ? avatarReplyEmotion(subtitle) : 0, mouthLevel, onFail: setFailure, onLipSync: setMouthReady }) :
-					rig ? h(RolePrototype, { key: persona.profileId, persona, speaking, listening: (listening || !!message) && !speaking, emotion: speaking ? avatarReplyEmotion(subtitle) : 0, mouthLevel, onError: () => setPrototypeFailed(true) }) :
-					h(react.Fragment, null,
+				h("div", { className: "dfy-role-art", hidden: scene.active },
+					rigged ? h(RiggedRole, { persona, speaking, listening: attending, emotion, mouthLevel }) :
+					model ? h(Live2DScene, { entry, speaking, listening: attending, emotion, mouthLevel, dialogue, onFail: setFailure, onLipSync: setMouthReady }) :
+					rig ? h(RolePrototype, { key: persona.profileId, persona, speaking, listening: attending, emotion, mouthLevel, dialogue, visible: !scene.active, idleAllowed: !engaged, onError: () => setPrototypeFailed(true) }) :
 						portraitUnavailable || !persona.media.portraitUrl ? h("span", { className: "dfy-role-initial" }, persona.name) :
-							h("img", { src: persona.media.portraitUrl, alt: persona.name + "的官方立绘", onError: () => setPortraitUnavailable(true) }),
-						scene ? h("video", { ref: video, src: sceneUrl, muted: true, playsInline: true, loop: true,
-							className: speaking ? "dfy-idle-video-hidden" : undefined,
-							"aria-label": persona.name + "的待机动画", "aria-hidden": speaking || undefined,
-							onError: () => setSceneFailed(true) }) : null),
-				speaking && !model && !rig ? h("span", { className: "dfy-stage-voice" }, "正在说话", h(SpeechMeter, { level: mouthLevel })) : null,
+							h("img", { src: persona.media.portraitUrl, alt: persona.name + "的官方立绘", onError: () => setPortraitUnavailable(true) })),
+				scene.props ? h("video", { ...scene.props, "aria-label": persona.name + "的待机动画" }) : null,
+				speaking && !rigged && !model && !rig ? h("span", { className: "dfy-stage-voice" }, "正在说话", h(SpeechMeter, { level: mouthLevel })) : null,
 				h(StageMessage, { message })),
-			h("div", { className: "dfy-role-caption" + (speaking ? " dfy-role-caption-speaking" : "") },
-				subtitle ? h("p", { role: "status" }, subtitle) : null,
+			h("div", { className: "dfy-role-caption" },
+				subtitle && speaking ? h(SpeechCaption, { line: subtitle, progress: captionProgress }) : null,
 				h("p", { className: "dfy-caption" },
-					model ? "Live2D · " + entry.name + (mouthReady === false ? " · 缺少可用口型参数" : "") :
-					rig ? (persona.source === "plugin" ? "DSH 原版动画 · 音频口型" : "原片口型原型") : scene ? "待机视频 · 语音回复时显示立绘" : (portraitUnavailable ? "官方立绘暂不可用" : "鹅次元官方立绘") +
+					rigged ? "原图姿势 · 动态口型" : model ? "Live2D · " + entry.name + (mouthReady === false ? " · 缺少可用口型参数" : "") :
+					scene.active ? "待机动画" : rig ? (persona.source === "plugin" ? "DSH 原版动画 · 音频口型" : "原片口型原型") : (portraitUnavailable ? "官方立绘暂不可用" : "鹅次元官方立绘") +
 						(failure ? " · 本地模型加载失败" : fallback ? " · " + fallback : ""))));
 	}
 
@@ -1436,12 +1729,12 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		return message ? h("p", { className: "dfy-stage-message" }, message.author + " · " + message.text) : null;
 	}
 
-	function PreviewCanvas({ preview, compact, entry, sceneUrl, prototype, fallback, speaking, listening, subtitle, mouthLevel, message }) {
+	function PreviewCanvas({ preview, compact, entry, sceneUrl, prototype, rigged, fallback, speaking, listening, subtitle, captionProgress, mouthLevel, message }) {
 		const persona = preview?.persona;
 		if (!persona?.media) return null;
 		const onStage = preview.scene?.danmakuOverlay !== false ? message : null;
 		return h(EciyuanPreview, { key: persona.profileId + ":" + (entry?.id || "") + ":" + (sceneUrl || ""),
-			persona, entry, sceneUrl, prototype, fallback, speaking, listening, subtitle, mouthLevel, message: onStage });
+			persona, entry, sceneUrl, prototype, rigged, fallback, speaking, listening, subtitle, captionProgress, mouthLevel, message: onStage });
 	}
 
 	function WorkbenchControls({ status, act, busy, goTab, officialUrl, connected }) {
@@ -1807,13 +2100,21 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 	// ------------------------------------------------------------------ 直播预览
 
+	function estimateSpeechDuration(text) {
+		const tokens = text.match(/\p{Script=Han}|[\p{L}\p{N}]+|[，。！？、；：,.!?]/gu) || [];
+		const units = tokens.reduce((sum, word) => sum + (/^[\x00-\x7f]+$/.test(word) ? Math.max(1, word.length / 3) : 1), 0);
+		return Math.max(1, units / 4.3);
+	}
+
 	function useLocalSpeech(role) {
 		const utterance = useRef(null);
+		const caption = useRef(null);
 		const [phase, setPhase] = useState("idle");
 		const [note, setNote] = useState("");
 		const cancel = useCallback(() => {
 			if (!utterance.current) return;
 			utterance.current = null;
+			caption.current = null;
 			window.speechSynthesis.cancel();
 		}, []);
 		useEffect(() => {
@@ -1855,12 +2156,17 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			setNote("准备朗读…");
 			item.onstart = () => {
 				if (utterance.current !== item) return;
+				caption.current = { start: performance.now(), duration: estimateSpeechDuration(text) / item.rate, boundary: null };
 				setPhase("speaking");
 				setNote("正在朗读 · " + voice.name);
+			};
+			item.onboundary = (event) => {
+				if (utterance.current === item && caption.current && event.charIndex > 0) caption.current.boundary = event.charIndex / text.length;
 			};
 			const finish = (message) => {
 				if (utterance.current !== item) return;
 				utterance.current = null;
+				caption.current = null;
 				setPhase("idle");
 				setNote(message);
 			};
@@ -1868,7 +2174,11 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			item.onerror = () => finish("朗读失败，请检查系统音色后重试");
 			try { synth.speak(item); } catch { finish("朗读失败，请重试"); }
 		};
-		return { speak, stop, phase, note };
+		const captionProgress = useCallback(() => {
+			const timing = caption.current;
+			return timing ? timing.boundary ?? Math.min(.94, (performance.now() - timing.start) / 1000 / timing.duration) : 0;
+		}, []);
+		return { speak, stop, phase, note, captionProgress };
 	}
 
 	function useLocalRecognition(onTranscript) {
@@ -1962,10 +2272,11 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		lubai: { name: "Tingting", index: 1, rate: 0.88, pitch: 0.86 },
 		guyu: { name: "Flo", index: 2, rate: 0.94, pitch: 0.97 },
 		beila: { name: "Shelley", index: 3, rate: 1.15, pitch: 1.03 },
+		"xiaxia-3d": { name: "Sandy", index: 0, rate: 1.02, pitch: 1.12 },
 	};
 
 	// Read PCM samples at the playback position without routing sound through a second audio device.
-	function wavMouthLevel(bytes) {
+	function wavMouthSample(bytes) {
 		const wav = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 		let sampleRate = 0, channels = 0;
 		for (let offset = 12; offset + 8 <= wav.byteLength;) {
@@ -1980,23 +2291,17 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			}
 			if (chunk === 0x64617461 && sampleRate && channels) {
 				const stride = 2 * channels;
-				const total = Math.floor(length / stride);
-				return (time) => {
-					const center = Math.floor(time * sampleRate);
-					const start = Math.max(0, center - Math.floor(sampleRate * 0.012));
-					const end = Math.min(total, center + Math.ceil(sampleRate * 0.012));
-					let energy = 0, count = 0;
-					for (let i = start; i < end; i += 3) {
-						const sample = wav.getInt16(payload + i * stride, true) / 32768;
-						energy += sample * sample;
-						count++;
-					}
-					return count ? Math.min(1, Math.max(0, (Math.sqrt(energy / count) - 0.009) * 12)) : 0;
-				};
+				const samples = new Float32Array(Math.floor(length / stride));
+				for (let i = 0; i < samples.length; i++) {
+					let sum = 0;
+					for (let ch = 0; ch < channels; ch++) sum += wav.getInt16(payload + i * stride + 2 * ch, true);
+					samples[i] = sum / (channels * 32768);
+				}
+				return (time) => avatarPcmFeatures(samples, sampleRate, time);
 			}
 			offset = payload + length + length % 2;
 		}
-		return () => 0;
+		return () => ({ level: 0, form: 0 });
 	}
 
 	function waitForRoleOutput(playing) {
@@ -2015,6 +2320,32 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			signal.addEventListener("abort", done, { once: true });
 			check();
 		});
+	}
+
+	function appendRoleChunk(playing, start, buffer) {
+		playing.timeline.push({ start, end: start + buffer.duration, offset: playing.captionDuration,
+			data: buffer.getChannelData(0), sampleRate: buffer.sampleRate });
+		playing.captionDuration += buffer.duration;
+	}
+
+	function roleCaptionProgress(playing) {
+		if (!playing) return 0;
+		if (playing.audio) {
+			const { currentTime, duration } = playing.audio;
+			return Number.isFinite(duration) && duration > 0 ? currentTime / duration : 0;
+		}
+		const time = avatarPlaybackTime(playing.context, performance.now());
+		if (time === null || !playing.timeline.length) return 0;
+		let elapsed = playing.timeline[0].offset;
+		for (const { start, end, offset } of playing.timeline) {
+			if (time < start) break;
+			elapsed = offset + Math.min(end, time) - start;
+			if (time < end) break;
+		}
+		// Pending network gaps do not count toward playback, and buffered audio
+		// alone does not tell us how much of a streamed reply remains.
+		const duration = playing.captionComplete ? playing.captionDuration : Math.max(playing.captionEstimate, playing.captionDuration);
+		return Math.min(playing.captionComplete ? 1 : .94, elapsed / duration);
 	}
 
 	async function playRoleStream(response, playing, onStart) {
@@ -2051,7 +2382,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			const start = Math.max(next, context.currentTime + (initial ? 0.085 : 0.025));
 			next = start + buffer.duration;
 			last = new Promise((resolve) => { source.onended = () => { playing.sources.delete(source); resolve(); }; });
-			playing.timeline.push({ start, end: start + buffer.duration, data: buffer.getChannelData(0), sampleRate: buffer.sampleRate });
+			appendRoleChunk(playing, start, buffer);
 			source.start(start);
 			if (initial) {
 				playing.startTimer = setTimeout(() => {
@@ -2071,6 +2402,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			signal.throwIfAborted();
 			if (pending.trim()) consume(pending);
 			if (!ended || !last) throw new Error("角色语音播放中断");
+			playing.captionComplete = true;
 			await new Promise((resolve) => {
 				if (signal.aborted) { resolve(); return; }
 				signal.addEventListener("abort", resolve, { once: true });
@@ -2135,16 +2467,19 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				const chunk = playing.timeline.find((item) => time >= item.start && time < item.end);
 				if (chunk) return avatarPcmFeatures(chunk.data, chunk.sampleRate, time - chunk.start);
 			}
-			return { level: playing?.audio && !playing.audio.paused ? playing.sampleLevel(playing.audio.currentTime) : 0, form: 0 };
+			return playing?.audio && !playing.audio.paused ? playing.sampleWav(playing.audio.currentTime) : { level: 0, form: 0 };
 		}, []);
 		const level = useCallback(() => sample().level, [sample]);
 		level.sample = sample;
+		const captionProgress = useCallback(() => usingBrowser.current ? browser.captionProgress() : roleCaptionProgress(active.current),
+			[browser.captionProgress]);
 		const speak = async (text, voiceId, interactionId, stage) => {
 			cancelAudio();
 			browser.stop();
 			usingBrowser.current = false;
 			const playing = { controller: new AbortController(), sources: new Set(), onDone: stage?.done,
-				sharedContext: !!stageContext, context: stageContext?.current, timeline: [] };
+				sharedContext: !!stageContext, context: stageContext?.current, timeline: [],
+				captionDuration: 0, captionComplete: false, captionEstimate: estimateSpeechDuration(text.slice(0, 500)) };
 			if (!playing.context && !stageContext && window.AudioContext) {
 				try {
 					playing.context = new AudioContext();
@@ -2203,7 +2538,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					source.connect(analyser);
 					playing.sources.add(source);
 					source.onended = () => { void waitForRoleOutput(playing).then(() => finish("朗读完成", true)); };
-					playing.timeline.push({ start, end: start + buffer.duration, data: buffer.getChannelData(0), sampleRate: buffer.sampleRate });
+					appendRoleChunk(playing, start, buffer);
+					playing.captionComplete = true;
 					source.start(start);
 					playing.startTimer = setTimeout(() => {
 						if (active.current === playing && context.state === "running") {
@@ -2213,7 +2549,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					}, 25);
 					return;
 				}
-				playing.sampleLevel = wavMouthLevel(bytes);
+				playing.sampleWav = wavMouthSample(bytes);
 				playing.url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
 				const audio = playing.audio = new Audio(playing.url);
 				audio.onplaying = () => {
@@ -2245,7 +2581,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			}
 		};
 		return { speak, stop, phase: usingBrowser.current ? browser.phase : phase,
-			note: usingBrowser.current ? browser.note : note, level };
+			note: usingBrowser.current ? browser.note : note, level, captionProgress };
 	}
 
 
@@ -2303,8 +2639,9 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const [prototypeMotion, setPrototypeMotion] = useState(null);
 		const markPrototypeMotion = useCallback((id, ready) => setPrototypeMotion({ id, ready }), []);
 		const modelId = persona?.media?.modelId;
+		const rigged = catalog?.rigged?.includes(modelId);
 		const prototype = catalog?.prototypes?.includes(modelId) && prototypeFailure !== persona?.profileId;
-		const model = modelId && catalog && Object.values(catalog.vendors).every(Boolean) ?
+		const model = !rigged && modelId && catalog && Object.values(catalog.vendors).every(Boolean) ?
 			catalog.models.find((item) => item.id === modelId && item.id !== failure) : null;
 
 		useEffect(() => {
@@ -2324,44 +2661,20 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		}, [modelId]);
 
 		return {
-			roomBackdrop, model, prototype, markPrototypeMotion, setFailure, setPrototypeFailure,
+			roomBackdrop, model, prototype, rigged, markPrototypeMotion, setFailure, setPrototypeFailure,
 			scenes: catalog?.scenes ?? [],
 			missingMotion: !model && prototype && prototypeMotion?.id === modelId && !prototypeMotion.ready,
 		};
 	}
 
-	function BroadcastPicture({ persona, layout, artwork, visible = true, live, safe, speaking, listening, line, mouthLevel, viseme, dialogue, turns, onFrame }) {
-		const { roomBackdrop, model, prototype, markPrototypeMotion, setFailure, setPrototypeFailure, scenes } = artwork;
+	function BroadcastPicture({ persona, layout, artwork, visible = true, live, safe, speaking, listening, engaged, line, captionProgress, mouthLevel, viseme, dialogue, turns, onFrame }) {
+		const { roomBackdrop, model, prototype, rigged, markPrototypeMotion, setFailure, setPrototypeFailure, scenes } = artwork;
 		const emotion = speaking ? avatarReplyEmotion(line) : 0;
-		// 官方角色动态视频：待机（不说/不听/非安全）时作为整体动画层，说话与倾听时
-		// 淡出回到 2.5D 网格（口型/表情由音频驱动）。视频静音循环，不引入音源。
 		const sceneId = persona?.media?.modelId;
-		const sceneUrl = !model && scenes.includes(sceneId) && !safe && visible ?
+		const sceneUrl = !rigged && !model && !prototype && sceneId !== "dsh-pet" && scenes.includes(sceneId) && !safe && visible ?
 			"/api/dafeiyu/avatar/scene?id=" + encodeURIComponent(sceneId) : null;
-		const [sceneReady, setSceneReady] = useState(false);
-		const [sceneFailed, setSceneFailed] = useState(false);
-		const sceneVideo = useRef(null);
-		useEffect(() => { setSceneReady(false); setSceneFailed(false); }, [sceneUrl]);
-		const reduced = useRef(window.matchMedia("(prefers-reduced-motion: reduce)")).current;
-		const showScene = !!sceneUrl && sceneReady && !sceneFailed && !speaking && !listening && !safe && !reduced.matches;
-		// 说话/倾听/安全/页面隐藏时暂停视频解码，回到待机再续播（避免整帧重影与无谓开销）
-		useEffect(() => {
-			const video = sceneVideo.current;
-			if (!video) return;
-			if (showScene && !document.hidden) video.play().catch(() => {});
-			else video.pause();
-		}, [showScene]);
-		useEffect(() => {
-			const onVisibility = () => {
-				const video = sceneVideo.current;
-				if (!video) return;
-				if (!document.hidden && showScene) video.play().catch(() => {});
-				else video.pause();
-			};
-			document.addEventListener("visibilitychange", onVisibility);
-			return () => document.removeEventListener("visibilitychange", onVisibility);
-		}, [showScene]);
-		return h("div", { className: "dfy-broadcast" + (persona?.media?.modelId === "dsh-pet" ? " dfy-room-pet" : " dfy-room-person") + (layout === "landscape" ? " dfy-broadcast-landscape" : ""),
+		const scene = useIdleScene(sceneUrl, !speaking && !engaged, onFrame);
+		return h("div", { className: "dfy-broadcast" + (persona?.media?.modelId === "dsh-pet" ? " dfy-room-pet" : " dfy-room-person") + (layout === "landscape" ? " dfy-broadcast-landscape" : "") + (rigged ? " dfy-broadcast-reference" : ""),
 			"aria-label": layout === "landscape" ? "直播画面 1920×1080" : "直播画面 1080×1920",
 			style: { "--stage-color": persona?.theme?.primary, "--stage-dark": persona?.theme?.bg } },
 		roomBackdrop ? h("img", { className: "dfy-room-backdrop", src: roomBackdrop, alt: "" }) : null,
@@ -2369,25 +2682,24 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		!safe && visible ? h(BroadcastOverlay, { live, speaking, persona, turns }) : null,
 		safe ? h("div", { className: "dfy-broadcast-safe" }, "播出已暂停") : visible ?
 			h("div", { className: "dfy-broadcast-art" },
-				sceneUrl ? h("video", { key: sceneUrl, ref: sceneVideo, className: "dfy-idle-scene" + (showScene ? " dfy-idle-scene-on" : ""),
-					src: sceneUrl, muted: true, playsInline: true, loop: true, autoPlay: true, "aria-hidden": true,
-					onPlaying: () => setSceneReady(true), onError: () => setSceneFailed(true) }) : null,
-				model ? h(Live2DScene, { key: model.id, entry: model, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, onFrame,
-					onFail: () => setFailure(model.id), onLipSync: (ok) => { if (!ok && prototype) setFailure(model.id); } }) :
-					prototype ? h(RolePrototype, { key: persona.profileId, persona, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, sceneHidden: showScene, onFrame,
-						onMotionReady: markPrototypeMotion, onError: () => setPrototypeFailure(persona.profileId) }) :
-						persona?.media?.portraitUrl ? h("img", { src: persona.media.portraitUrl, alt: persona.name }) :
-							persona ? h("span", { className: "dfy-role-initial" }, persona.name) : null) : null,
-		!safe && speaking && line ? h("p", { className: "dfy-broadcast-caption", role: "status" }, line) : null);
+				h("div", { className: "dfy-broadcast-avatar", hidden: scene.active },
+					rigged ? h(RiggedRole, { key: persona.profileId, persona, speaking, listening, emotion, mouthLevel, safe, onFrame }) :
+					model ? h(Live2DScene, { key: model.id, entry: model, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, onFrame,
+						onFail: () => setFailure(model.id), onLipSync: (ok) => { if (!ok && prototype) setFailure(model.id); } }) :
+						prototype ? h(RolePrototype, { key: persona.profileId, persona, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, visible: !scene.active, idleAllowed: !engaged, onFrame,
+							onMotionReady: markPrototypeMotion, onError: () => setPrototypeFailure(persona.profileId) }) :
+							persona?.media?.portraitUrl ? h("img", { src: persona.media.portraitUrl, alt: persona.name }) :
+								persona ? h("span", { className: "dfy-role-initial" }, persona.name) : null),
+				scene.props ? h("video", { ...scene.props, "aria-hidden": true }) : null) : null,
+		!safe && visible && speaking && line ? h(SpeechCaption, { className: "dfy-broadcast-caption", line, progress: captionProgress }) : null);
 	}
 
-	function useBroadcastWindow(frame) {
+	function useBroadcastWindow(frame, owner) {
 		const [open, setOpen] = useState(false);
 		const [pending, setPending] = useState(false);
 		const [notice, setNotice] = useState("");
-		const owner = useRef(null);
+		const playbackVersion = useRef(null);
 		const current = useRef(frame);
-		owner.current ??= crypto.randomUUID();
 		current.current = frame;
 
 		const control = async (action) => {
@@ -2396,6 +2708,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			try {
 				const result = await api("broadcast-window/" + action, { owner: owner.current });
 				if (!result.ok) throw new Error(result.error || "请重载大肥鱼插件");
+				if (action === "open" && !Number.isSafeInteger(result.playbackVersion)) throw new Error("请重载大肥鱼插件");
+				playbackVersion.current = result.playbackVersion ?? null;
 				setOpen(action === "open");
 			} catch (error) {
 				setNotice("播出窗口操作失败 · " + error.message);
@@ -2410,10 +2724,10 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			let timer;
 			const send = async () => {
 				const started = performance.now();
-				const { speaking, listening, subtitle, level, safe, profileId } = current.current;
+				const { speaking, listening, subtitle, captionProgress, level, safe, profileId } = current.current;
 				const sample = speaking ? (level.sample?.() || { level: level(), form: 0 }) : { level: 0, form: 0 };
-				const body = JSON.stringify({ owner: owner.current, speaking, listening, subtitle, safe, profileId,
-					...sample, sampledAt: Date.now() });
+				const body = JSON.stringify({ owner: owner.current, playbackVersion: playbackVersion.current, speaking, listening, subtitle, safe, profileId,
+					...sample, captionProgress: speaking ? captionProgress() : undefined, sampledAt: Date.now() });
 				try {
 					const response = await fetch("/api/dafeiyu/broadcast-window/frame", {
 						method: "POST", headers: jsonHeaders, body,
@@ -2422,14 +2736,65 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					const result = await response.json();
 					if (lifecycle.signal.aborted) return;
 					if (result.ok && !result.open) { setOpen(false); return; }
+					if (result.ok && Number.isSafeInteger(result.playbackVersion)) playbackVersion.current = result.playbackVersion;
 				} catch { /* A disconnected preview will switch to the safe scene. */ }
 				if (!lifecycle.signal.aborted) timer = setTimeout(send, Math.max(0, 16 - (performance.now() - started)));
 			};
 			void send();
 			return () => { lifecycle.abort(); clearTimeout(timer); };
-		}, [open]);
+		}, [open, owner]);
 
 		return { open, pending, notice, control };
+	}
+
+	function useDialoguePresentation({ safe, speaking, listening, profileId, version, turns, allowTail = true }) {
+		const dialogue = useRef(null);
+		dialogue.current ??= createDialogueMotion();
+		const edge = useRef(null);
+		const seenTurns = useRef(new Set());
+		const [closing, setClosing] = useState(false);
+		const [reacting, setReacting] = useState(false);
+
+		useLayoutEffect(() => {
+			const now = performance.now();
+			const motion = dialogue.current;
+			const previous = edge.current;
+			edge.current = { safe, speaking, listening, profileId, version };
+			setClosing(false);
+			if (safe) { motion.apply("safe", now); return; }
+			const continuous = previous && !previous.safe && previous.profileId === profileId && previous.version === version;
+			if (previous?.safe) motion.apply("resume", now);
+			else if (!continuous) motion.interrupt(now);
+			if (speaking) motion.apply("speak", now);
+			else if (listening) motion.apply("think", now);
+			else if (continuous && previous.speaking && allowTail) {
+				const { blendMs } = motion.apply("tail", now);
+				setClosing(true);
+				const timer = setTimeout(() => {
+					motion.interrupt(performance.now());
+					setClosing(false);
+				}, blendMs);
+				return () => clearTimeout(timer);
+			} else if (continuous && (previous.listening || previous.speaking)) motion.interrupt(now);
+		}, [safe, speaking, listening, profileId, version, allowTail]);
+
+		useEffect(() => {
+			if (!turns?.length) { seenTurns.current.clear(); return; }
+			const fresh = turns.some((turn) => turn.source === "danmaku" && !seenTurns.current.has(turn.id));
+			seenTurns.current = new Set(turns.map((turn) => turn.id));
+			if (!fresh || safe || dialogue.current.phase === "closing") return;
+			const motion = dialogue.current;
+			const before = motion.targets;
+			if (motion.apply("danmaku", performance.now()) === before || speaking || listening) return;
+			setReacting(true);
+			const timer = setTimeout(() => {
+				if (motion.phase === "listening") motion.interrupt(performance.now());
+				setReacting(false);
+			}, 700);
+			return () => { clearTimeout(timer); setReacting(false); };
+		}, [turns, safe, speaking, listening, profileId, version]);
+
+		return { dialogue, engaged: listening || closing || reacting };
 	}
 
 	function BroadcastOutput() {
@@ -2438,10 +2803,10 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const [turns, setTurns] = useState([]);
 		const [frame, setFrame] = useState({ safe: true });
 		const latest = useRef({ level: 0, form: 0, sampledAt: 0 });
+		const captionProgress = useCallback(() => latest.current.captionProgress, []);
 		const mouthLevel = useCallback(() => Date.now() - latest.current.sampledAt < 160 ? latest.current.level : 0, []);
 		mouthLevel.sample = () => ({ level: mouthLevel(), form: mouthLevel() ? latest.current.form : 0 });
-		const frameVersion = useRef(0);
-	const metrics = useRef({ frameAges: [], renderIntervals: [], lastRender: 0, staleFrames: 0 });
+		const metrics = useRef({ frameAges: [], renderIntervals: [], lastRender: 0, staleFrames: 0 });
 		const onFrame = useCallback(() => {
 			const now = performance.now(), m = metrics.current;
 			if (m.lastRender) { m.renderIntervals.push(now - m.lastRender); if (m.renderIntervals.length > 600) m.renderIntervals.shift(); }
@@ -2456,28 +2821,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const live = preview?.liveStatus === "live_confirmed";
 		const artwork = useBroadcastArtwork(persona, catalog);
 		const safe = !preview || frame.safe || frame.profileId !== persona?.profileId;
-		// 对话动作（方案第 4 条）：独立窗口由 SSE 帧边沿（倾听/说话/安全）与互动轮次驱动，
-		// 与工作台共享同一状态机语义；弹幕到达 → 视线移向互动区。
-		const dialogue = useRef(null);
-		dialogue.current ??= createDialogueMotion();
-		const seenTurns = useRef(new Set());
-		useEffect(() => {
-			const fresh = turns.filter((turn) => turn.source === "danmaku" && !seenTurns.current.has(turn.id));
-			if (!fresh.length) return;
-			for (const turn of fresh) seenTurns.current.add(turn.id);
-			dialogue.current.apply("danmaku", performance.now());
-		}, [turns]);
-		const frameEdge = useRef({ speaking: false, listening: false, safe: true });
-		useEffect(() => {
-			const now = performance.now();
-			const edge = frameEdge.current;
-			if (frame.safe) dialogue.current.apply("safe", now);
-			else if (edge.safe) dialogue.current.apply("resume", now);
-			if (frame.speaking && !edge.speaking) dialogue.current.apply("speak", now);
-			else if (!frame.speaking && edge.speaking) dialogue.current.apply("tail", now);
-			else if (frame.listening && !edge.listening && !frame.speaking) dialogue.current.apply("think", now);
-			frameEdge.current = { speaking: !!frame.speaking, listening: !!frame.listening, safe: !!frame.safe };
-		}, [frame.speaking, frame.listening, frame.safe]);
+		const motion = useDialoguePresentation({ safe, speaking: frame.speaking, listening: frame.listening,
+			profileId: persona?.profileId, version: frame.version, turns });
 
 		useEffect(() => {
 			window.webkit?.messageHandlers?.broadcastReady?.postMessage("ready");
@@ -2491,13 +2836,10 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				try {
 					const result = JSON.parse(event.data);
 					received = performance.now();
-					// 播放版本跳变（切角色/打断/紧急停止）：旧口型立即作废并收口，
-					// 直到工作台发来新版本的新鲜样本；字幕与状态照常跟随。
-					const jumped = frameVersion.current !== 0 && result.version !== undefined && result.version !== frameVersion.current;
-					if (result.version !== undefined) frameVersion.current = result.version;
-					latest.current = jumped ? { ...result, level: 0, form: 0, sampledAt: 0 } : result;
+					// Only server-accepted samples reach the renderer after a version change.
+					latest.current = result;
 					setFrame((old) => old.safe === result.safe && old.profileId === result.profileId && old.speaking === result.speaking &&
-						old.listening === result.listening && old.subtitle === result.subtitle ? old : result);
+						old.listening === result.listening && old.subtitle === result.subtitle && old.version === result.version ? old : result);
 				} catch { reset(); }
 			};
 			stream.onerror = reset;
@@ -2550,7 +2892,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 		return h("main", { className: "dfy-root dfy-output-window" },
 			h(BroadcastPicture, { persona, layout: "portrait", artwork, live, safe,
-				speaking: frame.speaking, listening: frame.listening, line: frame.subtitle, mouthLevel, dialogue, turns, onFrame }));
+				speaking: frame.speaking, listening: frame.listening, line: frame.subtitle, captionProgress, mouthLevel, dialogue: motion.dialogue,
+				engaged: motion.engaged, turns, onFrame }));
 	}
 
 	function BroadcastStage({ status, settings, preview, catalog, visible, emergency, controls, publish }) {
@@ -2578,45 +2921,17 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			if ((turn.source !== "operator" && turn.kind !== "comment") || turn.playback !== "played") return latest;
 			return Math.max(latest, Date.parse(turn.sentAt) || 0);
 		}, 0);
-		const health = useStageHealth({ visible, live, safe, renderer: artwork.model ? "model:" + artwork.model.id : artwork.prototype ? "rig:" + persona.profileId : "",
+		const health = useStageHealth({ visible, live, safe, renderer: artwork.model ? "model:" + artwork.model.id : artwork.rigged || artwork.prototype ? "rig:" + persona.profileId : "",
 			catalogReady: !!catalog && !!preview, missingMotion: artwork.missingMotion,
 			lastInteractionAt });
 
-		// 对话动作（方案第 4 条）：弹幕到达 → 视线移向互动区；等待回复 → 思考侧头；
-		// 首音 → 说话收敛；尾音 → 收尾点头。连发弹幕由状态机内部合并限频，
-		// 刷屏不会变成不停点头；说话期间动作降权，不与口型抢注意力。
-		const dialogue = useRef(null);
-		dialogue.current ??= createDialogueMotion();
-		const seenTurns = useRef(new Set());
-		useEffect(() => {
-			const fresh = turns.filter((turn) => turn.source === "danmaku" && !seenTurns.current.has(turn.id));
-			if (!fresh.length) return;
-			for (const turn of fresh) seenTurns.current.add(turn.id);
-			dialogue.current.apply("danmaku", performance.now());
-		}, [turns]);
-		const speechPhase = useRef("idle");
-		const wasSafe = useRef(false);
-		useEffect(() => {
-			const now = performance.now();
-			if (safe) {
-				if (!wasSafe.current) dialogue.current.apply("safe", now);
-				wasSafe.current = true;
-				speechPhase.current = "idle";
-				return;
-			}
-			if (wasSafe.current) { wasSafe.current = false; dialogue.current.apply("resume", now); }
-			const phase = speech.phase;
-			if (phase === speechPhase.current) return;
-			const previous = speechPhase.current;
-			speechPhase.current = phase;
-			if (phase === "pending") dialogue.current.apply("think", now);
-			else if (phase === "speaking") dialogue.current.apply("speak", now);
-			else if (previous === "speaking" || previous === "pending") dialogue.current.apply("tail", now);
-		}, [speech.phase, safe]);
+		const speaking = speech.phase === "speaking" && !safe;
+		const listening = !safe && !speaking && (speech.phase === "pending" ||
+			(live && turns.some((turn) => ["queued", "thinking"].includes(turn.status))));
+		const motion = useDialoguePresentation({ safe, speaking, listening, profileId: persona?.profileId, turns, allowTail: armed });
 
 		useEffect(() => {
-			if (!live) { setTurns([]); seenTurns.current.clear(); return; }
-			if (!visible || safe) return;
+			if (!live || safe) { setTurns([]); return; }
 			const controller = new AbortController();
 			let timer;
 			const update = async () => {
@@ -2631,7 +2946,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			};
 			update();
 			return () => { controller.abort(); clearTimeout(timer); };
-		}, [live, visible, safe]);
+		}, [live, safe]);
 
 		const release = useCallback(() => {
 			fetch("/api/dafeiyu/interaction/stage", {
@@ -2643,7 +2958,6 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			unlock.current = null;
 			handlers.current.speech.stop();
 			active.current = null;
-			dialogue.current.interrupt(performance.now());
 			// 暂停播出声音 = 打断：让独立窗口作废在途口型与动作（旧版本上行帧随后被拒收）
 			fetch("/api/dafeiyu/broadcast-window/interrupt", {
 				method: "POST", headers: jsonHeaders, keepalive: true,
@@ -2757,13 +3071,11 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			setLine(text);
 			speech.speak(text, persona.voiceId, undefined, { owner: owner.current, done: () => setLine("") });
 		};
-		const speaking = speech.phase === "speaking" && !safe;
-		const listening = !safe && !speaking && (speech.phase === "pending" || turns.some((turn) => ["queued", "thinking"].includes(turn.status)));
-		const outputWindow = useBroadcastWindow({ safe, speaking, listening, subtitle: speaking ? line : "", level: speech.level,
-			profileId: persona?.profileId });
+		const outputWindow = useBroadcastWindow({ safe, speaking, listening, subtitle: speaking ? line : "", captionProgress: speech.captionProgress, level: speech.level,
+			profileId: persona?.profileId }, owner);
 		useEffect(() => {
-			publish({ speaking, listening, subtitle: speaking ? line : "", mouthLevel: speech.level });
-		}, [publish, speaking, listening, line, speech.level]);
+			publish({ speaking, listening, subtitle: speaking ? line : "", captionProgress: speech.captionProgress, mouthLevel: speech.level });
+		}, [publish, speaking, listening, line, speech.level, speech.captionProgress]);
 
 		return h("section", { className: "dfy-inline-stage", hidden: !visible, "aria-label": "插件内直播画面" },
 			h("div", { className: "dfy-inline-stage-controls" },
@@ -2783,8 +3095,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				notice || speech.note ? h("span", { className: "dfy-caption", role: "status" }, notice || speech.note) : null,
 				h("p", { className: "dfy-stage-health", role: "status" }, health.notice)),
 			h("div", { className: "dfy-inline-stage-frame" },
-				h(BroadcastPicture, { persona, layout, artwork, visible, live, safe, speaking, listening, line,
-					mouthLevel: speech.level, dialogue, turns, onFrame: health.onFrame })));
+				h(BroadcastPicture, { persona, layout, artwork, visible, live, safe, speaking, listening, line, captionProgress: speech.captionProgress,
+					mouthLevel: speech.level, dialogue: motion.dialogue, engaged: motion.engaged, turns, onFrame: health.onFrame })));
 	}
 
 	const REPLY_SOURCE = { local_gpu: "本地模型", local_cpu: "本地模型（CPU）", cloud: "云端模型", fallback: "预设回复" };
@@ -2873,8 +3185,9 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			busyTurn || (latest?.status === "queued" ? latest : null) : spoken;
 		const caption = activeTurn?.answer?.text || "";
 		useEffect(() => {
-			publish({ speaking: speech.phase === "speaking", listening: mic.phase === "listening" || !!busyTurn || speech.phase === "pending", subtitle: caption, mouthLevel: speech.level, message: activeTurn });
-		}, [publish, speech.phase, speech.level, mic.phase, !!busyTurn, caption, activeTurn?.id, activeTurn?.text, activeTurn?.author]);
+			publish({ speaking: speech.phase === "speaking", listening: mic.phase === "listening" || !!busyTurn || speech.phase === "pending",
+				subtitle: caption.slice(0, 500), captionProgress: speech.captionProgress, mouthLevel: speech.level, message: activeTurn });
+		}, [publish, speech.phase, speech.level, speech.captionProgress, mic.phase, !!busyTurn, caption, activeTurn?.id, activeTurn?.text, activeTurn?.author]);
 		useEffect(() => {
 			if (follow.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
 		}, [latest?.id, latestAnswer?.id, busyTurn?.id, busyTurn?.draft]);
@@ -3075,6 +3388,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const runtimeReady = catalog && Object.values(catalog.vendors).every(Boolean);
 		const entry = runtimeReady ? installed : null;
 		const prototype = catalog?.prototypes?.includes(roleMedia?.modelId);
+		const rigged = catalog?.rigged?.includes(roleMedia?.modelId);
 		const fallback = installed && !runtimeReady ? "Live2D 运行时缺失" : "";
 
 		const locked = ["self_check", "awaiting_platform", "stream_established", "live_confirmed", "ending"].includes(status?.liveStatus);
@@ -3135,7 +3449,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 						!emergency && connected && status?.personaReady ? h(Btn, { disabled: busy,
 							onClick: () => act("preview/start", { resume: true }, "恢复本地预览") }, "恢复本地预览") : null,
 						h("span", { className: "dfy-pet-ai" }, persona?.aiLabelText || "AI 生成内容")) :
-						roleMedia ? h(PreviewCanvas, { preview: { ...preview, persona }, entry, sceneUrl, prototype, fallback, ...(live ? { ...caption, ...liveCaption } : caption) }) :
+						roleMedia ? h(PreviewCanvas, { preview: { ...preview, persona }, entry, sceneUrl, prototype, rigged, fallback, ...(live ? { ...caption, ...liveCaption } : caption) }) :
 							h("div", { className: "dfy-desk-safe" }, persona?.name || (preview ? "配置角色后可预览" : "正在加载预览…"))),
 				canInteract && persona ? h(PreviewConversation, {
 					key: persona.profileId, persona, voiceId: persona.voiceId, samplePhrase: selected?.samplePhrase, publish: setCaption,

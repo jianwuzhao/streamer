@@ -22,4 +22,16 @@ export default defineConfig([{
   dts: false,
   minify: true,
   clean: false,
+}, {
+  entry: { 'rigged-avatar': 'client/rigged-avatar.mjs' },
+  outDir: 'lib',
+  format: 'iife',
+  platform: 'browser',
+  target: 'safari16.4',
+  env: { NODE_ENV: 'production' },
+  outExtensions: () => ({ js: '.js' }),
+  deps: { alwaysBundle: ['three'], onlyBundle: ['three'] },
+  dts: false,
+  minify: true,
+  clean: false,
 }])

@@ -35,7 +35,7 @@ const execFileAsync = promisify(execFile)
 export const SAY_BIN = '/usr/bin/say'
 
 /** 支持角色语音的档案 id 白名单。 */
-export const ROLE_SPEECH_PROFILE_IDS = ['xiaxia', 'lubai', 'guyu', 'beila', 'dsh-pet'] as const
+export const ROLE_SPEECH_PROFILE_IDS = ['xiaxia', 'lubai', 'guyu', 'beila', 'dsh-pet', 'xiaxia-3d'] as const
 export type RoleSpeechProfileId = (typeof ROLE_SPEECH_PROFILE_IDS)[number]
 
 export interface RoleSpeechVoice {
@@ -57,6 +57,7 @@ export const ROLE_SPEECH_VOICES: readonly RoleSpeechVoice[] = [
   { profileId: 'guyu', voiceName: 'Flo（中文（中国大陆））', sayVoice: 'Flo (中文（中国大陆）)', locale: 'zh-CN', rateWpm: 168 },
   { profileId: 'beila', voiceName: 'Shelley（中文（中国大陆））', sayVoice: 'Shelley (中文（中国大陆）)', locale: 'zh-CN', rateWpm: 206 },
   { profileId: 'dsh-pet', voiceName: 'Rocko（中文（中国大陆））', sayVoice: 'Rocko (中文（中国大陆）)', locale: 'zh-CN', rateWpm: 192 },
+  { profileId: 'xiaxia-3d', voiceName: 'Sandy（中文（中国大陆））', sayVoice: 'Sandy (中文（中国大陆）)', locale: 'zh-CN', rateWpm: 190 },
 ]
 
 const DESKPET_STYLES = new Map([

@@ -13,7 +13,7 @@
 import type { DafeiyuPluginHandle } from './index.ts'
 import type { BroadcastWindow } from './live/broadcast-window.ts'
 import { ConversationError, INTERACTION_KINDS, MESSAGE_LIMIT, type InteractionKind } from './live/conversation.ts'
-import { BUILTIN_VOICES, resolveCloudBaseUrl } from './settings/catalogs.ts'
+import { BUILTIN_VOICES, RIGGED_MODEL_ID, resolveCloudBaseUrl } from './settings/catalogs.ts'
 import { SettingsValidationError, type Readiness } from './settings/store.ts'
 import { json, readBody, todayCostCny, FEEDBACK_LABELS, type FeedbackLabelInput, type ServerRequest, type ServerResponse } from './host-api-shared.ts'
 import { handleDataGetRoute } from './host-api-data.ts'
@@ -83,14 +83,6 @@ export function buildStatus(handle: DafeiyuPluginHandle): DafeiyuStatus {
 /** 生成 connection/request 处理器：非 /api/dafeiyu/ 前缀一律 next() 放行。 */
 export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindow?: BroadcastWindow) {
   const { session, conversation, startInteraction, stopInteraction, interactionSource, interactionStatus } = handle.live
-  // 播出打断：停止/紧急停止时推进播出版本。没有已打开的窗口时是空操作
-  // （owner 未知就统一按「全部作废」，窗口下次 publish 会自然从新版本开始）。
-  let stageOwner: string | undefined
-  const interruptStage = () => {
-    if (!broadcastWindow) return
-    if (stageOwner === undefined) return
-    broadcastWindow.interrupt(stageOwner)
-  }
   const handler = async (req: ServerRequest, res: ServerResponse, next: () => Promise<void>): Promise<void> => {
     const url = req.url ?? ''
     if (!url.startsWith('/api/dafeiyu/')) return next()
@@ -138,10 +130,10 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
             if (typeof args.owner !== 'string' || !/^[0-9a-f-]{36}$/i.test(args.owner)) {
               return json(res, 400, { ok: false, error: '播出窗口标识无效' })
             }
-            // 记住当前舞台 owner，供停止/紧急停止时统一打断
-            stageOwner = args.owner
             if (path === 'broadcast-window/frame') {
-              return json(res, 200, { ok: true, open: broadcastWindow.publish(args.owner, args) })
+              const accepted = broadcastWindow.publish(args.owner, args)
+              const playbackVersion = broadcastWindow.playbackVersion(args.owner)
+              return json(res, 200, { ok: true, open: playbackVersion !== null, accepted, playbackVersion })
             }
             if (path === 'broadcast-window/interrupt') {
               // 工作台主动打断（连发弹幕合并超限、切角色、操作员中止）：
@@ -153,7 +145,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
               return json(res, 200, { ok: true })
             }
             await broadcastWindow.open(args.owner)
-            return json(res, 200, { ok: true })
+            return json(res, 200, { ok: true, playbackVersion: broadcastWindow.playbackVersion(args.owner) })
           }
           case 'live/start': {
             // preflight 由操作员设置与实况状态拼装（§24.1/§23.2）：
@@ -190,7 +182,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
             stopInteraction()
             conversation.reset()
             // 结束直播同样是一次打断：递增播出版本，迟到帧不得恢复最后一句的口型
-            interruptStage()
+            broadcastWindow?.interrupt()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
           case 'live/emergency-stop': {
@@ -199,7 +191,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
             stopInteraction()
             conversation.reset()
             // 紧急停止立即作废在途口型与动作：版本递增后旧帧一律拒收，画面切安全稿
-            interruptStage()
+            broadcastWindow?.interrupt()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
           case 'live/operator-confirm': {
@@ -211,14 +203,18 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
             if (handle.live.session.current === 'safe_scene' && args.resume !== true) {
               return json(res, 409, { ok: false, error: '请先恢复本地预览', status: buildStatus(handle) })
             }
+            const resuming = session.current === 'safe_scene'
             const gate = handle.live.session.enterPreview(handle.settings.personaReady())
             if (!gate.ok) {
               return json(res, 400, { ok: false, error: gate.reason, status: buildStatus(handle) })
             }
+            if (resuming) broadcastWindow?.interrupt()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status: gate.status } })
           }
           case 'preview/stop': {
+            const wasPreview = session.current === 'local_preview'
             const status = handle.live.session.exitPreview()
+            if (wasPreview && status === 'stopped') broadcastWindow?.interrupt()
             conversation.snapshot()
             return json(res, 200, { ok: true, status: buildStatus(handle), result: { status } })
           }
@@ -268,7 +264,9 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
           case 'preview/role-speech/warm': {
             const profileId = handle.settings.getPersonaProfile().id
             if (handle.settings.personaReady().ready &&
-              (ROLE_SPEECH_PROFILE_IDS as readonly string[]).includes(profileId)) handle.referenceVoiceStream.warm(profileId)
+              (ROLE_SPEECH_PROFILE_IDS as readonly string[]).includes(profileId)) {
+              handle.referenceVoiceStream.warm(profileId === RIGGED_MODEL_ID ? 'xiaxia' : profileId)
+            }
             return json(res, 200, { ok: true })
           }
           case 'preview/role-speech': {
@@ -278,6 +276,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
               return json(res, 400, { ok: false, error: personaGate.reason, status: buildStatus(handle) })
             }
             const profileId = typeof args.profileId === 'string' ? args.profileId.trim() : ''
+            const referenceProfile = profileId === RIGGED_MODEL_ID ? 'xiaxia' : profileId
             if (!(ROLE_SPEECH_PROFILE_IDS as readonly string[]).includes(profileId)) {
               return json(res, 400, { ok: false, error: `profileId 须为 ${ROLE_SPEECH_PROFILE_IDS.join('/')} 之一` })
             }
@@ -320,7 +319,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
                   firstAudio = setTimeout(() => referenceDeadline.abort(
                     new ReferenceVoiceError('timeout', '参考音色未及时开始，改用系统音色')), 4500)
                 }
-                const streamed = await handle.referenceVoiceStream.speak(profileId, speechText, (chunk) => {
+                const streamed = await handle.referenceVoiceStream.speak(referenceProfile, speechText, (chunk) => {
                   verifyRun()
                   clearTimeout(firstAudio)
                   if (!streaming) {
@@ -338,7 +337,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
                   return void res.end(JSON.stringify({ type: 'end' }) + '\n')
                 }
               } else {
-                reference = await synthesizeReferenceVoice(handle.dataDir, profileId, speechText).catch(useSystemVoice)
+                reference = await synthesizeReferenceVoice(handle.dataDir, referenceProfile, speechText).catch(useSystemVoice)
               }
               if (controller.signal.aborted) return
               verifyRun()
@@ -506,6 +505,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
             }
             const section = path.split('/')[1] as 'persona' | 'platform' | 'scene' | 'cloud' | 'data-usage' | 'gifts'
             try {
+              const previousProfile = section === 'persona' ? handle.settings.getPersonaProfile().id : undefined
               const saved =
                 section === 'persona'
                   ? handle.settings.savePersona(args)
@@ -518,7 +518,10 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
                         : section === 'data-usage'
                           ? handle.settings.saveDataUsage(args)
                           : handle.settings.saveGifts(args)
-              if (section === 'persona') conversation.snapshot()
+              if (section === 'persona') {
+                if (previousProfile !== handle.settings.getPersonaProfile().id) broadcastWindow?.interrupt()
+                conversation.snapshot()
+              }
               return json(res, 200, {
                 ok: true,
                 section,

@@ -11,6 +11,7 @@
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 0.19.0 | 2026-11-19 | 夏夏三维骨骼样板（rigged avatar，四角色骨骼主播重构方案首样板，见 docs/rigged-avatar-refactor-plan.md）：①**「夏夏 · 重构版」角色**（`xiaxia-3d`）——独立三维角色 + 独立场景 + 固定机位；待机/倾听/说话共享同一角色实例，身体动作驱动骨骼（`client/xiaxia-arm-motion.mjs` 桌面手臂姿态），面部单独驱动口型与眨眼；沿用原图坐姿、衣服与手部，独立播出以 1080×1920 渲染，验证覆盖说话时身体与背景固定、手部与原图匹配及口型变化；模型加载失败回退本地原立绘；②**资产与构建链**——`client/assets/rigged-avatar/`（`xiaxia.glb` 面部网格模型 + 背景图 + three.js MIT 许可，2.7MB）；`pnpm avatar:build-3d` 从程序化几何 + `scripts/assets/xiaxia-hand.json`（手部拓扑/绑定/源版本记录）本地重建 GLB；host-api 新增 `avatar/rigged` 资产端点（poster/glb，nosniff）与 catalog `rigged` 就绪标记；③**three.js 运行时打包**——devDependencies +three 0.187.0；tsdown 第二入口把 `client/rigged-avatar.mjs` 与 three 打成 `lib/rigged-avatar.js`（IIFE / safari16.4 / 浏览器 WebGL 2）；④**播出动作验证**——`scripts/verify-broadcast-motion.mjs` 扩展：`--body-demo` 录制待机→倾听→说话→待机无声样片；本机 Chrome 实测播放参考录音 + 合成状态 + 四角色截图，验证倾听/打断拒收/视频回退/安全画面；TS 249 例全过 |
 | 0.18.0 | 2026-11-18 | 待机整体动画 + 脸部细节优化：①**官方动态视频接入独立播出窗口**——四角色已有的 `data/models/eciyuan-*/scene.mp4`（1920×1080 / 24fps / 4–8.5 秒官方角色动画）此前只在**工作台内嵌预览**播放，独立播出窗口完全没用，只靠程序化眨眼/呼吸，因此待机「只是眨眼睛」。视频经现有 `avatar/scene` 鉴权路由下发（0.16.0 已有，本次未改后端），现在 `BroadcastPicture` 在待机（不说/不听/非安全）时叠加静音循环视频层（object-fit:cover 竖屏裁切、420ms 淡入淡出），说话/倾听/安全/页面隐藏/减少动态时暂停并淡出，回落到 2.5D 网格由音频驱动口型，避免整帧重影。②**眨眼细节**——左右眼错开 0–18ms 不再完全同步、18% 概率慢眨眼、眉毛随闭眼轻微下压（browDip）并在安全/减少动态归零；Live2D 与 2.5D 两条路径都消费独立左右眼值。③**口型细节**——口腔内部随开合度缩放（闭唇/微张不露牙齿与舌头）、圆唇收窄牙列、嘴角随 smile 上扬、牙齿与舌头按开口阈值渐显，消除「张嘴就是一整排牙」；闭唇 viseme 继续压制开口、句中停顿保留 15% 余量。④新增 2 例回归（眨眼不同步/眉联动/安全归零、口型余量/闭唇覆盖）。TS 243 例全过（+2）；真实 Chrome 渲染检查 180 样本 / 0 过期帧 / 0 页面错误；待机视频实测 readyState=4、正常播放，说话时正确让位 |
 | 0.17.2 | 2026-11-18 | 修复独立播出窗口角色脸部的四方形遮罩：`createFaceRigRenderer` 的 PIXI 画布是 `model.rect` 大小的整块不透明矩形（实测 227×239 全 alpha=255），`draw()` 原路径只在有 silhouette 时用 `destination-in` 裁剪，而角色剪影在脸部区域同样不透明，因此 rect 整块被贴到脸上；说话/转头时网格形变而 UV 指向原图固定位置，边界纹理错位就露出四方形接缝。修复为在 `draw()` 输出上叠加**边缘渐隐掩码**（smoothstep，22px，四角严格接近 0、中心 255），让 rect 边界平滑融入下方原图；两条路径（有/无 silhouette）统一走裁剪。新增回归用例锁定 alpha 曲线（边界单调、中心不透明）。TS 241 例全过（+1）；渲染检查 179 样本 / 0 过期帧 / 0 页面错误；`node --check client/client.js` 通过 |
 | 0.17.1 | 2026-11-18 | 对话动作接线到直播画面 + 修复 0.17.0 遗留问题：①**对话动作真正生效**——0.17.0 只交付了 `src/avatar/dialogue-motion.ts` 模块与测试，`client.js` 为无构建单文件不能 import TS 模块，故未在预览生效；本版在 `client/client.js` 内联等价状态机 `createDialogueMotion` 并完成接线：「直播画面」页（`BroadcastStage`）由弹幕轮询（新增弹幕 → 视线移向互动区）与 `speech.phase` 边沿（pending→思考侧头、speaking→说话收敛、结束→收尾点头）驱动；独立播出窗口（`BroadcastOutput`）由 SSE 帧边沿与互动轮次驱动同一语义；两处渲染路径（Live2D 参数写入 / 2.5D 原型 draw 调用）经 `blendDialogueTargets` 叠加视线/头肩/点头/眉眼（安全与减少动态归零、说话期间降权 45%）。②**播放版本客户端消费**——SSE 帧的 `version` 跳变（切角色/打断/紧急停止）时旧口型立即作废收口，不再等 160ms 样本过期；「暂停播出声音」现在调用 `POST broadcast-window/interrupt` 作废独立窗口在途口型与动作。③**修复**——0.17.0 在 `client.js` 留下重复的 `applyVisemePose` 声明（vm 测试静默掩盖、`node --check` 失败），已删除；新增 `node --check client/client.js` 到本地验证习惯。④工作台内嵌小预览（`EciyuanPreview`）未接对话动作，属后续范围。TS 240 例全过（+2 对话动作 vm 用例）；渲染检查 181 样本 / 0 过期 / 0 页面错误 |
@@ -65,6 +66,7 @@
 | 观众画像管理与治理面板（§6.4/§24.2，I） | ✅ | 观众伪名化概览/详情隔离读取/纠错/退出个性化/删除两步流（墓碑优先）；技能库全版本、记忆候选生命周期、发布链灰度、审计与决策；反馈状态推进 |
 | 大肥鱼桌宠形象（J，语音互动与模拟开播已于 0.13.0 移除） | ✅ | 内置形象目录含 2 款桌宠（默认选中，旧经典形象保留可回退）；本地预览渲染桌宠小窗（气泡字幕/悬浮动画/AI 标识常显）；音色试听用浏览器本机 TTS（录音不上传，最终音色以直播伴侣音轨为准） |
 | Live2D 桌宠渲染（0.14.0，对齐鹅次元形象层） | ✅ | vendor 运行时（Cubism Core/pixi/pixi-live2d-display）随插件分发；模型包本地数据目录管理（Cubism 导出后手动放入，限本地/学习用途）；待机动作/点击互动/说话期口型驱动；未安装或失败自动回退角色口型原型/立绘（0.16.0，原为 CSS 桌宠）；资产经 host-api `avatar/*` 下发（base64 + blob URL，客户端保持单文件契约） |
+| 三维骨骼主播样板（0.19.0，夏夏重构版） | ✅ | 独立三维角色 + 独立场景 + 固定机位；`xiaxia.glb` 由 `pnpm avatar:build-3d` 从仓库内程序化几何重建；three.js 经 tsdown 打包随插件分发（lib/rigged-avatar.js，safari16.4）；资产经 `avatar/rigged` 端点下发；加载失败回退本地原立绘 |
 | 一键部署本地模型（0.14.1） | ✅ | 「设置 → 模型与云端」一键安装并验证 Ollama + 本地模型（`model/deploy` 端点 + `LocalModelDeployer` 子进程复用 `scripts/setup-ollama.mjs`，幂等可重入），进度日志实时回显；命令行 `pnpm setup:ollama` 等价 |
 | 云端服务商预设（0.14.0） | ✅ | 内置腾讯云混元 / DeepSeek 官方 OpenAI 兼容端点预设（选择预设后自动填入模型建议）；自定义服务商仍走 `DAFEIYU_CLOUD_BASE_URL`；密钥永不落库 |
 | 工作台与管理（§24.2–24.4） | ✅ | 工作台常驻实时预览、直播控制、学习、待处理与费用；管理含配置、训练记录、互动账本、观众、治理和诊断 |
@@ -76,7 +78,7 @@
 ```bash
 pnpm install
 pnpm setup:ollama # 安装或复用 Ollama，下载 qwen3:4b 并验证推理
-pnpm test        # 221 个单元/契约/集成测试（node:test）
+pnpm test        # 249 个单元/契约/集成测试（node:test）
 pnpm test:worker # Python worker 11 例（unittest，纯标准库）
 pnpm typecheck   # tsc --noEmit（strict + exactOptionalPropertyTypes）
 pnpm build       # 宿主插件 + 播出页面；Mac 构建同时生成随包分发的原生窗口（需要 Xcode 命令行工具）

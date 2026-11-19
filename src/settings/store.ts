@@ -13,7 +13,7 @@ import { isRetiredSample } from '../avatar/model-store.ts'
 import { douyinRoomUrl } from '../platform/douyin-protocol.ts'
 import { z } from 'zod'
 import { get, nowIso, run, type DB } from '../storage/db.ts'
-import { BUILTIN_AVATARS, BUILTIN_VOICES, BUILTIN_PROFILES, resolveProfile, type ProfileOption } from './catalogs.ts'
+import { BUILTIN_AVATARS, BUILTIN_VOICES, BUILTIN_PROFILES, RIGGED_MODEL_ID, RIGGED_PROFILE_NAME, resolveProfile, type ProfileOption } from './catalogs.ts'
 
 // ---------------------------------------------------------------------------
 // Schema（与 operator_settings 各节一一对应；default 保证缺省可用）
@@ -36,7 +36,7 @@ function httpUrl(message: string) {
 
 export const PersonaSettings = z.object({
   /** 选中的角色档案（参照 eciyuan.qq.com CHARACTERS）；主播信息由该档案驱动展示 */
-  profileId: z.enum(profileIds).default('dsh-pet'),
+  profileId: z.preprocess((value) => value === 'lanxu' ? RIGGED_MODEL_ID : value, z.enum(profileIds).default('dsh-pet')),
   /** 播出展示名：默认取所选档案中文名；保留为可覆盖字段以兼容既有设置/回退 */
   personaName: z.string().trim().min(1, '主播名称不能为空').max(24, '主播名称不超过 24 字').default('DSH 蓝发女仆').transform((value) => value === '大肥鱼' ? 'DSH 蓝发女仆' : value),
   /** Normalize retired avatars when reading existing settings. */
@@ -57,7 +57,8 @@ export const PersonaSettings = z.object({
   aiLabelText: z.string().trim().min(1, 'AI 标识文案不能为空').max(16, 'AI 标识文案不超过 16 字').default('AI 生成内容'),
   /** §23.2 输出检查最小集：AI 标识不可关闭——只接受 true。 */
   aiLabelVisible: z.literal(true).default(true),
-})
+}).transform((value) => value.profileId === RIGGED_MODEL_ID && value.personaName === '澜序' ?
+  { ...value, personaName: RIGGED_PROFILE_NAME } : value)
 export type PersonaSettingsType = z.infer<typeof PersonaSettings>
 
 export const PlatformSettings = z.object({

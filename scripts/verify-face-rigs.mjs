@@ -16,8 +16,8 @@ for(const role of ['xiaxia','lubai','guyu','beila']) {
   const area=(p,a,b,c)=>(p[b*2]-p[a*2])*(p[c*2+1]-p[a*2+1])-(p[b*2+1]-p[a*2+1])*(p[c*2]-p[a*2]);
   const base=[];for(let i=0;i<m.indices.length;i+=3)base.push(area(m.points,...m.indices.slice(i,i+3)));
   let combinations=0,folds=0;
-  for(const polarity of [1,-1])for(let mask=0;mask<128;mask++) {
-    const controls=Object.fromEntries(Object.keys(m.targets).map((name,i)=>[name,(mask>>i&1)*(name==='smile'||name.startsWith('brow')?polarity:1)]));
+  for(const round of [1,-.35])for(const polarity of [1,-1])for(let mask=0;mask<128;mask++) {
+    const controls=Object.fromEntries(Object.keys(m.targets).map((name,i)=>[name,(mask>>i&1)*(name==='mouthRound'?round:name==='smile'||name.startsWith('brow')?polarity:1)]));
     const p=deformFaceRig(m,controls);combinations++;
     for(let i=0;i<m.indices.length;i+=3)if(area(p,...m.indices.slice(i,i+3))*base[i/3]<-1e-7)folds++;
   }

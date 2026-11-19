@@ -7,7 +7,7 @@
  */
 import type { AvatarAssetStore } from './avatar/model-store.ts'
 import { AvatarAssetError } from './avatar/model-store.ts'
-import { BUILTIN_PROFILES } from './settings/catalogs.ts'
+import { BUILTIN_PROFILES, RIGGED_MODEL_ID } from './settings/catalogs.ts'
 import { json, type ServerRequest, type ServerResponse } from './host-api-shared.ts'
 
 function fail(res: ServerResponse, err: unknown): void {
@@ -28,7 +28,24 @@ export function handleAvatarGetRoute(
   if (path === 'avatar/catalog') {
     const scenes = BUILTIN_PROFILES.flatMap(({ media }) => media && avatar.hasScene(media.modelId) ? [media.modelId] : [])
     const prototypes = BUILTIN_PROFILES.flatMap(({ media }) => media && avatar.hasPrototype(media.modelId) ? [media.modelId] : [])
-    json(res, 200, { ok: true, catalog: { vendors: avatar.vendorStatus(), models: avatar.listModels(), scenes, prototypes } })
+    json(res, 200, { ok: true, catalog: { vendors: avatar.vendorStatus(), models: avatar.listModels(), scenes, prototypes,
+      rigged: avatar.hasRiggedAvatar() ? [RIGGED_MODEL_ID] : [] } })
+    return true
+  }
+
+  if (path === 'avatar/rigged') {
+    if (query.get('id') !== RIGGED_MODEL_ID) {
+      json(res, 404, { ok: false })
+      return true
+    }
+    try {
+      const { body, type } = avatar.readRiggedAsset(query.get('asset') ?? '')
+      res.statusCode = 200
+      res.setHeader('content-type', type)
+      res.setHeader('content-length', String(body.length))
+      res.setHeader('x-content-type-options', 'nosniff')
+      res.end(body)
+    } catch (err) { fail(res, err) }
     return true
   }
 

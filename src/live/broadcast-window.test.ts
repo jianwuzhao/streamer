@@ -35,6 +35,9 @@ createInterface({ input: process.stdin }).on('line', (value) => {
   return {
     root, handle, output,
     address: () => new URL(readFileSync(addressFile, 'utf8')),
+    push(owner: string, frame: Record<string, unknown>) {
+      return output.publish(owner, { playbackVersion: output.playbackVersion(owner), sampledAt: Date.now(), ...frame })
+    },
     dispose() {
       output.dispose()
       handle.dispose()
@@ -92,22 +95,24 @@ test('播出字幕口型绑定工作台与角色，紧急停止和失联切换�
     }>
     assert.equal((await frame()).safe, true)
     const input = { profileId: 'dsh-pet', speaking: true, subtitle: '这是独立播出字幕', level: 2 }
-    assert.equal(f.output.publish(OTHER_OWNER, input), false)
-    assert.equal(f.output.publish(OWNER, input), true)
+    assert.equal(f.push(OTHER_OWNER, input), false)
+    assert.equal(f.push(OWNER, input), true)
     await assert.rejects(f.output.open(OTHER_OWNER), /另一个工作台/)
     assert.deepEqual(Object.fromEntries(Object.entries(await frame()).filter(([key]) => !['sampledAt', 'sentAt', 'form', 'listening', 'version'].includes(key))), { safe: false, speaking: true, subtitle: input.subtitle, level: 1, profileId: 'dsh-pet' })
     f.handle.settings.savePersona({ profileId: 'xiaxia', usageRightConfirmed: true })
     assert.equal((await frame()).safe, true)
-    f.output.publish(OWNER, { ...input, profileId: 'xiaxia' })
+    f.push(OWNER, { ...input, profileId: 'xiaxia' })
     assert.equal((await frame()).safe, false)
     f.handle.live.session.emergencyStop()
     assert.deepEqual(Object.fromEntries(Object.entries(await frame()).filter(([key]) => !['sampledAt', 'sentAt', 'form', 'listening', 'version'].includes(key))), { safe: true, speaking: false, subtitle: '', level: 0, profileId: 'xiaxia' })
     f.handle.live.session.enterPreview(f.handle.settings.personaReady())
+    assert.equal((await frame()).safe, true)
+    assert.equal(f.push(OWNER, { ...input, profileId: 'xiaxia' }), true)
     assert.equal((await frame()).safe, false)
     await delay(1600)
     await f.output.open(OTHER_OWNER)
-    assert.equal(f.output.publish(OWNER, input), false)
-    assert.equal(f.output.publish(OTHER_OWNER, { ...input, profileId: 'xiaxia' }), true)
+    assert.equal(f.push(OWNER, input), false)
+    assert.equal(f.push(OTHER_OWNER, { ...input, profileId: 'xiaxia' }), true)
     await delay(1600)
     assert.equal((await frame()).safe, true)
   } finally { f.dispose() }
@@ -163,15 +168,18 @@ test('口型推送无需轮询，过期语音收口，紧急停止覆盖推送�
     }
     assert.equal((await next(() => true)).safe, true)
     const sampledAt = Date.now()
-    f.output.publish(OWNER, { profileId: 'dsh-pet', speaking: true, level: 0.8, form: -0.4, sampledAt, subtitle: '已审核回复' })
+    f.push(OWNER, { profileId: 'dsh-pet', speaking: true, level: 0.8, form: -0.4, sampledAt, subtitle: '已审核回复', captionProgress: .45 })
     const speaking = await next((frame) => frame.speaking)
     assert.equal(speaking.form, -0.4)
     assert.equal(speaking.sampledAt, sampledAt)
+    assert.equal(speaking.captionProgress, .45)
     const stale = await next((frame) => !frame.speaking && !frame.safe)
     assert.equal(stale.level, 0)
     assert.equal(stale.subtitle, '')
-    f.output.publish(OWNER, { profileId: 'dsh-pet', speaking: true, level: 1 })
-    await next((frame) => frame.speaking)
+    assert.equal(stale.captionProgress, undefined)
+    assert.equal(stale.listening, true)
+    f.push(OWNER, { profileId: 'dsh-pet', speaking: true, level: 1, captionProgress: 2 })
+    assert.equal((await next((frame) => frame.speaking)).captionProgress, 1)
     f.handle.live.session.emergencyStop()
     assert.equal((await next((frame) => frame.safe)).level, 0)
     controller.abort()
@@ -193,14 +201,15 @@ test('播放版本：切角色与安全画面递增版本，迟到旧版本帧�
     assert.equal(f.output.playbackVersion(OTHER_OWNER), null)
     // 每次上行都必须带新鲜 sampledAt：过期样本不得让画面保持张嘴（既有语义）
     const base = () => ({ speaking: true, level: 0.7, subtitle: '已审核回复', sampledAt: Date.now() })
-    assert.equal(f.output.publish(OWNER, { ...base(), profileId: 'dsh-pet' }), true)
+    assert.equal(f.push(OWNER, { ...base(), profileId: 'dsh-pet' }), true)
     assert.equal((await frame()).version, 1)
     // 同一角色：版本不变（普通上行帧不应被当成新播放）
-    assert.equal(f.output.publish(OWNER, { ...base(), profileId: 'dsh-pet' }), true)
+    assert.equal(f.push(OWNER, { ...base(), profileId: 'dsh-pet' }), true)
     assert.equal((await frame()).version, 1)
     // 切角色：版本递增，渲染端据此丢弃上一段在途口型
     f.handle.settings.savePersona({ profileId: 'xiaxia', usageRightConfirmed: true })
-    assert.equal(f.output.publish(OWNER, { ...base(), profileId: 'xiaxia' }), true)
+    assert.equal(f.output.publish(OWNER, { ...base(), profileId: 'dsh-pet', playbackVersion: 1 }), false)
+    assert.equal(f.push(OWNER, { ...base(), profileId: 'xiaxia' }), true)
     assert.equal((await frame()).version, 2)
     // 工作台声明了旧版本：拒收（迟到上传不得覆盖新版本画面）
     assert.equal(f.output.publish(OWNER, { ...base(), profileId: 'xiaxia', playbackVersion: 1 }), false)
@@ -212,6 +221,9 @@ test('播放版本：切角色与安全画面递增版本，迟到旧版本帧�
     assert.equal((await frame()).version, 3)
     // 打断后旧版本帧继续被拒收，新版本可正常播出
     assert.equal(f.output.publish(OWNER, { ...base(), profileId: 'xiaxia', playbackVersion: 2 }), false)
+    assert.equal(f.output.publish(OWNER, { ...base(), profileId: 'xiaxia' }), false)
+    assert.equal(f.output.publish(OWNER, { ...base(), profileId: 'xiaxia', playbackVersion: 4 }), false)
+    assert.equal(f.push(OWNER, { ...base(), profileId: 'xiaxia', sampledAt: Date.now() - 5_000 }), false)
     assert.equal(f.output.publish(OWNER, { ...base(), profileId: 'xiaxia', playbackVersion: 3 }), true)
     assert.equal((await frame()).speaking, true)
     // 非 owner 不能打断

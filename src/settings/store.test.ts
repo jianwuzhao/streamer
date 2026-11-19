@@ -142,9 +142,8 @@ test('settings：目录与迁移 009 生效（operator_settings 表存在）', (
   }
 })
 
-test('settings：角色档案目录（鹅次元角色 + dsh-pet 插件中档案）', () => {
-  // 5 个档案：4 个鹅次元官网角色 + 1 个本插件内的 dsh-pet 桌宠档案
-  assert.equal(BUILTIN_PROFILES.length, 5)
+test('settings：角色档案目录（鹅次元角色 + 桌宠 + 骨骼角色）', () => {
+  assert.equal(BUILTIN_PROFILES.length, 6)
   const eciyuan = BUILTIN_PROFILES.filter((p) => p.source === 'eciyuan')
   assert.equal(eciyuan.length, 4)
   assert.deepEqual(eciyuan.map((p) => p.name), ['夏夏', '沈露白', '谷雨', '贝拉'])
@@ -160,8 +159,27 @@ test('settings：角色档案目录（鹅次元角色 + dsh-pet 插件中档案�
   assert.equal(pet?.source, 'plugin')
   assert.equal(pet?.style, 'deskpet')
   assert.equal(pet?.name, 'DSH 蓝发女仆')
+  assert.equal(resolveProfile('xiaxia-3d').media?.modelId, 'xiaxia-3d')
   // 未知 id 回落 dsh-pet
   assert.equal(resolveProfile('does-not-exist').id, 'dsh-pet')
+})
+
+test('settings：已保存的澜序选择迁移到夏夏重构版，保留自定义设置', () => {
+  const { store, db, dataDir } = makeStore()
+  try {
+    const migrated = store.savePersona({
+      profileId: 'lanxu', personaName: '澜序', usageRightConfirmed: true, samplePhrase: '大家好',
+    })
+    assert.equal(migrated.profileId, 'xiaxia-3d')
+    assert.equal(migrated.personaName, '夏夏 · 重构版')
+    assert.equal(migrated.usageRightConfirmed, true)
+    assert.equal(migrated.samplePhrase, '大家好')
+    assert.equal(store.savePersona({ personaName: '我的主播' }).personaName, '我的主播')
+    assert.equal(resolveProfile('xiaxia').name, '夏夏')
+  } finally {
+    db.close()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
 })
 
 test('settings：切换 role profile 后 getPersonaProfile 跟随选中档案且持久化', () => {
