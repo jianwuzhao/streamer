@@ -7,6 +7,7 @@
 - 舞台素材：四角色舞台抠像（`client/assets/stage/*-matte.webp`）+ 海边小屋原创布景 + 四套口型轨道（`mouth-tracks/*.json`）；`scripts/track-stage-mouth.swift` 生成口型轨道；布景、角色构图与挂件设计参考 [Deiael/dsh-live-vibeCoding](https://github.com/Deiael/dsh-live-vibeCoding)。
 - 开发验证：`node scripts/verify-landscape-stage.mjs` 实测保存 / 主题 / 横竖屏比例 / 弹幕礼物传输 / 字幕 / 紧急停止并输出截图（隔离数据与模拟窗口，不公开开播）。
 - 收录流程文档：docs/releases/README.md 补官网 / DSH「发现」索引收录与 npm 发布说明。
+- 舞台口型精化：唇部叠加改为沿跟踪唇缝的实际走向绘制（亮度加权轨迹 + 边缘衰减），替代单一平线；验证器新增「不得出现新暗色横条」断言（逐像素差异阈值 + 最长暗条 ≤10px）。
 - 全量校验：TS 254 例全过、`tsc --noEmit` 通过。
 
 ## 0.20.0 — 2026-11-19

@@ -3020,13 +3020,41 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		return a.map((value, i) => value + (b[i] - value) * f);
 	}
 
-	const STAGE_MOUTH_CAVITY = [55, 24, 27];
+	// Follow the actual lip crease inside the tracked mouth instead of extending one flat line.
+	function traceStageLipCrease(source, width, height, span, creases, smoothed) {
+		const center = height / 2;
+		const search = Math.max(2, Math.round(span * .065));
+		const minY = Math.floor(center) - search, maxY = Math.ceil(center) + search;
+		const luma = (i) => source[i] * .2126 + source[i + 1] * .7152 + source[i + 2] * .0722;
+		for (let x = 0; x < width; x++) {
+			const distance = Math.abs(x + .5 - width / 2) / (span * .48);
+			if (distance >= 1) { creases[x] = center; continue; }
+			let sum = 0, weight = 0;
+			for (let y = minY; y <= maxY; y++) {
+				const i = (y * width + x) * 4;
+				const flank = Math.max(0, (luma(i - width * 8) + luma(i + width * 8)) / 2 - luma(i));
+				const proximity = 1 - Math.abs(y + .5 - center) / (search + 1);
+				const w = flank * flank * Math.max(0, proximity) ** 1.4;
+				sum += (y + .5) * w; weight += w;
+			}
+			creases[x] = weight > 0 ? center + (sum / weight - center) * (1 - distance ** 4) : center;
+		}
+		for (let x = 0; x < width; x++) {
+			let sum = 0, weight = 0;
+			for (let offset = -3; offset <= 3; offset++) {
+				const w = 4 - Math.abs(offset);
+				sum += creases[Math.max(0, Math.min(width - 1, x + offset))] * w;
+				weight += w;
+			}
+			smoothed[x] = sum / weight;
+		}
+	}
 
 	// Reuse the current picture's lip texture. The transparent patch never repaints the rest of the scene.
 	function createStageMouthPatch() {
 		const surface = document.createElement("canvas");
 		const context = surface.getContext("2d", { willReadFrequently: true });
-		let result;
+		let result, creases, smoothed;
 		return (output, video, track, opening, form) => {
 			const [, nx, ny, nw, tilt] = track;
 			const x = nx * video.videoWidth, y = ny * video.videoHeight, span = nw * video.videoWidth;
@@ -3035,6 +3063,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			if (!result || surface.width !== width || surface.height !== height) {
 				surface.width = width; surface.height = height;
 				result = context.createImageData(width, height);
+				creases = new Float32Array(width);
+				smoothed = new Float32Array(width);
 			}
 			context.clearRect(0, 0, width, height);
 			context.save();
@@ -3045,32 +3075,42 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 			const source = context.getImageData(0, 0, width, height).data;
 			const pixels = result.data;
-			const center = height / 2;
+			traceStageLipCrease(source, width, height, span, creases, smoothed);
 			for (let col = 0; col < width; col++) {
-				const distance = Math.abs(col + .5 - width / 2) / (span * (.46 + .052 * form));
-				const shape = distance >= 1 ? 0 : Math.cos(distance * Math.PI / 2) ** .95;
-				const rise = opening * span * .036 * shape;
-				const drop = opening * span * .16 * shape;
-				const top = center - rise, bottom = center + drop;
-				const fadeX = Math.min(1, shape * 4);
+				const distance = Math.abs(col + .5 - width / 2) / (span * (.45 + .045 * form));
+				const shape = distance >= 1 ? 0 : Math.cos(distance * Math.PI / 2) ** 1.65;
+				const crease = smoothed[col];
+				const lipEdge = Math.max(1, span * .023);
+				const fromTop = crease - lipEdge, fromBottom = crease + lipEdge;
+				const gap = opening * span * shape;
+				const top = fromTop, bottom = fromBottom + gap * .15;
+				const fadeX = Math.min(1, shape * 5);
+				const upperLip = (Math.floor(crease - span * .053) * width + col) * 4;
+				const lowerLip = (Math.floor(crease + span * .064) * width + col) * 4;
 				for (let row = 0; row < height; row++) {
 					const index = (row * width + col) * 4, py = row + .5;
 					pixels[index + 3] = 0;
-					if (!shape) continue;
-					const sampleY = py <= top ? py * center / top :
-						py >= bottom ? center + (py - bottom) * (height - center) / (height - bottom) : center;
+					if (!shape || py <= top) continue;
+					const middle = (py - top) / (bottom - top);
+					const sampleY = py >= bottom ? fromBottom + (py - bottom) * (height - fromBottom) / (height - bottom) :
+						fromTop + middle * (fromBottom - fromTop);
 					const srcY = Math.max(0, Math.min(height - 1.01, sampleY - .5));
 					const lo = Math.floor(srcY), fraction = srcY - lo;
 					const from = (lo * width + col) * 4;
-					const cavity = Math.max(0, Math.min(1, (py - top) * 1.2, (bottom - py) * 1.2));
-					const cavityColor = STAGE_MOUTH_CAVITY;
+					// Retain the source lip colors. Soften the stretched crease and shade only the inner opening.
+					const depth = middle > 0 && middle < 1 ? Math.sin(middle * Math.PI) ** 2 * opening * shape : 0;
 					for (let ch = 0; ch < 3; ch++) {
 						const warped = source[from + ch] * (1 - fraction) + source[from + width * 4 + ch] * fraction;
-						pixels[index + ch] = warped * (1 - cavity) + cavityColor[ch] * cavity;
+						const rimColor = source[upperLip + ch] * .62 + source[lowerLip + ch] * .38;
+						const interior = Math.max(warped * .9, rimColor * .68);
+						const shaded = warped + (interior - warped) * depth;
+						// A stretched crease must not turn brighter source pixels into a uniform dark bar.
+						pixels[index + ch] = middle < 1.25 ? Math.max(shaded, source[index + ch] * .82) : shaded;
 					}
-					pixels[index + 3] = 255 * fadeX * Math.min(1, py / 3, (height - py) / 3);
+					pixels[index + 3] = 255 * fadeX * Math.min(1, (py - top) / 2, (height - py) / 3);
 				}
 			}
+
 			context.putImageData(result, 0, 0);
 			output.save();
 			output.translate(x, y);

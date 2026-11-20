@@ -259,16 +259,26 @@ try {
       ctx.drawImage(overlay, left, top, w, h, w * 2, 0, w * 2, h * 2);
       const raw = ctx.getImageData(0, 0, w * 2, h * 2).data;
       const driven = ctx.getImageData(w * 2, 0, w * 2, h * 2).data;
-      let opened = 0;
-      for (let i = 0; i < raw.length; i += 4) {
-        if (raw[i] + raw[i + 1] + raw[i + 2] - driven[i] - driven[i + 1] - driven[i + 2] > 96) opened++;
+      let changed = 0, darkestStreak = 0;
+      for (let y = 0; y < h * 2; y++) {
+        let streak = 0;
+        for (let x = 0; x < w * 2; x++) {
+          const i = (y * w * 2 + x) * 4;
+          const difference = Math.abs(raw[i] - driven[i]) + Math.abs(raw[i + 1] - driven[i + 1]) + Math.abs(raw[i + 2] - driven[i + 2]);
+          if (difference > 34) changed++;
+          const low = driven[i] + driven[i + 1] + driven[i + 2] < 168;
+          const newlyDark = raw[i] + raw[i + 1] + raw[i + 2] > 210;
+          streak = low && newlyDark ? streak + 1 : 0;
+          darkestStreak = Math.max(darkestStreak, streak);
+        }
       }
-      return opened > 30 && { touched, opened, image: clip.toDataURL('image/png').split(',')[1] };
+      return changed > 80 && { touched, darkestStreak, image: clip.toDataURL('image/png').split(',')[1] };
     });
     const pixels = await pixelsHandle.jsonValue();
     await pixelsHandle.dispose();
     assert.ok(pixels.touched < 14_000, `${id}: only the lip patch should be painted, got ${pixels.touched}`);
     writeFileSync(join(artifacts, id + '-mouth.png'), Buffer.from(pixels.image, 'base64'));
+    assert.ok(pixels.darkestStreak <= 10, `${id}: the overlay painted a new dark horizontal bar (${pixels.darkestStreak}px)`);
   }
   handle.live.session.emergencyStop();
   await viewer.getByText('播出已暂停', { exact: true }).waitFor();
