@@ -55,6 +55,8 @@ After building, install the local bundle through the host's `plugin_manager inst
 
 The current console labels are Chinese. Detailed operational documentation and environment variables are available in the [Chinese quick start](docs/quick-start.md) and [configuration reference](docs/implementation-status.md#环境变量).
 
+Lythri 4B-A2B, Lythri 7B-A4B and Baby Boon 1.7B can be deployed as text reply models. DuplexJev connects through a local gateway for WAV-based turn tests. The model page and the [model comparison guide](docs/model-comparison.md) list performance figures, strengths and limitations.
+
 ![Configuration backup and restore preview](docs/screenshots/config-backup.png)
 
 ## Import and export configuration

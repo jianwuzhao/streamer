@@ -13,6 +13,7 @@
 | 感知事件（§2.4） | ✅ | `LiveEnvelope` 规范化、双键去重、接收游标 + 有界迟到窗口 |
 | 黑板（§2.4） | ✅ | Session 投影、revision CAS、TTL 过期过滤、场次隔离 |
 | 本地优先路由（§4） | ✅ | 九原因码、共享预算（12s/5s/1.5s）、本地 GPU→CPU→云端一次、schema 修复一次、`POLICY_BLOCKED` 硬阻断、固定降级回复、`request_id+generation_epoch` 播出去重、迟到候选丢弃 |
+| 直播模型调度与互动记忆 | ✅ | 进房和礼物使用角色话术，常规对话本地优先，复杂问题按权限升级，兼容单一模型。按观众续聊，按主播保留称呼、偏好与共同梗，按节目共享公开进度。跨场保留由操作员确认，云端实际请求和已报告 Token 单独记账。 |
 | 模型适配器（§3.1/§4.3） | ✅ | Ollama（超时/不可达映射原因码、能力探测）、OpenAI 兼容云端（预算硬闸门）、固定降级模板 |
 | 资源仲裁（§3.2） | ✅ | 1s 采样环、优先级排序、训练准入 `free_vram ≥ peak + reserve`（探测不可用 fail-safe） |
 | 政策授权骨架（§11.1） | ✅ | PolicyDecision 签发/校验、payloadHash 绑定、治理 epoch、TTL、fail-closed |
@@ -134,8 +135,9 @@ installer/                 # G 阶段
 | `DAFEIYU_OLLAMA_URL` | GPU 本地推理端点 | `http://127.0.0.1:11434` |
 | `DAFEIYU_OLLAMA_MODEL` | 覆盖本地对话模型名 | `qwen3:4b` |
 | `DAFEIYU_OLLAMA_CPU_URL` | CPU 接答实例端点（训练窗口） | 同上 |
+| `DAFEIYU_DUPLEXJEV_URL` | 语轮测试使用的本机 DuplexJev HTTP 网关 | `http://127.0.0.1:8020` |
 | `DAFEIYU_CLOUD_BASE_URL` / `DAFEIYU_CLOUD_API_KEY` | 第三方端点/密钥；密钥与自定义端点均可在面板「模型与云端」维护（环境变量优先，界面只回掩码）；选内置预设（腾讯云混元/DeepSeek）或填「端点 URL」（如 TokenHub）时端点可省环境变量 | 未设置且界面未维护 ⇒ 云端禁用 |
-| `DAFEIYU_OLLAMA_SOURCE` | 模型权重来源：`modelscope`（国内镜像直连，无需代理）/ `registry`（官方仓库，通常需代理） | `modelscope` |
+| `DAFEIYU_OLLAMA_SOURCE` | 设为 `registry` 可强制使用 Ollama 官方仓库 | 有镜像映射时用 ModelScope，其余使用 Ollama 官方仓库 |
 | `DAFEIYU_MODELSCOPE_REPO` / `DAFEIYU_MODELSCOPE_FILE` | 自定义 ModelScope GGUF 仓库与文件名（需同时设置；默认按模型名内置映射，如 qwen3:4b → Qwen/Qwen3-4B-GGUF 的 Q4_K_M） | 内置映射 |
 | `DAFEIYU_MODELSCOPE_BASE` | ModelScope 站点基址（自建镜像用） | `https://modelscope.cn` |
 | `DAFEIYU_PROBE` | 资源探测：`auto`（nvidia-smi）/ `ram-only` | `auto` |
