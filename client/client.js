@@ -38,13 +38,15 @@ function createDialogueMotion(random = Math.random) {
 		if (!Number.isFinite(at)) return current;
 		const now = at < lastEvent ? lastEvent : at;
 		lastEvent = now;
-		if (event === "danmaku") {
+		if (event === "danmaku" || event === "reaction") {
 			// 合并窗口与重触发限频合并为同一间隔判定（700ms 合并窗 < 1800ms 限频）
 			if (phase === "safe" || now - lastInteract < RETRIGGER_MS) return current;
 			lastInteract = now; side = -side;
 			const scale = phase === "speaking" ? 0.35 : 1;
+			const reacting = event === "reaction";
 			return commit({ gazeX: side * 0.34 * scale, gazeY: -0.12 * scale, sway: side * 0.08 * scale,
-				nod: Math.min(current.nod, 0.42 * scale), brow: -0.16 * scale, tilt: side * 0.09 * scale, blendMs: 420 });
+				nod: reacting ? 0.15 * scale : Math.min(current.nod, 0.42 * scale),
+				brow: (reacting ? 0.18 : -0.16) * scale, tilt: side * (reacting ? 0.06 : 0.09) * scale, blendMs: 420 });
 		}
 		if (event === "input-start" || event === "input-pause") {
 			if (phase === "safe" || phase === "speaking" || now - lastNod < RETRIGGER_MS) return current;
@@ -764,6 +766,15 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-turn-meta{font-size:11.5px;color:var(--desk-muted)}
 .dfy-details>summary{width:fit-content;cursor:pointer;color:var(--desk-accent);font-weight:600;padding:4px 0}
 .dfy-details[open]>summary{margin-bottom:6px}
+.dfy-model-comparison{min-width:0}
+.dfy-model-table-wrap{overflow-x:auto;max-width:100%;border:1px solid var(--desk-line,var(--dsw-alias-border-l2,#d8e2e0));border-radius:8px}
+.dfy-model-table{min-width:560px;width:100%;border-collapse:collapse;text-align:left;font-size:12px}
+.dfy-model-table :is(th,td){padding:8px;vertical-align:top;border-bottom:1px solid var(--desk-line,var(--dsw-alias-border-l2,#d8e2e0))}
+.dfy-model-table thead{background:var(--desk-bg,var(--dsw-alias-bg-layer-2,#eef3f2))}
+.dfy-model-table tr:last-child>*{border-bottom:0}
+.dfy-model-table small{display:block;color:var(--desk-muted,var(--dsw-alias-label-tertiary,#5b6f6c))}
+.dfy-duplexjev{display:grid;gap:8px}
+.dfy-duplexjev input[type=file]{max-width:100%}
 .dfy-role-audio audio{max-width:320px}
 .dfy-desk-safe{position:relative;min-height:180px;border-radius:10px;background:#142821;color:#e8f2ec;display:grid;align-content:center;justify-items:center;gap:8px;padding:16px;text-align:center}
 .dfy-desk-safe strong{font-size:18px}
@@ -1914,7 +1925,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			status ? h("dl", { className: "dfy-command-metrics" },
 				h("div", null, h("dt", null, "待处理反馈"), h("dd", null, h("button", { type: "button", className: "dfy-desk-text-button",
 					"aria-label": "待处理反馈 " + status.pendingIssues + " 条", onClick: () => goTab("feedback") }, status.pendingIssues + " 条"))),
-				h("div", null, h("dt", null, "今日费用"), h("dd", null, "¥" + status.todayCostCny.toFixed(2)))) : null);
+				h("div", null, h("dt", null, "今日云端"),
+					h("dd", null, (status.todayCloudRequests || 0) + " 次 · " + (status.todayCloudCostUnknown ? "费用待估算" : "¥" + status.todayCostCny.toFixed(2))))) : null);
 	}
 
 	// ------------------------------------------------------------------ 设置
@@ -2032,78 +2044,216 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		return null;
 	};
 
-	/**
-	 * 一键部署本地模型（0.15）：POST/GET /api/dafeiyu/model/deploy 轮询部署状态，
-	 * 展示 Ollama 安装/模型下载（ModelScope 直连）/导入/验证的进程输出与进度条；
-	 * GET 附带 install 探测（服务/模型是否就绪）用于「未安装提示」；running 期间 2s 轮询。
-	 */
+	function normalizeModelDeployResponse(response) {
+		const deploy = response?.deploy;
+		if (!response?.ok || typeof deploy?.model !== "string" || !deploy.model) return null;
+		if (Array.isArray(response.models) && response.models.length) return response;
+
+		// 旧宿主只返回部署目标及安装状态，部署时由宿主决定模型。
+		const install = response.install;
+		const activeModel = response.activeModel || deploy.model;
+		const installed = install?.reachable && (!install.model || install.model === activeModel)
+			? (install.modelInstalled ?? install.ready ?? null) : null;
+		return {
+			...response, legacy: true, activeModel,
+			reachable: install?.reachable ?? null,
+			models: [{ id: activeModel, label: activeModel, installed }],
+		};
+	}
+
+	function LocalModelComparison({ models, audioModels }) {
+		const rows = models.filter((entry) => entry.review)
+			.map((entry) => ({ ...entry, use: "文本回复" }))
+			.concat(audioModels.map((entry) => ({ ...entry, use: "语音判定" })));
+		if (!rows.length) return null;
+		return h("details", { className: "dfy-details dfy-model-comparison" },
+			h("summary", null, "模型性能与优劣"),
+			h("p", { className: "dfy-caption" }, "尺寸为权重下载量。分数、速度和显存来自发布者在各自条件下的报告，响应速度随硬件和量化版本变化。"),
+			h("div", { className: "dfy-model-table-wrap", role: "region", tabIndex: 0, "aria-label": "模型性能对比表" },
+				h("table", { className: "dfy-model-table" },
+					h("thead", null, h("tr", null, ["模型", "性能参考", "核心优势", "主要局限"].map((name) =>
+						h("th", { key: name, scope: "col" }, name)))),
+					h("tbody", null, rows.map(({ id, label, use, review }) => h("tr", { key: id },
+						h("th", { scope: "row" },
+							h("a", { href: review.sourceUrl, target: "_blank", rel: "noopener noreferrer" }, label),
+							h("small", null, use)),
+						h("td", null, review.performance),
+						h("td", null, review.strength),
+						h("td", null, review.limitation)))))));
+	}
+
+	function DuplexJevTurnTest() {
+		const [file, setFile] = useState(null);
+		const [lang, setLang] = useState("zh");
+		const [busy, setBusy] = useState(false);
+		const [error, setError] = useState("");
+		const [result, setResult] = useState(null);
+		const testTurn = async () => {
+			if (!file || busy) return;
+			setError("");
+			setResult(null);
+			if (!/\.wav$/i.test(file.name) || file.size > 1024 * 1024) {
+				setError("请选择不超过 1 MiB 的 WAV 文件");
+				return;
+			}
+			setBusy(true);
+			try {
+				const audioBase64 = await new Promise((resolve, reject) => {
+					const reader = new FileReader();
+					reader.onload = () => resolve(String(reader.result).split(",")[1]);
+					reader.onerror = () => reject(new Error("无法读取音频"));
+					reader.readAsDataURL(file);
+				});
+				const r = await api("model/duplexjev/turn", { audioBase64, lang });
+				if (!r?.ok || !r.result) throw new Error(r?.error || "未收到语轮判定");
+				setResult(r.result);
+			} catch (e) {
+				setError(e?.message || "语轮测试失败");
+			} finally {
+				setBusy(false);
+			}
+		};
+		return h("details", { className: "dfy-details" },
+			h("summary", null, "DuplexJev 语音判定"),
+			h("div", { className: "dfy-duplexjev" },
+				h("p", { className: "dfy-caption", style: { margin: 0 } },
+					"启动本机 DuplexJev 网关后，上传短音频测试讲话是否结束。服务端决定所用模型。 ",
+					h("a", { href: "https://github.com/adventists-ai/duplexjev#quick-start", target: "_blank", rel: "noopener noreferrer" }, "网关启动说明")),
+				h(Field, { label: "语音语言" },
+					h("select", { className: "dfy-select", value: lang, disabled: busy, onChange: (e) => {
+						setLang(e.target.value); setResult(null); setError("");
+					} }, h("option", { value: "zh" }, "中文"), h("option", { value: "en" }, "英语"))),
+				h(Field, { label: "WAV 文件（不超过 1 MiB）" },
+					h("input", { type: "file", accept: ".wav,audio/wav", disabled: busy, onChange: (e) => {
+						setFile(e.target.files?.[0] || null); setResult(null); setError("");
+					} })),
+				h("div", { className: "dfy-actions" }, h(Btn, { disabled: !file || busy, onClick: testTurn }, busy ? "判定中…" : "测试语轮")),
+				error ? h("p", { role: "alert", className: "dfy-caption" }, error) : null,
+				result ? h("div", { role: "status" },
+					h(Row, { label: "判断", value: result.answer }),
+					h(Row, { label: "置信度", value: Math.round(result.confidence * 100) + "%" }),
+					h(Row, { label: "本次耗时", value: result.elapsedMs + " ms" }),
+					result.model ? h(Row, { label: "服务模型", value: result.model }) : null) : null));
+	}
+
 	function LocalModelDeployCard() {
-		const [deploy, setDeploy] = useState(null);
+		const [snapshot, setSnapshot] = useState(null);
+		const [picked, setPicked] = useState("");
 		const [err, setErr] = useState("");
-		const latest = useRef(null);
-		latest.current = deploy;
+		const [pollError, setPollError] = useState("");
+		const [pending, setPending] = useState(false);
+		const [retry, setRetry] = useState(0);
+		const revision = useRef(0);
+		const d = snapshot?.deploy;
+		const running = d?.status === "running";
+		const legacy = snapshot?.legacy === true;
+		const checking = !!snapshot && !legacy && snapshot.reachable === null;
 		useEffect(() => {
+			if (pending) return;
 			let stopped = false;
 			let timer;
 			const poll = async () => {
+				const requestedAt = revision.current;
 				try {
-				const r = await api("model/deploy");
-				if (stopped) return;
-				// 状态接口异常必须显式报错（旧后端对未知路径回 ok:false），不允许静默停在「检查部署状态…」
-				if (r && r.ok && r.deploy) { setDeploy(r.deploy); setErr(""); }
-				else setErr((r && r.error) ? String(r.error) : "部署状态接口无响应");
+					const r = await api("model/deploy");
+					if (stopped || requestedAt !== revision.current) return;
+					const next = normalizeModelDeployResponse(r);
+					if (next) {
+						setSnapshot(next);
+						setPollError("");
+					} else {
+						setPollError(r?.error || "部署状态接口无响应");
+					}
 				} catch (e) {
-					if (!stopped) setErr("部署状态获取失败：" + (e && e.message ? e.message : "网络错误"));
+					if (!stopped && requestedAt === revision.current) setPollError(e?.message || "网络错误");
 				}
-				if (!stopped) timer = setTimeout(poll, latest.current && latest.current.status === "running" ? 2000 : 8000);
+				if (!stopped) timer = setTimeout(poll, running ? 1500 : checking ? 750 : 8000);
 			};
 			poll();
 			return () => { stopped = true; clearTimeout(timer); };
-		}, []);
-		const start = async () => {
+		}, [pending, running, checking, retry]);
+
+		const active = snapshot?.activeModel;
+		const models = snapshot?.models || [];
+		const audioModels = Array.isArray(snapshot?.audioModels) ? snapshot.audioModels : [];
+		const families = new Map();
+		for (const model of models) {
+			const family = model.family || "本地模型";
+			if (!families.has(family)) families.set(family, []);
+			families.get(family).push(model);
+		}
+		const target = running ? d.model : (models.some((entry) => entry.id === picked) ? picked : active);
+		const selected = models.find((entry) => entry.id === target);
+		const downloadSource = { registry: "Ollama 官方仓库", modelscope: "ModelScope 直连", huggingface: "Hugging Face（由 Ollama 拉取）" };
+		const latestDeploy = d && d.model === target ? d : null;
+		const failed = latestDeploy?.status === "failed";
+		const canSwitch = !legacy && selected?.installed === true && target !== active && !failed;
+		const pct = running ? lastPercent(d.log || []) : null;
+		const submit = async () => {
 			setErr("");
+			if (!snapshot) {
+				setPollError("");
+				setRetry((value) => value + 1);
+				return;
+			}
+			revision.current += 1;
+			setPending(true);
 			try {
-				const r = await api("model/deploy", {});
-				if (r && r.ok && r.deploy) { setDeploy(r.deploy); setErr(""); }
-				else setErr((r && r.error) ? String(r.error) : "启动失败");
+				const r = await api(canSwitch ? "model/switch" : "model/deploy", legacy ? {} : { model: target });
+				const next = normalizeModelDeployResponse(r);
+				if (next) {
+					setSnapshot(next);
+					setPollError("");
+				} else setErr(r?.error || "模型操作失败");
 			} catch (e) {
-				setErr("启动请求失败：" + (e && e.message ? e.message : "网络错误"));
+				setErr(e?.message || "网络错误");
+			} finally {
+				setPending(false);
 			}
 		};
-		const d = deploy;
-		const running = d && d.status === "running";
-		const install = d && d.install;
-		const ready = !!(d && (d.status === "ok" || (install && install.ready)));
-		const needInstall = !!d && !running && !ready;
-		const pct = d && d.log ? lastPercent(d.log) : null;
-		const label = !d ? (err ? "重试连接" : "检查部署状态…") : running ? "部署中…" :
-			d.status === "failed" ? "重试部署" : needInstall ? "一键安装（ModelScope 直连）" : "重新验证";
-		const badge = !d ? null : h(Badge, {
-			tone: ready ? "ok" : d.status === "failed" ? "err" : running ? "warn" : "idle",
-			dot: running, text: ready ? "已就绪" : d.status === "failed" ? "失败" : running ? "进行中" : "未部署",
+
+		const activeEntry = models.find((entry) => entry.id === active);
+		const badge = !snapshot || running || (legacy && snapshot.reachable === null) ? null : h(Badge, {
+			tone: snapshot.reachable === false ? "err" : snapshot.reachable ? "ok" : "idle",
+			text: snapshot.reachable === false ? "Ollama 未连接" : snapshot.reachable ? "Ollama 已连接" : "检查 Ollama…",
 		});
+		const label = !snapshot ? (pollError ? "重试连接" : "检查部署状态…") :
+			running ? "部署中…" : pending ? "处理中…" : canSwitch ? "切换模型" :
+			failed ? "重试部署" : selected?.installed && target === active ? "重新验证" : legacy ? "一键部署" : "一键部署并启用";
+		const optionText = (model) => model.label + (model.id === active ? "（当前）" : "") +
+			(model.installed === true ? " · 已安装" : model.installed === false ? " · 未安装" : "");
 		return h(Card, { title: "本地模型", extra: badge },
-			h(Row, { label: "Ollama 模型", value: (d && d.model) || "qwen3:4b" }),
-			install && !running ? h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
-				h(Badge, { tone: install.reachable ? "ok" : "err", text: "Ollama 服务 " + (install.reachable ? "已运行" : "未安装") }),
-				h(Badge, { tone: install.modelInstalled ? "ok" : "err", text: (install.model || "qwen3:4b") + (install.modelInstalled ? " 已就绪" : " 未安装") })) : null,
-			needInstall ? h("p", { className: "dfy-caption", style: { margin: 0, color: "var(--dsw-alias-state-warning-primary,#8a6d1f)" } },
-				"本地模型未安装。将通过 ModelScope 下载、导入并验证。") : null,
+			active ? h("div", { role: "status" },
+				h(Row, { label: "当前推理模型", value: (activeEntry?.label || active) +
+					(activeEntry?.installed === false ? " · 未安装" : "") })) : null,
+			models.length && !legacy ? h(Field, { label: "选择模型" },
+				h("select", { className: "dfy-select", value: target, disabled: running || pending, onChange: (event) => {
+					setPicked(event.target.value);
+					setErr("");
+				} }, Array.from(families, ([family, entries]) => h("optgroup", { key: family, label: family },
+					entries.map((model) => h("option", { key: model.id, value: model.id }, optionText(model))))))) : null,
+			legacy ? h("p", { className: "dfy-caption", style: { margin: 0 } },
+				"当前可部署已配置的模型。更新插件后可选择其他模型。") : null,
+			selected && !legacy && !running && !canSwitch && !selected.installed && !checking ? h("p", { className: "dfy-caption", style: { margin: 0 } },
+				(selected.installed === false ? "本地模型未安装。" : "") +
+				"使用 " + (downloadSource[selected.source || snapshot.source] || "ModelScope 直连") + "下载并验证。") : null,
 			running && pct !== null ? h("div", { role: "progressbar", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100, "aria-label": "部署进度", style: { height: 8, borderRadius: 999, background: "var(--dsw-alias-bg-layer-2,#e6eceb)", overflow: "hidden" } },
 				h("div", { style: { width: pct + "%", height: "100%", background: "var(--dsw-alias-state-business-primary,#0f5e57)", transition: "width .4s ease" } })) : null,
-			running ? h("p", { className: "dfy-caption", style: { margin: 0 }, role: "status" }, pct !== null ? "进行中 · " + pct + "%" : "进行中…") : null,
-			err ? h("p", { className: "dfy-caption", role: "alert", style: { margin: 0, color: "var(--dsw-alias-state-error-primary,#c0392b)" } },
-				"部署状态异常：" + err + (String(err).includes("未知路径")
-				? "。当前宿主加载的插件后端未包含该端点：请在 DeepSeek Harness 中重载大肥鱼插件，再刷新本页。"
-				: "")) : null,
+			running ? h("p", { className: "dfy-caption", style: { margin: 0 }, role: "status" },
+				"正在部署 " + target + (pct === null ? "…" : " · " + pct + "%")) : null,
+			err || pollError ? h("p", { className: "dfy-caption", role: "alert", style: { margin: 0, color: "var(--dsw-alias-state-error-primary,#c0392b)" } },
+				"部署状态异常：" + (err || pollError) + (String(pollError).includes("未知路径")
+				? "。请在 DeepSeek Harness 中重载大肥鱼插件，再刷新本页。" : "")) : null,
 			h("div", { className: "dfy-actions" },
-				h(Btn, { tone: "primary", disabled: running, onClick: start }, label)),
-			d?.log?.length ? h("details", { className: "dfy-details", open: running || d.status === "failed" || undefined },
+				h(Btn, { tone: "primary", disabled: running || pending || (snapshot ? !selected || checking : !pollError), onClick: submit }, label)),
+			h(LocalModelComparison, { models, audioModels }),
+			audioModels.length ? h(DuplexJevTurnTest) : null,
+			latestDeploy?.log?.length ? h("details", { className: "dfy-details", open: running || failed || undefined },
 				h("summary", null, "部署日志"), h("pre", {
-				tabIndex: 0, "aria-live": running ? "polite" : undefined,
-				style: { margin: 0, maxHeight: 132, overflow: "auto", fontSize: 11.5, fontFamily: "ui-monospace,SFMono-Regular,Menlo,monospace", whiteSpace: "pre-wrap", overflowWrap: "anywhere", padding: "8px 10px", borderRadius: 8, background: "var(--dsw-alias-bg-layer-2,#eef3f2)" },
-			}, d.log.slice(-14).join("\n"))) : null,
-			d && d.status === "failed" && d.error ? h("p", { className: "dfy-caption", style: { margin: 0, color: "var(--dsw-alias-state-error-primary,#c0392b)" } }, d.error) : null);
+					tabIndex: 0,
+					style: { margin: 0, maxHeight: 132, overflow: "auto", fontSize: 11.5, fontFamily: "ui-monospace,SFMono-Regular,Menlo,monospace", whiteSpace: "pre-wrap", overflowWrap: "anywhere", padding: "8px 10px", borderRadius: 8, background: "var(--dsw-alias-bg-layer-2,#eef3f2)" },
+				}, latestDeploy.log.slice(-14).join("\n"))) : null,
+			failed ? h("p", { className: "dfy-caption", role: "alert", style: { margin: 0, color: "var(--dsw-alias-state-error-primary,#c0392b)" } }, latestDeploy.error) : null);
 	}
 
 	function CloudStep({ settings, save, reload, feedback }) {
@@ -2114,6 +2264,10 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const [provider, setProvider] = useState(c.provider);
 		const [model, setModel] = useState(c.model);
 		const [budget, setBudget] = useState(c.dailyBudgetCny === null ? "" : String(c.dailyBudgetCny));
+		const [publicChatAllowed, setPublicChatAllowed] = useState(!!c.publicChatAllowed);
+		const [requestLimit, setRequestLimit] = useState(String(c.dailyRequestLimit ?? 100));
+		const [inputRate, setInputRate] = useState(c.inputCnyPerMillion == null ? "" : String(c.inputCnyPerMillion));
+		const [outputRate, setOutputRate] = useState(c.outputCnyPerMillion == null ? "" : String(c.outputCnyPerMillion));
 		const [baseUrl, setBaseUrl] = useState(c.baseUrl || "");
 		const [apiKey, setApiKey] = useState("");
 		const [keyNote, setKeyNote] = useState("");
@@ -2122,6 +2276,10 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const [saving, setSaving] = useState(false);
 		const [quota, setQuota] = useState(null);
 		const [quotaLoading, setQuotaLoading] = useState(false);
+		const [costs, setCosts] = useState(null);
+		const loadCosts = useCallback(async () => {
+			try { const r = await api("costs"); if (r.ok) setCosts(r); } catch { setCosts(null); }
+		}, []);
 		// 额度/可用余额（0.15.2）：按已保存的生效配置查询（DeepSeek 余额 / OpenAI 兼容 billing；不支持则如实标注）
 		const loadQuota = useCallback(async () => {
 			setQuotaLoading(true);
@@ -2134,7 +2292,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		useEffect(() => {
 			setQuota(null);
 			if (key.source !== "none") loadQuota();
-		}, [loadQuota, key.source, key.updatedAt, c.provider, c.model, c.baseUrl, c.enabled]);
+			loadCosts();
+		}, [loadCosts, loadQuota, key.source, key.updatedAt, c.provider, c.model, c.baseUrl, c.enabled]);
 		const clearKey = async () => {
 			setSaving(true);
 			setTest(null);
@@ -2170,13 +2329,21 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					if (!kr.ok) throw new Error(kr.error);
 					setApiKey("");
 				}
-				const ok = await save("cloud", { enabled, provider, model, baseUrl: baseUrl.trim(), dailyBudgetCny: budget === "" ? null : Number(budget) });
-				if (ok) setTest(null);
+				const ok = await save("cloud", { enabled, provider, model, baseUrl: baseUrl.trim(), dailyBudgetCny: budget === "" ? null : Number(budget),
+					publicChatAllowed, dailyRequestLimit: Number(requestLimit),
+					inputCnyPerMillion: inputRate === "" ? null : Number(inputRate), outputCnyPerMillion: outputRate === "" ? null : Number(outputRate) });
+				if (ok) { setTest(null); await loadCosts(); }
 				else if (newKey) setKeyNote("API Key 已保存");
 			} catch (error) { setKeyNote("密钥保存失败 · " + error.message); }
 			finally { setSaving(false); }
 		};
 		const selPreset = presets.find((p) => p.id === provider) || null;
+		const sameConnection = provider === c.provider && model === c.model && baseUrl.trim() === (c.baseUrl || "") && !apiKey.trim();
+		const policyChanged = publicChatAllowed !== !!c.publicChatAllowed || Number(requestLimit) !== (c.dailyRequestLimit ?? 100) ||
+			(inputRate === "" ? null : Number(inputRate)) !== (c.inputCnyPerMillion ?? null) ||
+			(outputRate === "" ? null : Number(outputRate)) !== (c.outputCnyPerMillion ?? null);
+		const canSave = test?.ok || (sameConnection && policyChanged && enabled === c.enabled &&
+			(budget === "" ? null : Number(budget)) === c.dailyBudgetCny);
 		// 白屏修复（0.14.1）：预设目录缺 models 字段时不再抛错（React 未捕获异常会卸载整棵树导致白屏）
 		const selModels = Array.isArray(selPreset && selPreset.models) ? selPreset.models : [];
 		const pickPreset = (p) => {
@@ -2193,6 +2360,9 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					h("label", { className: "dfy-check" },
 						h("input", { type: "checkbox", checked: enabled, onChange: (e) => { setEnabled(e.target.checked); setTest(null); } }),
 						h("span", null, "启用云端回复")),
+					h("label", { className: "dfy-check" },
+						h("input", { type: "checkbox", checked: publicChatAllowed, onChange: (e) => setPublicChatAllowed(e.target.checked) }),
+						h("span", null, "允许发送公开弹幕给云端模型")),
 					presets.length > 0 ? h("div", { className: "dfy-choice" },
 						presets.map((p) => h("button", {
 							key: p.id, type: "button",
@@ -2211,6 +2381,9 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 								// React 禁止 void 元素（input）携带 children：datalist 必须挂为兄弟节点（点击预设即白屏的根因）
 								selModels.length > 0 ? h("datalist", { id: "dfy-cloud-models" }, selModels.map((m) => h("option", { key: m, value: m }))) : null)),
 						h(Field, { label: "每日费用上限（元）" }, h("input", { className: "dfy-input", value: budget, placeholder: "未设置 ⇒ 付费禁用", onChange: (e) => { setBudget(e.target.value); setTest(null); } })),
+						h(Field, { label: "每日请求上限（次）" }, h("input", { className: "dfy-input", type: "number", min: 1, max: 100000, value: requestLimit, onChange: (e) => setRequestLimit(e.target.value) })),
+						h(Field, { label: "每百万输入 Token（元，可选）" }, h("input", { className: "dfy-input", type: "number", min: 0, step: "any", value: inputRate, onChange: (e) => setInputRate(e.target.value) })),
+						h(Field, { label: "每百万输出 Token（元，可选）" }, h("input", { className: "dfy-input", type: "number", min: 0, step: "any", value: outputRate, onChange: (e) => setOutputRate(e.target.value) })),
 						h(Field, { label: "端点 URL（自定义网关）" }, h("input", { className: "dfy-input", value: baseUrl, placeholder: selPreset ? "留空 = 预设端点" : "如 https://tokenhub.example.com/v1", title: "OpenAI 兼容端点，解析优先级：环境变量 > 此处 > 预设", onChange: (e) => { setBaseUrl(e.target.value); setTest(null); } }))),
 					h("div", { className: "dfy-settings-stack" },
 						h(Field, { label: "API Key" },
@@ -2221,12 +2394,18 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 							key.source === "ui" ? "已保存 · " + (key.masked || "••••") : "尚未配置密钥"),
 						h("div", { className: "dfy-actions" },
 							h(Btn, { onClick: runTest }, testing ? "测试中…" : "测试连接"),
-							h(Btn, { tone: "primary", disabled: !(test && test.ok), title: test && test.ok ? "测试已通过，可保存" : "先「测试连接」通过后再保存", onClick: doSave }, "保存"),
+							h(Btn, { tone: "primary", disabled: !canSave, title: canSave ? "保存配置" : "先「测试连接」通过后再保存", onClick: doSave }, "保存"),
 							key.source === "ui" ? h(Btn, { tone: "danger", onClick: clearKey }, "清除密钥") : null),
 						test ? h("span", { className: "dfy-caption", role: "status", style: { margin: 0, color: test.ok ? "var(--dsw-alias-state-success-primary,#1c7a54)" : "var(--dsw-alias-state-error-primary,#c0392b)" } },
 							(test.ok ? "测试通过" : "测试失败") + (test.keySource === "env" ? "（使用环境变量密钥）" : "") + "：" + (test.ok ? test.detail || "模型已返回回复" : test.error || "未知错误")) : null,
 						keyNote ? h("span", { className: "dfy-caption", role: "status" }, keyNote) : null,
 						feedback)),
+				costs ? h("section", { "aria-label": "今日云端用量" },
+					h(Row, { label: "今日云端请求", value: costs.cloudUsage.requests + " / " + costs.dailyRequestLimit }),
+					h(Row, { label: "已报告 Token", value: costs.cloudUsage.tokens ?? "—" }),
+					h(Row, { label: "估算费用", value: costs.cloudUsage.estimatedCostCny == null ? "未知" :
+						"¥" + costs.cloudUsage.estimatedCostCny.toFixed(4) + (costs.cloudUsage.unknownCostRequests ? "（部分请求待估算）" : "") }),
+					h(Btn, { tone: "ghost", onClick: loadCosts }, "刷新用量")) : null,
 				h("section", { "aria-label": "额度 / 可用余额" },
 					h("strong", null, "额度 / 可用余额"),
 					h("div", { style: { display: "grid", gap: 6 } },
@@ -3275,7 +3454,10 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			if (previous?.safe) motion.apply("resume", now);
 			else if (!continuous) motion.interrupt(now);
 			if (speaking) motion.apply("speak", now);
-			else if (listening) motion.apply("think", now);
+			else if (listening) {
+				const timer = setTimeout(() => motion.apply("think", performance.now()), 320);
+				return () => clearTimeout(timer);
+			}
 			else if (continuous && previous.speaking && allowTail) {
 				const { blendMs } = motion.apply("tail", now);
 				setClosing(true);
@@ -3289,12 +3471,13 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 		useEffect(() => {
 			if (!turns?.length) { seenTurns.current.clear(); return; }
+			const reaction = turns.some((turn) => turn.answer?.replyKind === "reaction" && !seenTurns.current.has(turn.id + ":reaction"));
 			const fresh = turns.some((turn) => turn.source === "danmaku" && !seenTurns.current.has(turn.id));
-			seenTurns.current = new Set(turns.map((turn) => turn.id));
-			if (!fresh || safe || dialogue.current.phase === "closing") return;
+			seenTurns.current = new Set(turns.flatMap((turn) => turn.answer?.replyKind === "reaction" ? [turn.id, turn.id + ":reaction"] : [turn.id]));
+			if ((!fresh && !reaction) || safe || dialogue.current.phase === "closing") return;
 			const motion = dialogue.current;
 			const before = motion.targets;
-			if (motion.apply("danmaku", performance.now()) === before || speaking || listening) return;
+			if (motion.apply(reaction ? "reaction" : "danmaku", performance.now()) === before || speaking || listening) return;
 			setReacting(true);
 			const timer = setTimeout(() => {
 				if (motion.phase === "listening") motion.interrupt(performance.now());
@@ -3510,7 +3693,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					const ack = completed.current;
 					const response = await fetch("/api/dafeiyu/interaction/stage", {
 						method: "POST", credentials: "same-origin", headers: jsonHeaders,
-						body: JSON.stringify({ owner: owner.current, playingKey: active.current?.key,
+						body: JSON.stringify({ owner: owner.current, profileId: handlers.current.persona?.profileId, playingKey: active.current?.key,
 							completedKey: ack?.key, completedOk: ack?.ok }),
 						signal: AbortSignal.any([lifecycle.signal, AbortSignal.timeout(1800)]),
 					});
@@ -3520,7 +3703,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					confirmedAt = Date.now();
 					if (completed.current === ack) completed.current = null;
 					const { speech, persona } = handlers.current;
-					if (active.current && (!result.owner || active.current.runId !== result.runId)) {
+					if (active.current && (!result.owner || active.current.runId !== result.runId || result.activeKey !== active.current.key)) {
 						speech.stop();
 						active.current = null;
 						setLine("");
@@ -3655,14 +3838,53 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 	function previewTurnLabel(turn) {
 		if (!turn.answer) return TURN_STATE[turn.status];
+		if (turn.answer.replyKind === "reaction") return "角色动作";
+		if (turn.answer.replyKind === "preset") return "角色话术";
+		if (turn.answer.replyKind === "clarification") return "追问确认";
 		const source = REPLY_SOURCE[turn.answer.route] || turn.answer.route;
-		const detail = turn.answer.route === "fallback" ? FALLBACK_REASON[turn.answer.reasonCode] :
-			turn.memoryUsed ? "参考 " + turn.memoryUsed + " 条本地记忆" : "";
-		return [source, detail].filter(Boolean).join(" · ");
+		const reason = { cloud_only: "仅云端可用", deep: "深度回复", local_failed: "本地回复未通过或不可用",
+			cloud_failed: "云端未完成，转本地" }[turn.answer.routingReason];
+		return [source, reason, FALLBACK_REASON[turn.answer.reasonCode],
+			turn.memoryUsed ? "参考 " + turn.memoryUsed + " 条本地记忆" : ""].filter(Boolean).join(" · ");
+	}
+
+	function ProgramMemory({ program, live, reload }) {
+		const [busy, setBusy] = useState(false);
+		const [note, setNote] = useState("");
+		const saved = program?.saved || [];
+		const current = (program?.current || []).filter((item) => !saved.some((entry) => entry.id === item.id));
+		const update = async (action, body) => {
+			setBusy(true);
+			setNote("");
+			try {
+				const result = await api("interaction/program/" + action, body);
+				if (!result.ok) throw new Error(result.error);
+				await reload();
+				setNote(action === "remove" ? "已撤回" : "已保存");
+			} catch (error) { setNote(error.message || "节目记忆更新失败"); }
+			finally { setBusy(false); }
+		};
+		const edit = (item) => {
+			const summary = window.prompt("可供其他主播使用的公开节目内容", item.summary);
+			if (summary?.trim()) update("save", { id: item.id, summary: summary.trim() });
+		};
+		if (!live && saved.length === 0) return null;
+		return h("details", { className: "dfy-details" },
+			h("summary", null, "直播记忆"),
+			h("p", { className: "dfy-caption", role: "status" }, note || (current.length || saved.length ? "" : "播出后会在这里显示节目进度。")),
+			program?.pending?.length ? h("p", { className: "dfy-caption" }, "待回应 · " + program.pending.join("、")) : null,
+			h("div", { className: "dfy-list" }, [...current.map((item) => [item, false]), ...saved.map((item) => [item, true])]
+				.map(([item, retained]) => h("div", { className: "dfy-item", key: item.id },
+					h("strong", null, item.topic),
+					h("p", { className: "dfy-caption" }, item.summary),
+					h("div", { className: "dfy-actions" },
+						h(Btn, { tone: "ghost", disabled: busy, onClick: () => edit(item) }, retained ? "更正" : "保留到直播记忆"),
+						h(Btn, { tone: "ghost", disabled: busy, onClick: () => update("remove", { id: item.id }) }, "撤回"))))));
 	}
 
 	function PreviewConversation({ voiceId, publish, persona, samplePhrase, ensurePreview, readReplies, setReadReplies, active, live, running, onEndPreview, busy }) {
 		const [text, setText] = useState("");
+		const [deep, setDeep] = useState(false);
 		const [state, setState] = useState(null);
 		const [notice, setNotice] = useState("");
 		const [sending, setSending] = useState(false);
@@ -3807,8 +4029,9 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			sample.current?.pause();
 			try {
 				await ensurePreview();
-				const result = await api("interaction/send", { text: message });
+				const result = await api("interaction/send", { text: message, ...(live && deep ? { depth: "deep" } : {}) });
 				if (!result.ok) throw new Error(result.error || "发送失败");
+				setDeep(false);
 				setText((draft) => draft.trim() === message ? "" : draft);
 				follow.current = true;
 				await load();
@@ -3850,8 +4073,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 					turn.answer ? h("div", { className: "dfy-turn-answer" },
 						h("span", { className: "dfy-turn-meta" }, (persona?.name || "主播") + " · " + previewTurnLabel(turn)),
 						turn.answer.route !== "fallback" ? h("span", { className: "dfy-turn-meta" }, replyUsage(turn.answer)) : null,
-						h("p", { className: "dfy-turn-text" }, turn.answer.text),
-						live ? h("div", { className: "dfy-turn-head" },
+						turn.answer.text ? h("p", { className: "dfy-turn-text" }, turn.answer.text) : null,
+						live && turn.answer.replyKind === "reaction" ? null : live ? h("div", { className: "dfy-turn-head" },
 							h("span", { className: "dfy-turn-meta" }, PLAYBACK[turn.playback]),
 							["failed", "played", "skipped"].includes(turn.playback) ? h(Btn, { tone: "ghost", onClick: () => replay(turn) }, "在舞台重播") : null)
 							: h(Btn, { tone: "ghost", disabled: speech.phase !== "idle" || mic.phase !== "idle",
@@ -3873,6 +4096,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				h("div", { className: "dfy-desk-speak-options dfy-actions" },
 					h("button", { type: "submit", className: "dfy-btn dfy-btn-pri", disabled: !text.trim() || sending || mic.phase !== "idle" },
 						sending ? "正在发送…" : "发送"),
+					live ? h("label", null, h("input", { type: "checkbox", checked: deep, disabled: sending,
+						onChange: (event) => setDeep(event.target.checked) }), "深度回复") : null,
 					mic.phase === "idle"
 						? h(Btn, { disabled: speech.phase !== "idle", onClick: () => { sample.current?.pause(); mic.start(); } }, "麦克风")
 						: h(Btn, { disabled: mic.phase === "stopping", onClick: mic.stop }, mic.phase === "checking" ? "取消识别" : "结束识别"),
@@ -3883,6 +4108,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 						} }), "自动朗读") : null,
 					speech.phase !== "idle" ? h(Btn, { onClick: speech.stop }, "停止朗读") : null)),
 			h("p", { className: "dfy-caption", role: "status" }, notice || mic.note || speech.note || (busyTurn ? "主播正在组织回复…" : "")),
+			h(ProgramMemory, { program: state?.program, live, reload: load }),
 			!live ? h("details", { className: "dfy-details" }, h("summary", null, "声音试听"),
 				persona?.media?.sampleAudioUrl ? h("div", { className: "dfy-role-audio" },
 					h("span", { className: "dfy-caption" }, "官方录音"),
@@ -3922,9 +4148,9 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 		const locked = ["self_check", "awaiting_platform", "stream_established", "live_confirmed", "ending"].includes(status?.liveStatus);
 		const safe = emergency || status?.liveStatus === "safe_scene";
-		const editable = connected && !!status && !locked && !pending.startsWith("live/") && pending !== "preview/stop" && !safe;
 		const active = status?.liveStatus === "local_preview";
 		const live = status?.liveStatus === "live_confirmed";
+		const editable = connected && !!status && (!locked || live) && !pending.startsWith("live/") && pending !== "preview/stop" && !safe;
 		const canInteract = connected && status?.personaReady && !safe && !selection && !pending.startsWith("live/") &&
 			pending !== "preview/stop" && (live || editable);
 		const save = async (patch, next) => {
@@ -4193,14 +4419,15 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			const r = await api("audience/profile?viewer=" + encodeURIComponent(viewerKey));
 			if (r.ok) { setDetail(r); setNote(""); } else setNote("加载失败：" + r.error);
 		};
-		const correction = async (viewerKey) => {
-			const fieldName = window.prompt("纠错字段名（如 favorite_topic）：");
+		const correction = async (viewerKey, relationship) => {
+			const fieldName = relationship?.kind || window.prompt("需要更正的字段名称");
 			if (!fieldName) return;
-			const value = window.prompt("观众明确的说法：");
+			const value = window.prompt("观众明确表达的内容", relationship?.value || "");
 			if (!value) return;
-			const r = await api("audience/correction", { viewerKey: viewerKey, fieldName: fieldName, value: value });
-			setNote(r.ok ? "纠错已记录（viewer_stated 覆盖推测，保留审计链）" : "失败：" + r.error);
-			if (r.ok && detail) openViewer(viewerKey);
+			const r = await api("audience/correction", { viewerKey, fieldName, value,
+				...(relationship ? { profileId: relationship.profileId } : {}) });
+			if (r.ok && detail) await openViewer(viewerKey);
+			setNote(r.ok ? "已记录更正" : "更正失败 · " + r.error);
 		};
 		const actViewer = async (path, body, label) => {
 			const r = await api(path, body);
@@ -4210,6 +4437,14 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		};
 
 		const d = detail;
+		const liveProfile = d?.liveProfile;
+		const relationships = new Map();
+		for (const item of liveProfile?.relationships || []) {
+			if (!relationships.has(item.profileId)) relationships.set(item.profileId, []);
+			relationships.get(item.profileId).push(item);
+		}
+		const relationshipLabels = { address: "称呼", preference: "明确偏好", inside_joke: "共同梗", shared_topic: "共同话题" };
+		const profileLabels = { "dsh-pet": "蓝发女仆", xiaxia: "夏夏", lubai: "沈露白", guyu: "谷雨", beila: "贝拉" };
 		const pendingDeletion = d ? d.requests.find((r) => r.kind === "deletion" && r.status === "received") : null;
 		return h("div", { className: "dfy-grid" },
 			h(Card, { title: "观众（伪名化身份）", extra: h(Btn, { tone: "ghost", onClick: load }, "刷新") },
@@ -4234,6 +4469,17 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				h(Row, { label: "首次互动", value: (d.summary.firstSeenAt || "—").slice(0, 16).replace("T", " ") }),
 				h(Row, { label: "最近互动", value: (d.summary.lastSeenAt || "—").slice(0, 16).replace("T", " ") }),
 				h(Row, { label: "互动聚合", value: Object.keys(d.interactions).length === 0 ? "无" : Object.entries(d.interactions).map(([k, n]) => k + "×" + n).join("，") }),
+				liveProfile ? h(Row, { label: "参与直播场次", value: String(liveProfile.sessions) }) : null,
+				liveProfile?.topics.length ? h("details", { className: "dfy-details" },
+					h("summary", null, "近期话题"),
+					h("div", { className: "dfy-list" }, liveProfile.topics.map((item) =>
+						h(Row, { key: item.sourceId, label: item.topic, value: "互动于 " + item.observedAt.slice(0, 10) })))) : null,
+				[...relationships].map(([profileId, items]) => h("details", { key: profileId, className: "dfy-details" },
+					h("summary", null, (profileLabels[profileId] || profileId) + "的互动记忆"),
+					h("div", { className: "dfy-list" }, items.map((item) => h("div", { key: item.kind, className: "dfy-item" },
+						h(Row, { label: relationshipLabels[item.kind] || item.kind, value: item.value }),
+						h("span", { className: "dfy-caption" }, (item.sourceId === "viewer_correction" ? "观众更正" : "互动记录") + " · " + item.observedAt.slice(0, 10)),
+						h(Btn, { tone: "ghost", onClick: () => correction(d.summary.viewerKey, item) }, "更正")))))),
 				h("div", { className: "dfy-list" },
 					d.fields.length === 0 ? h("p", { className: "dfy-muted", style: { margin: 0 } }, "无当前有效字段") : null,
 					d.fields.map((f) => h("div", { key: f.fieldId, className: "dfy-item" },

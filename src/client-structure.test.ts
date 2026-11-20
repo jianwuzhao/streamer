@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { runInNewContext } from 'node:vm'
 import { packageDir } from './index-wiring.ts'
 
 /**
@@ -59,7 +60,8 @@ test('client 结构：面板根挂错误边界（渲染错误不再白屏）', (
 
 test('client 结构：一键部署本地模型经 model/deploy 端点轮询', () => {
   assert.ok(source.includes('api("model/deploy"'), '应调用 model/deploy（GET 轮询）')
-  assert.ok(source.includes('api("model/deploy", {})'), '应 POST model/deploy 启动部署')
+  assert.ok(source.includes('api(canSwitch ? "model/switch" : "model/deploy", legacy ? {} : { model: target })'),
+    '新后端应收到选中的模型，旧后端应使用原部署参数')
   assert.ok(source.includes('LocalModelDeployCard'), 'CloudStep 应挂载一键部署卡片')
 })
 
@@ -71,20 +73,40 @@ test('client 结构：云端密钥界面维护 + 未安装提示与进度条（0
   assert.ok(source.includes('"progressbar"'), '部署进度条应带 progressbar 语义')
   assert.ok(source.includes('aria-valuenow'), '进度条应带 aria-valuenow')
   assert.ok(source.includes('本地模型未安装'), '未安装时应给出界面提示')
-  assert.ok(source.includes('一键安装（ModelScope 直连）'), '未安装时按钮应为一键安装')
+  assert.ok(source.includes('一键部署并启用'), '未安装时应提供一键部署')
 })
 
 test('client 结构：部署状态接口异常显式报错，不静默停在检查状态', () => {
   assert.ok(source.includes('部署状态异常：'), 'GET 失败应在卡片内显示错误')
   assert.ok(source.includes('重载大肥鱼插件'), '未知路径（旧后端）应提示重载宿主插件')
   assert.ok(source.includes('重试连接'), '出错时按钮应可重试')
-  assert.ok(!source.includes('disabled: running || !d,'), '无快照时按钮也应可点击（POST 兜底）')
+})
+
+test('旧宿主的部署状态与进度响应可用于单模型面板', () => {
+  const start = source.indexOf('function normalizeModelDeployResponse(')
+  const end = source.indexOf('function LocalModelDeployCard(', start)
+  const normalize = runInNewContext(`${source.slice(start, end)}\nnormalizeModelDeployResponse`)
+  const deploy = { model: 'qwen3:4b', status: 'idle' }
+  const legacy = normalize({
+    ok: true, deploy, install: { reachable: true, model: deploy.model, modelInstalled: true },
+  })
+  assert.equal(legacy.legacy, true)
+  assert.equal(legacy.activeModel, deploy.model)
+  assert.equal(legacy.reachable, true)
+  assert.equal(legacy.models[0].installed, true)
+  const running = normalize({ ok: true, deploy: { ...deploy, status: 'running', log: ['模型下载：50%'] } })
+  assert.equal(running.deploy.status, 'running')
+  assert.equal(running.models[0].installed, null)
+  const modern = { ok: true, deploy, activeModel: 'gemma3:1b', models: [{ id: 'gemma3:1b' }] }
+  assert.equal(normalize(modern), modern)
+  assert.equal(normalize({ ok: false, error: '未知路径' }), null)
 })
 
 test('client 结构：云端配置先测试通过再保存（0.15.1）', () => {
   assert.ok(source.includes('api("settings/cloud/test"'), '应调用 settings/cloud/test 连接测试')
   assert.ok(source.includes('测试连接'), '应有「测试连接」按钮')
-  assert.ok(source.includes('disabled: !(test && test.ok)'), '保存按钮应被测试结果门禁')
+  assert.ok(source.includes('const canSave = test?.ok || (sameConnection && policyChanged'), '连接字段变更须先测试，独立的用量和隐私设置可保存')
+  assert.ok(source.includes('disabled: !canSave'), '保存按钮应应用配置门禁')
   assert.ok(source.includes('先「测试连接」通过后再保存'), '未通过时应提示先测试')
 })
 
