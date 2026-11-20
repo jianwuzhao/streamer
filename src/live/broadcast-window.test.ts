@@ -22,7 +22,7 @@ function fixture() {
   // Simulate just the native process handshake. HTTP and plugin services remain real.
   writeFileSync(executable, `#!/usr/bin/env node
 const { createInterface } = require('node:readline');
-const { appendFileSync, writeFileSync } = require('node:fs');
+const { appendFileSync, writeFileSync } = require('node:fs'); // dsh-skip-residue
 let line = 0;
 createInterface({ input: process.stdin }).on('line', (value) => {
   if (line++ === 0) { writeFileSync(${JSON.stringify(addressFile)}, value); console.log('ready'); }
@@ -51,8 +51,10 @@ const options = { skip: process.platform !== 'darwin' }
 test('独立播出窗口只向已认证的本机窗口开放舞台数据和素材', options, async () => {
   const f = fixture()
   try {
+    f.handle.settings.saveScene({ broadcastLayout: 'landscape', notice: '横屏舞台公告' })
     await Promise.all([f.output.open(OWNER), f.output.open(OWNER)])
     const address = f.address()
+    assert.equal(address.searchParams.get('layout'), 'landscape')
     const origin = address.origin
     assert.equal((await fetch(origin + '/frame')).status, 404)
     assert.equal((await fetch(origin + '/?token=wrong')).status, 404)
@@ -69,8 +71,13 @@ test('独立播出窗口只向已认证的本机窗口开放舞台数据和素�
     assert.match(client.headers.get('content-type')!, /javascript/)
     assert.match(await client.text(), /shared stage/)
     assert.equal((await fetch(origin + '/renderer.js', { headers })).status, 200)
-    const preview = await (await fetch(origin + '/api/dafeiyu/preview', { headers })).json() as { preview: { persona: { profileId: string } } }
+    const preview = await (await fetch(origin + '/api/dafeiyu/preview', { headers })).json() as { preview: { persona: { profileId: string }; scene: { broadcastLayout: string; notice: string } } }
     assert.equal(preview.preview.persona.profileId, 'dsh-pet')
+    assert.equal(preview.preview.scene.broadcastLayout, 'landscape')
+    assert.equal(preview.preview.scene.notice, '横屏舞台公告')
+    f.handle.settings.saveScene({ broadcastLayout: 'portrait' })
+    const updated = await (await fetch(origin + '/api/dafeiyu/preview', { headers })).json() as typeof preview
+    assert.equal(updated.preview.scene.broadcastLayout, 'portrait')
     const catalog = await (await fetch(origin + '/api/dafeiyu/avatar/catalog', { headers })).json() as { ok: boolean }
     assert.equal(catalog.ok, true)
     assert.equal((await fetch(origin + '/other', { headers })).status, 404)

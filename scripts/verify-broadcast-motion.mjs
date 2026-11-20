@@ -131,7 +131,7 @@ try {
     if (!disposed) timer = setTimeout(() => { void publish(); }, Math.max(0, 16 - (performance.now() - started)));
   };
   void publish();
-  browser = await chromium.launch({ executablePath: process.env.DAFEIYU_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
+  browser = await chromium.launch({ executablePath: process.env.DAFEIYU_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true }); // dsh-skip-sensitive
   const page = await browser.newPage({ viewport: { width: 540, height: 960 }, deviceScaleFactor: 1 });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -318,7 +318,11 @@ try {
   assert.equal(await realOutput.getByText('迟到的帧').count(), 0);
 
   await workbench.getByRole('button', { name: '工作台', exact: true }).click();
-  await workbench.getByRole('combobox', { name: '预览角色' }).selectOption('xiaxia-3d');
+  await workbench.getByRole('button', { name: '设置', exact: true }).click();
+  await workbench.getByLabel('默认形象', { exact: true }).selectOption('rigged');
+  await workbench.getByRole('button', { name: '保存角色设置' }).click();
+  await workbench.getByText('已保存', { exact: true }).waitFor();
+  await workbench.getByRole('button', { name: '工作台', exact: true }).click();
   const xiaxia3d = '[data-rigged-role="xiaxia-3d"][data-rigged-status="ready"] canvas';
   await workbench.locator(xiaxia3d).waitFor();
   const xiaxia3dCanvas = realOutput.locator(xiaxia3d);
@@ -453,7 +457,11 @@ try {
   const riggedFallback = await openWorkbench(browser, origin);
   riggedFallback.on('pageerror', (error) => errors.push(error.message));
   await riggedFallback.route('**/api/dafeiyu/avatar/rigged?id=xiaxia-3d&asset=model', (route) => route.abort());
-  await riggedFallback.getByRole('combobox', { name: '预览角色' }).selectOption('xiaxia-3d');
+  await riggedFallback.getByRole('button', { name: '设置', exact: true }).click();
+  await riggedFallback.getByLabel('默认形象', { exact: true }).selectOption('rigged');
+  await riggedFallback.getByRole('button', { name: '保存角色设置' }).click();
+  await riggedFallback.getByText('已保存', { exact: true }).waitFor();
+  await riggedFallback.getByRole('button', { name: '工作台', exact: true }).click();
   const poster = riggedFallback.locator('[data-rigged-status="failed"] img.dfy-rigged-poster');
   await poster.waitFor();
   assert.ok(await poster.evaluate((img) => img.naturalWidth > 0));

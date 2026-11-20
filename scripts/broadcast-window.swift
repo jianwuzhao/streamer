@@ -26,15 +26,18 @@ private final class BroadcastApp: NSObject, NSApplicationDelegate, NSWindowDeleg
     private var window: BroadcastWindow!
     private var webView: WKWebView!
     private var ready = false
+    private var landscape = false
 
     init(url: URL) {
         self.stageURL = url
+        self.landscape = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "layout" }?.value == "landscape"
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         config.userContentController.add(self, name: "broadcastReady")
+        config.userContentController.add(self, name: "stageLayout")
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
 
@@ -65,7 +68,7 @@ private final class BroadcastApp: NSObject, NSApplicationDelegate, NSWindowDeleg
     private func frame(on screen: NSScreen?) -> NSRect {
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
         let scale = screen?.backingScaleFactor ?? 1
-        let ratio = NSSize(width: 9, height: 16)
+        let ratio = landscape ? NSSize(width: 16, height: 9) : NSSize(width: 9, height: 16)
         let unit = floor(min(120 / scale, (visible.width - 16) / ratio.width, (visible.height - 16) / ratio.height))
         let size = NSSize(width: ratio.width * unit, height: ratio.height * unit)
         return NSRect(x: visible.maxX - size.width - 8, y: visible.maxY - size.height - 8,
@@ -84,6 +87,15 @@ private final class BroadcastApp: NSObject, NSApplicationDelegate, NSWindowDeleg
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame else { return }
+        if message.name == "stageLayout", let layout = message.body as? String,
+           layout == "landscape" || layout == "portrait" {
+            let next = layout == "landscape"
+            if next != landscape {
+                landscape = next
+                window.setFrame(frame(on: window.screen), display: true)
+            }
+            return
+        }
         if message.name == "broadcastReady", !ready {
             ready = true
             print("ready")

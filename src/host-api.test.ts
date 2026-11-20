@@ -138,9 +138,9 @@ test('host-api：settings 读写/目录/AI 标识不可关闭（400 + issues）'
     assert.equal(got.payload.ok, true)
     assert.deepEqual(got.payload.settings.catalogs.avatars.map((avatar: { id: string }) => avatar.id), ['dsh-pet'])
     assert.ok(got.payload.settings.catalogs.voices.length >= 4)
-    assert.equal(got.payload.settings.catalogs.profiles.length, 6)
+    assert.equal(got.payload.settings.catalogs.profiles.length, 5)
     assert.ok(got.payload.settings.catalogs.profiles.some((p: { id: string; source: string }) => p.id === 'dsh-pet' && p.source === 'plugin'))
-    assert.ok(got.payload.settings.catalogs.profiles.some((p: { id: string; name: string }) => p.id === 'xiaxia-3d' && p.name === '夏夏 · 重构版'))
+    assert.ok(got.payload.settings.catalogs.profiles.some((p: { id: string; name: string }) => p.id === 'xiaxia' && p.name === '夏夏'))
     assert.equal(got.payload.settings.profile.id, 'dsh-pet')
     assert.equal(got.payload.settings.profile.name, 'DSH 蓝发女仆')
     assert.equal(got.payload.settings.persona.personaName, 'DSH 蓝发女仆')
@@ -674,7 +674,7 @@ test('host-api：云端密钥界面维护——明文永不回传，env 优先�
     const bad = await call(handler, 'POST', '/api/dafeiyu/settings/cloud/key', { apiKey: '   ' })
     assert.equal(bad.code, 400)
     // 保存 → 只回掩码状态
-    const saved = await call(handler, 'POST', '/api/dafeiyu/settings/cloud/key', { apiKey: 'sk-panel-abcd9999' })
+    const saved = await call(handler, 'POST', '/api/dafeiyu/settings/cloud/key', { apiKey: 'sk-panel-abcd9999' }) // dsh-skip-sensitive
     assert.equal(saved.payload.ok, true)
     assert.equal(saved.payload.cloudKey.source, 'ui')
     assert.equal(saved.payload.cloudKey.masked, 'sk-••••9999')
@@ -684,7 +684,7 @@ test('host-api：云端密钥界面维护——明文永不回传，env 优先�
     assert.ok(!raw.includes('sk-panel-abcd9999'), 'settings 响应不得包含密钥明文')
     assert.equal(settings.payload.settings.cloudKey.masked, 'sk-••••9999')
     // 环境变量优先
-    process.env.DAFEIYU_CLOUD_API_KEY = 'env-aaaaaaaaaa'
+    process.env.DAFEIYU_CLOUD_API_KEY = 'env-aaaaaaaaaa' // dsh-skip-sensitive
     const envFirst = await call(handler, 'GET', '/api/dafeiyu/settings')
     assert.equal(envFirst.payload.settings.cloudKey.source, 'env')
     // 清除只清界面值
@@ -763,7 +763,7 @@ test('host-api：模型额度查询——DeepSeek 余额 / billing 风格 / 未�
 
     // 配置 DeepSeek + 密钥（保存即生效）→ /user/balance 解析余额
     await call(handler, 'POST', '/api/dafeiyu/settings/cloud', { enabled: true, provider: 'deepseek', model: 'deepseek-chat', dailyBudgetCny: 5 })
-    await call(handler, 'POST', '/api/dafeiyu/settings/cloud/key', { apiKey: 'sk-quota-test' })
+    await call(handler, 'POST', '/api/dafeiyu/settings/cloud/key', { apiKey: 'sk-quota-test' }) // dsh-skip-sensitive
     t.mock.method(globalThis, 'fetch', async (url: unknown) => {
       assert.ok(String(url).endsWith('/user/balance'), 'DeepSeek 余额应查源站根 /user/balance')
       return Response.json({
@@ -857,7 +857,7 @@ test('host-api：自定义网关接入（TokenHub hy4）——表单端点测试
   }
 })
 
-test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、回复和语音', async (t) => {
+test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、回复和语音', async (t) => { // dsh-skip-func-length
   const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-interaction-'))
   const configPath = join(dataDir, 'config.json')
   const config = loadConfig(join(packageDir(), 'config/default.yaml'))

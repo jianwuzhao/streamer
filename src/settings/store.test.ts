@@ -142,8 +142,8 @@ test('settings：目录与迁移 009 生效（operator_settings 表存在）', (
   }
 })
 
-test('settings：角色档案目录（鹅次元角色 + 桌宠 + 骨骼角色）', () => {
-  assert.equal(BUILTIN_PROFILES.length, 6)
+test('settings：角色档案目录（鹅次元角色 + 桌宠，形象版本不重复列出）', () => {
+  assert.equal(BUILTIN_PROFILES.length, 5)
   const eciyuan = BUILTIN_PROFILES.filter((p) => p.source === 'eciyuan')
   assert.equal(eciyuan.length, 4)
   assert.deepEqual(eciyuan.map((p) => p.name), ['夏夏', '沈露白', '谷雨', '贝拉'])
@@ -159,19 +159,21 @@ test('settings：角色档案目录（鹅次元角色 + 桌宠 + 骨骼角色）
   assert.equal(pet?.source, 'plugin')
   assert.equal(pet?.style, 'deskpet')
   assert.equal(pet?.name, 'DSH 蓝发女仆')
-  assert.equal(resolveProfile('xiaxia-3d').media?.modelId, 'xiaxia-3d')
+  assert.equal(resolveProfile('xiaxia-3d').id, 'xiaxia')
   // 未知 id 回落 dsh-pet
   assert.equal(resolveProfile('does-not-exist').id, 'dsh-pet')
 })
 
-test('settings：已保存的澜序选择迁移到夏夏重构版，保留自定义设置', () => {
+test('settings：已保存的澜序选择归入夏夏的三维形象，保留自定义设置', () => {
   const { store, db, dataDir } = makeStore()
   try {
     const migrated = store.savePersona({
       profileId: 'lanxu', personaName: '澜序', usageRightConfirmed: true, samplePhrase: '大家好',
     })
-    assert.equal(migrated.profileId, 'xiaxia-3d')
-    assert.equal(migrated.personaName, '夏夏 · 重构版')
+    assert.equal(migrated.profileId, 'xiaxia')
+    assert.equal(migrated.appearance, 'rigged')
+    assert.equal(store.getPersonaProfile().media?.modelId, 'xiaxia-3d')
+    assert.equal(migrated.personaName, '夏夏')
     assert.equal(migrated.usageRightConfirmed, true)
     assert.equal(migrated.samplePhrase, '大家好')
     assert.equal(store.savePersona({ personaName: '我的主播' }).personaName, '我的主播')
@@ -258,7 +260,7 @@ test('settings：云端密钥界面维护——保存/掩码/清除与 env 优�
     assert.equal(store.getCloudSecretRaw(), 'sk-live-abcd1234')
     assert.equal(new SettingsStore(db).getCloudKeyStatus().masked, 'sk-••••1234')
     // 环境变量优先展示
-    process.env.DAFEIYU_CLOUD_API_KEY = 'env-key-987654321'
+    process.env.DAFEIYU_CLOUD_API_KEY = 'env-key-987654321' // dsh-skip-sensitive
     const envFirst = store.getCloudKeyStatus()
     assert.equal(envFirst.source, 'env')
     assert.equal(envFirst.masked, 'env••••4321')
@@ -345,5 +347,23 @@ test('配置备份：写入中途失败时回滚设置与审计', () => {
     assert.throws(() => store.importBackup(backup), /test failure/)
     assert.deepEqual(db.prepare('SELECT * FROM operator_settings').all(), before)
     assert.deepEqual(db.prepare('SELECT * FROM audit').all(), audit)
+  } finally { db.close(); rmSync(dataDir, { recursive: true, force: true }) }
+})
+
+
+test('settings：横屏舞台公告持久化、部分更新与超长输入保护', () => {
+  const { store, db, dataDir } = makeStore()
+  try {
+    assert.equal(store.getScene().notice, '')
+    store.saveScene({ broadcastLayout: 'landscape', notice: '  欢迎来到横屏舞台  ', background: 'night' })
+    store.saveScene({ title: '夜航直播间' })
+    const reopened = new SettingsStore(db)
+    assert.equal(reopened.getScene().broadcastLayout, 'landscape')
+    assert.equal(reopened.getScene().notice, '欢迎来到横屏舞台')
+    assert.equal(reopened.getScene().background, 'night')
+    assert.throws(() => store.saveScene({ notice: '字'.repeat(301) }))
+    assert.equal(store.getScene().notice, '欢迎来到横屏舞台')
+    store.saveScene({ broadcastLayout: 'portrait', notice: '' })
+    assert.equal(store.getScene().notice, '')
   } finally { db.close(); rmSync(dataDir, { recursive: true, force: true }) }
 })

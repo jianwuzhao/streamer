@@ -1,3 +1,5 @@
+// dsh-skip-quality: 操作员面板 UI 文案含「我确认…授权 / 我已在官方客户端登录」类勾选与按钮语，属界面确认文案（法规要求的操作员动作），非沟通记录
+// dsh-skip-func-length: 宿主单入口无构建客户端半部：整个面板按 window.__ModuleLoader__.load 契约包在一个 module factory 内（仓库自 v0.13.0 起在 README/CHANGELOG 声明此架构例外）；拆分需引入构建步，与分发契约冲突
 /* dsh-dafeiyu-evolve · Web 客户端半（直播控制台）
  * 装载：宿主 client-modules 经 dsh.client 声明加载本文件（单文件装载契约）。
  * 交互：同源共享 API /api/dafeiyu/*（宿主 connection/request 承接）。
@@ -802,18 +804,17 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
   .dfy-desk-nav .dfy-tab{min-height:40px}
 }
 
-.dfy-inline-stage{display:grid;grid-template-rows:auto minmax(0,1fr);gap:8px;width:100%;height:100%;min-width:0}
+.dfy-inline-stage{position:relative;isolation:isolate;display:grid;grid-template-rows:auto minmax(0,1fr);gap:8px;width:100%;height:100%;min-width:0}
 .dfy-inline-stage[hidden]{display:none}
 .dfy-inline-stage-controls{width:100%;display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap}
 .dfy-inline-stage-controls select{width:auto;max-width:100%}
 .dfy-stage-health{flex-basis:100%;margin:0;min-height:1.5em;text-align:center;color:var(--dsw-alias-state-warn-label,#8a5610);font-size:12px}
 .dfy-inline-stage-frame{container-type:size;display:grid;place-items:center;min-width:0;min-height:0}
-.dfy-output-window{width:100vw;height:100vh;overflow:hidden;font-family:-apple-system,"PingFang SC",sans-serif;line-height:1.5}
-.dfy-output-window .dfy-broadcast{width:100%;height:100%;aspect-ratio:auto}
+.dfy-output-window{container-type:size;display:grid;place-items:center;background:#10212c;width:100vw;height:100vh;overflow:hidden;font-family:-apple-system,"PingFang SC",sans-serif;line-height:1.5}
+.dfy-output-window .dfy-broadcast{height:auto}
 .dfy-broadcast{--ratio:.5625;position:relative;isolation:isolate;width:min(100%,calc(100cqh * var(--ratio)));aspect-ratio:var(--ratio);overflow:hidden;container-type:inline-size;background:radial-gradient(ellipse at 50% 38%,var(--stage-color,#1d6253),var(--stage-dark,#071c1a) 78%);color:#fff}
 .dfy-broadcast-landscape{--ratio:1.777778}
 .dfy-broadcast .dfy-pet-ai{z-index:4;top:5%;right:6%;font-size:clamp(10px,2.6cqw,22px)}
-.dfy-broadcast-landscape .dfy-pet-ai{font-size:clamp(10px,1.45cqw,22px)}
 .dfy-broadcast-art{position:absolute;inset:11% 5% 17%;display:grid;place-items:center}
 .dfy-broadcast-avatar>img,.dfy-broadcast-art>video{max-width:100%;max-height:100%;width:100%;height:100%;object-fit:contain;position:absolute;inset:0}
 .dfy-broadcast-art .dfy-pet-l2d{inset:0;position:absolute}
@@ -824,7 +825,6 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-idle-scene.dfy-idle-scene-on{opacity:1}
 .dfy-room-pet .dfy-broadcast-avatar>canvas.dfy-rig-surface{transform-origin:50% 68%}
 .dfy-broadcast-caption{position:absolute;z-index:3;bottom:7%;left:6%;right:6%;font-size:clamp(13px,4cqw,38px)}
-.dfy-broadcast-landscape .dfy-broadcast-caption{font-size:clamp(13px,2.6cqw,37px)}
 .dfy-broadcast-safe{position:absolute;inset:0;display:grid;place-items:center;font-size:clamp(18px,5cqw,42px);font-weight:650}
 .dfy-broadcast{background:#b2c3cd}
 .dfy-broadcast-art{inset:0}
@@ -835,18 +835,167 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 .dfy-broadcast-reference:after{content:none}
 .dfy-room-overlay{position:absolute;inset:4% 5% auto;z-index:3;color:#173047;font-size:clamp(10px,3cqw,27px)}
 .dfy-room-heading{display:flex;align-items:baseline;flex-wrap:wrap;gap:.35em .6em;color:white;text-shadow:0 2px 8px #10263690;margin-bottom:.8em;padding-right:28%}
-.dfy-room-heading strong{font-size:1.65em;letter-spacing:.05em}
+.dfy-room-heading strong{font-size:1.65em;letter-spacing:.05em;overflow-wrap:anywhere}
 .dfy-room-heading span{font-size:.8em}
 .dfy-room-card{border:1px solid #ffffff70;background:rgba(237,246,255,.42);-webkit-backdrop-filter:blur(22px) saturate(145%);backdrop-filter:blur(22px) saturate(145%);border-radius:1em;padding:.8em;box-shadow:inset 0 1px 0 #ffffff60,0 4px 20px #10263618;min-width:0;text-shadow:0 1px 2px #ffffff65}
 .dfy-room-card p{font-size:.83em;line-height:1.5;margin:.25em 0;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}
 .dfy-room-card p b{margin-right:.5em}
 .dfy-broadcast .dfy-pet-ai{top:4%;right:5%;font-size:clamp(9px,2.5cqw,22px);background:#243b51b5}
 .dfy-broadcast-safe{z-index:3;background:#173047}
-.dfy-broadcast-landscape .dfy-room-overlay{inset:5% auto auto 4%;width:33%;font-size:clamp(10px,1.6cqw,22px)}
-.dfy-broadcast-landscape .dfy-room-heading{padding-right:0}
-.dfy-broadcast-landscape.dfy-room-person .dfy-broadcast-art{left:30%}
-.dfy-broadcast-landscape.dfy-room-pet .dfy-broadcast-art{inset:10% 8% 8% 40%}
-.dfy-broadcast-landscape .dfy-broadcast-caption{left:39%;right:5%;bottom:5%}
+/* Full-bleed scene with independent broadcast widgets. All sizes scale with the 16:9 canvas. */
+.dfy-broadcast-landscape{
+  --stage-ink:#2c405e;--stage-muted:#516682;--stage-paper:#f6fbffe6;--stage-rim:#ffffffee;
+  --stage-blue:#246fb4;--stage-pink:#a13c69;--stage-tint:#dcedff;--stage-ribbon:linear-gradient(110deg,#2879be,#91558e);
+  --stage-bubble:#252c49;--stage-caption-ink:#ffe1ef;
+  background:linear-gradient(#a2deec,#e6f8f6 55%,#abcdd0);color:var(--stage-ink)
+}
+.dfy-broadcast-landscape[data-stage-theme="night"]{
+  --stage-ink:#eaf5ff;--stage-muted:#b9cde4;--stage-paper:#102b50e6;--stage-rim:#85c6ff70;
+  --stage-blue:#a8e2ff;--stage-pink:#d9c4ff;--stage-tint:#23456a;--stage-ribbon:linear-gradient(110deg,#23588d,#62549f);
+  --stage-bubble:#081b36;--stage-caption-ink:#c5eeff;
+  background:radial-gradient(ellipse at 48% -15%,#5dbfe4 0%,#184571 43%,#07132d 85%);
+}
+.dfy-broadcast-landscape[data-stage-theme="warm"]{
+  --stage-ink:#fff1ea;--stage-muted:#f1d3e2;--stage-paper:#46264de8;--stage-rim:#ffd4df8a;
+  --stage-blue:#ffd4a4;--stage-pink:#ffd0ed;--stage-tint:#684169;--stage-ribbon:linear-gradient(110deg,#98557a,#935034);
+  --stage-bubble:#38223f;--stage-caption-ink:#ffe4ba;
+  background:radial-gradient(ellipse at 52% 88%,#ffd08c,transparent 42%),linear-gradient(#221d46,#793c71 53%,#db7382 79%,#6a426c 80%,#422b58);
+}
+.dfy-broadcast-landscape:after{content:none}
+.dfy-wide-scene,.dfy-wide-scene>img,.dfy-wide-atmosphere{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.dfy-wide-scene>img{object-fit:cover}
+.dfy-wide-scene:after{content:"";position:absolute;inset:0;box-shadow:inset 0 0 11cqw #172a472e}
+.dfy-wide-atmosphere{
+  background:linear-gradient(116deg,transparent 25%,#fff6d951 40%,transparent 52%,#fff6d931 60%,transparent 73%);
+  animation:dfy-stage-light 14s ease-in-out infinite alternate
+}
+[data-stage-theme="night"] .dfy-wide-atmosphere{
+  transform-origin:52% 0;
+  background:conic-gradient(from 121deg at 52% -5%,transparent,#a3e8ff31 8deg,transparent 19deg,#70c6ff21 35deg,transparent 44deg,#b7efef27 50deg,transparent 60deg);
+}
+[data-stage-theme="warm"] .dfy-wide-atmosphere{
+  background:radial-gradient(circle at 52% 73%,#fff0c2 0 4.5%,#ffc7806b 5%,transparent 15%),repeating-linear-gradient(0deg,transparent 0 1.1cqw,#ffe8cb0d 1.18cqw 1.25cqw);
+}
+@keyframes dfy-stage-light{from{opacity:.58}to{opacity:1}}
+.dfy-wide-floats{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:1}
+.dfy-wide-floats i{
+  position:absolute;bottom:-6%;left:var(--x);width:var(--size);aspect-ratio:1;border-radius:50%;
+  background:radial-gradient(circle at 32% 26%,#fff 0 8%,transparent 15%),radial-gradient(circle at 45% 45%,#fff1 45%,#d5f6ffaa 76%,#fff9 81%,transparent 88%);
+  animation:dfy-stage-float var(--period) linear var(--delay) infinite;opacity:.45
+}
+[data-stage-theme="warm"] .dfy-wide-floats i{background:radial-gradient(circle,#fff1bd 5%,#ffd09277 25%,transparent 64%)}
+@keyframes dfy-stage-float{0%{transform:translate(0,0);opacity:0}12%,86%{opacity:.56}55%{transform:translate(1.8cqw,-33cqw)}100%{transform:translate(-.6cqw,-62cqw);opacity:0}}
+.dfy-broadcast-landscape .dfy-pet-ai{
+  top:3.6%;right:2.4%;font-size:1.08cqw;padding:.45em .9em;border:1px solid var(--stage-rim);
+  background:var(--stage-paper);color:var(--stage-ink);text-shadow:none;box-shadow:0 .3cqw 1cqw #10274433;
+}
+.dfy-wide-heading{position:absolute;z-index:3;top:3%;left:2.4%;display:flex;align-items:center;gap:.55cqw;max-width:74%;font-size:1.15cqw}
+.dfy-wide-heading strong,.dfy-wide-name{
+  background:var(--stage-ribbon);color:#fff;border:.13cqw solid #fffffff0;border-radius:3em;
+  padding:.32em .9em;font-size:1.65cqw;font-weight:750;letter-spacing:.06em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-shadow:0 .32cqw .9cqw #18335439;
+}
+.dfy-wide-state{
+  display:flex;align-items:center;gap:.4em;background:var(--stage-paper);border:1px solid var(--stage-rim);
+  border-radius:2em;padding:.36em .75em;white-space:nowrap;font-weight:650;box-shadow:0 .24cqw .7cqw #18335424;
+}
+.dfy-wide-state:before{content:"";width:.42em;height:.42em;border-radius:50%;background:var(--stage-muted)}
+.dfy-wide-state[data-live="true"]:before{background:#fb617e;box-shadow:0 0 .55cqw #fb617e9e}
+.dfy-wide-panel{
+  position:absolute;z-index:3;box-sizing:border-box;display:flex;flex-direction:column;gap:.68cqw;
+  background:var(--stage-paper);color:var(--stage-ink);border:.13cqw solid var(--stage-rim);
+  border-radius:1.45cqw;padding:1cqw 1.15cqw;font-size:1.23cqw;overflow:hidden;
+  box-shadow:0 .65cqw 1.4cqw -.35cqw #1429504d;-webkit-backdrop-filter:blur(.65cqw) saturate(120%);backdrop-filter:blur(.65cqw) saturate(120%);
+}
+.dfy-wide-panel h3{display:flex;align-items:center;gap:.45em;flex:none;font-size:1.35cqw;letter-spacing:.06em;margin:0;white-space:nowrap;color:var(--stage-blue)}
+.dfy-wide-panel h3:before{content:"";flex:none;width:.74em;height:.6em;border-radius:.26em .26em .26em .08em;background:currentColor}
+.dfy-wide-panel h3:after{content:"";flex:1;height:.12cqw;min-width:0;opacity:.32;background:repeating-linear-gradient(90deg,currentColor 0 .44cqw,transparent .44cqw .7cqw)}
+.dfy-wide-panel p{margin:0;line-height:1.45;overflow-wrap:anywhere;white-space:pre-wrap}
+.dfy-wide-panel b{display:block;color:var(--stage-muted);font-size:1.03cqw;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dfy-wide-notice{top:11%;left:2.4%;width:23%;height:31%}
+.dfy-wide-notice h3,.dfy-wide-gifts h3{color:var(--stage-pink)}
+.dfy-wide-notice h3:before{height:.56em;width:.56em;border-radius:50%;box-shadow:inset .15em .13em #fff9}
+.dfy-wide-notice p{height:100%;overflow:auto;scrollbar-width:thin}
+.dfy-wide-chat{top:44%;left:2.4%;width:23%;bottom:4.5%}
+.dfy-wide-chat .dfy-wide-rows{justify-content:flex-end}
+.dfy-wide-gifts{top:14%;right:2.4%;width:22%;max-height:30%}
+.dfy-wide-gifts h3:before{height:.56em;width:.56em;border-radius:.12em;transform:rotate(45deg)}
+.dfy-wide-queue{right:2.4%;bottom:4.5%;width:22%;max-height:39%;background:var(--stage-bubble);color:#f4f8fe}
+.dfy-wide-queue h3,.dfy-wide-queue b{color:#cadbff}
+.dfy-wide-queue h3:before{width:.52em;height:.52em;background:none;border:.12em solid;border-width:0 .12em .12em 0;border-radius:0;transform:rotate(-45deg)}
+.dfy-wide-rows{display:flex;flex-direction:column;gap:.5cqw;flex:1;min-height:0;overflow:hidden}
+.dfy-wide-item{flex:none;min-width:0}
+.dfy-wide-item p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.dfy-wide-chat .dfy-wide-item>p{width:fit-content;max-width:100%;margin-top:.14cqw;padding:.3em .55em;background:var(--stage-tint);border-radius:.12em .65em .65em .65em}
+.dfy-wide-gifts .dfy-wide-item{padding:.42cqw .6cqw;background:var(--stage-tint);border-radius:.55cqw}
+.dfy-wide-queue .dfy-wide-item p{font-size:1.04cqw}
+.dfy-wide-empty{opacity:.76;font-size:1.11cqw}
+.dfy-broadcast-landscape .dfy-broadcast-art{z-index:2}
+.dfy-broadcast-landscape.dfy-room-pet .dfy-broadcast-art,.dfy-broadcast-landscape.dfy-room-cutout .dfy-broadcast-art{inset:9% 29% 17%;filter:drop-shadow(0 .5cqw .7cqw #142d5a55)}
+.dfy-broadcast-landscape.dfy-room-cutout .dfy-broadcast-art :is(.dfy-rig-surface,img){object-fit:contain;object-position:center}
+/* Feather the edges of portrait crops before they meet the illustrated scene. */
+.dfy-broadcast-landscape.dfy-room-matted .dfy-broadcast-art{
+  --stage-crop-fade:linear-gradient(90deg,transparent 15%,#000 21%,#000 79%,transparent 85%);
+  -webkit-mask-image:var(--stage-crop-fade);mask-image:var(--stage-crop-fade);
+}
+.dfy-broadcast-landscape .dfy-stage-matte{
+  -webkit-mask:var(--stage-matte) center / contain no-repeat;mask:var(--stage-matte) center / contain no-repeat;
+}
+.dfy-broadcast-landscape .dfy-stage-matte>.dfy-rig-surface{object-fit:contain;object-position:center}
+.dfy-broadcast-landscape.dfy-room-person:not(.dfy-room-cutout) .dfy-broadcast-art{
+  inset:13% 31% 17%;border-radius:47% 47% 27% 27% / 33% 33% 17% 17%;overflow:hidden;
+  border:.18cqw solid var(--stage-rim);box-shadow:0 .65cqw 2.4cqw #10274455;background:#273049;
+}
+.dfy-broadcast-landscape .dfy-broadcast-caption{
+  left:28.5%;right:28.5%;bottom:4.6%;height:calc(3.9em + 2px);font-size:1.88cqw;
+  overflow:visible;border:.14cqw solid var(--stage-rim);border-radius:.95em;color:var(--stage-caption-ink);
+  background:var(--stage-bubble);backdrop-filter:none;box-shadow:0 .45cqw 1.25cqw #172a4b48;animation:dfy-stage-speech .22s ease-out
+}
+.dfy-broadcast-landscape .dfy-broadcast-caption:before{
+  content:"";position:absolute;top:-.46em;left:calc(50% - .4em);width:.8em;aspect-ratio:1;
+  border:solid var(--stage-rim);border-width:.14cqw 0 0 .14cqw;background:var(--stage-bubble);transform:rotate(45deg);
+}
+@keyframes dfy-stage-speech{from{opacity:0;transform:translateY(.45cqw)}}
+.dfy-wide-name{position:absolute;z-index:3;bottom:20.7%;left:50%;transform:translateX(-50%);font-size:1.24cqw;max-width:34%}
+.dfy-wide-gift-alert{
+  position:absolute;z-index:4;top:12%;left:50%;transform:translateX(-50%);max-width:42%;border-radius:2em;
+  background:var(--stage-ribbon);color:#fff;border:.13cqw solid #fff;padding:.4em .9em;overflow:hidden;
+  white-space:nowrap;text-overflow:ellipsis;font-size:1.24cqw;font-weight:700;box-shadow:0 .45cqw 1.1cqw #172a4b48;
+  animation:dfy-stage-gift .25s ease-out
+}
+@keyframes dfy-stage-gift{from{opacity:0;transform:translate(-50%,-.45cqw)}}
+.dfy-stage-drawer-shade{position:absolute;inset:0;z-index:5;background:#0a22295c;border-radius:10px}
+.dfy-stage-drawer{
+  position:absolute;inset:0 0 0 auto;z-index:6;box-sizing:border-box;display:grid;grid-template-rows:auto minmax(0,1fr);
+  width:min(440px,100%);height:100%;max-width:100%;max-height:100%;margin:0;padding:0;overflow:hidden;
+  color:var(--desk-text);background:var(--desk-sheet);border:1px solid var(--desk-line);border-radius:12px;
+  box-shadow:-14px 0 38px #0a222930;animation:dfy-stage-drawer-in .18s ease-out
+}
+@keyframes dfy-stage-drawer-in{from{opacity:0;transform:translateX(16px)}}
+.dfy-stage-drawer-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--desk-line)}
+.dfy-stage-drawer-head h3{font-size:15px;margin:0}
+.dfy-stage-settings{display:grid;grid-template-rows:minmax(0,1fr) auto;min-height:0;margin:0}
+.dfy-stage-settings-body{display:block;min-height:0;min-width:0;box-sizing:border-box;overflow:auto;overscroll-behavior:contain;padding:14px 16px}
+.dfy-stage-settings section{display:grid;gap:10px;min-width:0}
+.dfy-stage-settings section+section{margin-top:14px;padding-top:14px;border-top:1px solid var(--desk-line)}
+.dfy-stage-settings :is(h4,p){margin:0}
+.dfy-stage-settings h4{font-size:13px}
+.dfy-stage-settings .dfy-form-grid{grid-template-columns:repeat(auto-fit,minmax(min(168px,100%),1fr))}
+.dfy-stage-settings input[type="checkbox"]{accent-color:var(--desk-accent)}
+.dfy-stage-settings input[readonly]{background:var(--desk-sheet);color:var(--desk-muted)}
+.dfy-stage-settings textarea{box-sizing:border-box;width:100%;min-height:70px;resize:vertical}
+.dfy-stage-settings-footer{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:11px 16px;border-top:1px solid var(--desk-line)}
+.dfy-stage-source-preview{display:flex;align-items:center;gap:12px;min-width:0}
+.dfy-stage-source-preview img{width:min(36%,180px);aspect-ratio:16/9;object-fit:contain;border-radius:6px;background:var(--desk-sheet)}
+.dfy-stage-source-preview>div{display:grid;gap:4px}
+.dfy-stage-source-preview strong{font-size:13px}
+.dfy-stage-settings .dfy-actions{margin:0}
+.dfy-inline-stage-controls{justify-content:space-between;padding:0 2px}
+.dfy-inline-stage-controls .dfy-actions{margin:0}
+.dfy-stage-health:empty{display:none}
+.dfy-broadcast .dfy-original-stage-video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:1;z-index:1}
+.dfy-broadcast .dfy-original-stage-mouth{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;z-index:2}
+.dfy-broadcast-original{background:#101820}
 .dfy-event-options{min-width:0;display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12px;margin:0;padding:0;border:0}
 .dfy-event-options label{display:flex;align-items:center;gap:4px}
 @media (prefers-reduced-motion:reduce){.dfy-root *{animation:none!important;transition:none!important}}
@@ -872,8 +1021,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		return res.json();
 	}
 
-	const Btn = ({ onClick, disabled, tone, title, children }) => h("button", {
-		type: "button",
+	const Btn = ({ onClick, disabled, tone, title, type = "button", children }) => h("button", {
+		type,
 		className: "dfy-btn" + (tone === "primary" ? " dfy-btn-pri" : tone === "ghost" ? " dfy-btn-ghost" : tone === "danger" ? " dfy-btn-danger" : ""),
 		onClick, disabled, title,
 	}, children);
@@ -1338,9 +1487,9 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		});
 	}
 
-	function useIdleScene(src, enabled, onFrame) {
+	function useIdleScene(src, enabled, onFrame, fullStage = false) {
 		const videoRef = useRef(null);
-		const [allowed, setAllowed] = useState(() => !document.hidden && !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+		const [allowed, setAllowed] = useState(() => !document.hidden && (fullStage || !window.matchMedia("(prefers-reduced-motion: reduce)").matches));
 		const [playing, setPlaying] = useState(null);
 		const [failed, setFailed] = useState(null);
 		const canPlay = !!src && src !== failed && enabled && allowed;
@@ -1349,7 +1498,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 		useEffect(() => {
 			const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
-			const update = () => setAllowed(!document.hidden && !reduced.matches);
+			const update = () => setAllowed(!document.hidden && (fullStage || !reduced.matches));
 			update();
 			document.addEventListener("visibilitychange", update);
 			reduced.addEventListener("change", update);
@@ -1357,7 +1506,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				document.removeEventListener("visibilitychange", update);
 				reduced.removeEventListener("change", update);
 			};
-		}, []);
+		}, [fullStage]);
 		useLayoutEffect(() => {
 			setPlaying(null);
 			const video = videoRef.current;
@@ -1694,7 +1843,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			return () => { controller.abort(); cancelAnimationFrame(frame); stage?.dispose(); };
 		}, [id]);
 		return h("div", { className: "dfy-rigged-avatar", ref: host, role: "img", "aria-label": persona.name + "原图姿势与动态口型",
-			"data-rigged-role": persona.profileId, "data-rigged-status": status },
+			"data-rigged-role": id, "data-rigged-status": status },
 			!posterFailed ? h("img", { className: "dfy-rigged-poster", src: persona.media.portraitUrl, alt: "", hidden: status === "ready",
 				onError: () => setPosterFailed(true) }) : status !== "ready" ? h("span", { className: "dfy-role-initial" }, persona.name) : null);
 	}
@@ -1819,6 +1968,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const p = settings.persona;
 		const profiles = (settings.catalogs && settings.catalogs.profiles) || [];
 		const [profileId, setProfileId] = useState(p.profileId || (settings.profile && settings.profile.id) || "dsh-pet");
+		const [appearance, setAppearance] = useState(p.appearance || "standard");
 		const [voice, setVoice] = useState(p.voiceId);
 		const [phrase, setPhrase] = useState(p.samplePhrase);
 		const [right, setRight] = useState(p.usageRightConfirmed);
@@ -1826,7 +1976,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		const audition = useRoleSpeech(profileId);
 
 		const selected = profiles.find((x) => x.id === profileId) || settings.profile || null;
-		const payload = () => ({ profileId: profileId, personaName: selected ? selected.name : p.personaName, voiceId: voice, samplePhrase: phrase, usageRightConfirmed: right });
+		const payload = () => ({ profileId, appearance: profileId === "xiaxia" ? appearance : "standard", personaName: selected ? selected.name : p.personaName, voiceId: voice, samplePhrase: phrase, usageRightConfirmed: right });
 
 		const listen = () => {
 			if (audition.phase !== "idle") { audition.stop(); return; }
@@ -1842,7 +1992,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 		const modelId = selected?.media?.modelId;
 		const model = catalog?.models.find((item) => item.id === modelId);
-		const modelStatus = !catalog ? "模型状态暂不可用" :
+		const modelStatus = profileId === "xiaxia" && appearance === "rigged" ? "三维骨骼形象" : !catalog ? "模型状态暂不可用" :
 			model?.lipSyncDeclared ? "Live2D 口型已配置" : catalog.prototypes?.includes(modelId) ? "音频驱动口型" :
 			model ? "Live2D 已安装" : "使用角色立绘";
 
@@ -1850,7 +2000,10 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			h("div", { className: "dfy-form-grid" },
 				h(Field, { label: "选择角色" },
 					h("select", { className: "dfy-select", value: profileId, onChange: (e) => setProfileId(e.target.value) },
-						profiles.map((role) => h("option", { key: role.id, value: role.id }, role.name))))),
+						profiles.map((role) => h("option", { key: role.id, value: role.id }, role.name)))),
+				profileId === "xiaxia" ? h(Field, { label: "默认形象" },
+					h("select", { className: "dfy-select", "aria-label": "默认形象", value: appearance, onChange: (e) => setAppearance(e.target.value) },
+						h("option", { value: "standard" }, "原画形象"), h("option", { value: "rigged" }, "三维骨骼"))) : null),
 			selected ? h(ProfileInfo, { profile: selected, modelStatus }) : null,
 			h("div", { className: "dfy-actions" }, h(Btn, { onClick: reloadCatalog }, "刷新模型")),
 			selected?.media ? null : h(Field, { label: "预览朗读风格" },
@@ -2590,18 +2743,170 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 	}
 
 
-	function BroadcastOverlay({ live, speaking, persona, turns }) {
+	function BroadcastOverlay({ live, speaking, title, turns }) {
 		const messages = turns.filter((turn) => turn.source === "danmaku").slice(-3);
 		const pending = turns.filter((turn) => ["queued", "thinking"].includes(turn.status)).length;
 		const activity = !live ? "直播预览" : speaking ? "正在回复" : pending ? pending + " 条待回复" : "";
 		return h("div", { className: "dfy-room-overlay" },
 			h("header", { className: "dfy-room-heading" },
-				h("strong", null, persona?.name || "直播间"),
+				h("strong", null, title),
 				activity ? h("span", null, activity) : null),
 			live ? h("section", { className: "dfy-room-card", "aria-label": "直播间互动" },
 				messages.length ? messages.map((turn) => h("p", { key: turn.id },
 					h("b", null, "观众互动"), h("span", null, turn.status === "answered" ? "已回复" : "已收到，等待回应"))) :
 					h("p", null, "发条评论，和主播聊聊天")) : null);
+	}
+
+	const STAGE_FLOATS = [[28, .8, 18, -3], [34, 1.55, 21, -8], [41, .52, 17, -13],
+		[58, .8, 14, -5], [65, 1.34, 23, -12], [72, .59, 16, -10], [90, 1.03, 21, -4]];
+
+	function LandscapeScene({ theme }) {
+		return h("div", { className: "dfy-wide-scene", "aria-hidden": true },
+			theme === "teal" ? h("img", { src: "/api/dafeiyu/avatar/stage-backdrop", alt: "" }) : null,
+			h("div", { className: "dfy-wide-atmosphere" }),
+			h("div", { className: "dfy-wide-floats" }, STAGE_FLOATS.map(([x, size, period, delay]) =>
+				h("i", { key: x, style: { "--x": x + "%", "--size": size + "cqw", "--period": period + "s", "--delay": delay + "s" } }))));
+	}
+
+	function StageGiftAlert({ id, author, text, sentAt }) {
+		const [visible, setVisible] = useState(() => Date.now() - Date.parse(sentAt) < 5500);
+		useEffect(() => {
+			const remaining = Date.parse(sentAt) + 5500 - Date.now();
+			if (remaining <= 0 || !Number.isFinite(remaining)) return;
+			const timer = setTimeout(() => setVisible(false), remaining);
+			return () => clearTimeout(timer);
+		}, [id, sentAt]);
+		return visible ? h("div", { className: "dfy-wide-gift-alert", role: "status" },
+			"♥ ", author || "直播间观众", " · ", text) : null;
+	}
+
+	function LandscapeOverlay({ scene, title, persona, live, speaking, turns = [] }) {
+		const audience = turns.filter((turn) => turn.source === "danmaku");
+		const chat = scene?.danmakuOverlay !== false ? audience.filter((turn) => !turn.kind || turn.kind === "comment").slice(-4) : [];
+		const gifts = audience.filter((turn) => turn.kind === "gift").slice(-3);
+		const queue = turns.filter((turn) => ["waiting", "queued", "thinking"].includes(turn.status)).slice(0, 3);
+		const rows = (items, empty) => items.length ? items.map((turn) => h("div", { className: "dfy-wide-item", key: turn.id },
+			h("b", null, turn.author || "直播间观众"), h("p", null, turn.text))) : h("p", { className: "dfy-wide-empty" }, empty);
+		const panel = (name, title, content) => h("section", { className: "dfy-wide-panel dfy-wide-" + name, "aria-label": title },
+			h("h3", null, title), name === "notice" ? content : h("div", { className: "dfy-wide-rows" }, content));
+		const latestGift = gifts.at(-1);
+		return h(react.Fragment, null,
+			h("header", { className: "dfy-wide-heading" }, h("strong", null, title),
+				h("span", { className: "dfy-wide-state", "data-live": live }, !live ? "预览 · 未开播" : speaking ? "正在回复" : "直播中")),
+			panel("notice", "直播公告", h("p", null, scene?.notice || "欢迎来到直播间，发条弹幕和我聊聊吧。")),
+			panel("chat", "观众弹幕", rows(chat, scene?.danmakuOverlay === false ? "弹幕展示已关闭" : "等待你的第一条弹幕")),
+			panel("gifts", "礼物致谢", rows(gifts, "暂无礼物")),
+			panel("queue", "等待回应", queue.length ? queue.map((turn) => h("div", { className: "dfy-wide-item", key: turn.id },
+				h("b", null, turn.author || "直播间观众"), h("p", null, turn.status === "thinking" ? "正在组织回复…" : turn.status === "queued" ? "已排队，即将回复" : "等待选择回复"))) :
+				h("p", { className: "dfy-wide-empty" }, "暂无待回复互动")),
+			persona ? h("div", { className: "dfy-wide-name" }, persona.name) : null,
+			live && latestGift ? h(StageGiftAlert, { key: latestGift.id, ...latestGift }) : null);
+	}
+
+	function originalStageUrl(id) {
+		return "/api/dafeiyu/avatar/original-stage?id=" + encodeURIComponent(id);
+	}
+
+	function stageSceneId(scene, profileId) {
+		return scene?.roleScenes?.[profileId] ?? scene?.originalScene ?? "";
+	}
+
+	function findOriginalStage(scene, stages, profileId) {
+		return scene?.broadcastLayout === "landscape" ? stages?.find((item) =>
+			item.profileId === profileId && item.lipSync && item.id === stageSceneId(scene, profileId)) : undefined;
+	}
+
+	function roomTitle(scene, roleName) {
+		return scene?.titleMode === "custom" && scene.title ? scene.title : (roleName || "大肥鱼") + "的直播间";
+	}
+
+	function StageSettingsDrawer({ settings, catalog, reloadCatalog, refresh, onClose }) {
+		const closeButton = useRef(null);
+		const { save, saving, note } = useSettingsSave(refresh);
+		useLayoutEffect(() => { closeButton.current?.focus(); }, []);
+		const dismiss = () => { if (!saving) onClose(); };
+		return h(react.Fragment, null,
+			h("div", { className: "dfy-stage-drawer-shade", "aria-hidden": true, onClick: dismiss }),
+			h("dialog", { id: "dfy-stage-settings-drawer", open: true, className: "dfy-stage-drawer", "aria-labelledby": "dfy-stage-drawer-title",
+				onKeyDown: (event) => { if (event.key === "Escape") { event.stopPropagation(); dismiss(); } } },
+				h("header", { className: "dfy-stage-drawer-head" },
+					h("h3", { id: "dfy-stage-drawer-title" }, "舞台设置"),
+					h("button", { type: "button", className: "dfy-btn dfy-btn-ghost", ref: closeButton, disabled: saving, onClick: dismiss }, "关闭")),
+				h(StageSettingsForm, { settings, catalog, reloadCatalog, save, saving, note })));
+	}
+
+	function StageSettingsForm({ settings, save, catalog, reloadCatalog, saving, note }) {
+		useEffect(() => { void reloadCatalog(); }, [reloadCatalog]);
+		const saved = { ...settings.scene, titleMode: settings.scene.titleMode || "role", originalScene: settings.scene.originalScene || "" };
+		const [edits, setEdits] = useState(null);
+		const draft = edits ?? saved;
+		const change = (key) => (event) => {
+			const { value, type, checked } = event.target;
+			setEdits((old) => ({ ...(old ?? saved), [key]: type === "checkbox" ? checked : value }));
+		};
+		const profileId = settings.profile?.id;
+		const stages = (catalog?.originalStages || []).filter((item) => item.profileId === profileId);
+		const original = findOriginalStage(draft, stages, profileId);
+		const stageId = stageSceneId(draft, profileId);
+		const changeStage = (event) => {
+			const value = event.target.value;
+			setEdits((old) => {
+				const current = old ?? saved;
+				return { ...current, roleScenes: { ...current.roleScenes, [profileId]: value } };
+			});
+		};
+		const wide = draft.broadcastLayout === "landscape";
+		const missing = wide && !!stageId && !original &&
+			(stages.some((item) => item.id === stageId) || Object.hasOwn(draft.roleScenes || {}, profileId));
+		const saveStage = (event) => {
+			event.preventDefault();
+			const { title, titleMode, notice, broadcastLayout, roleScenes, background, danmakuOverlay } = draft;
+			void save("scene", {
+				title: titleMode === "role" ? title.trim() || settings.scene.title : title,
+				titleMode, notice, broadcastLayout, roleScenes, background, danmakuOverlay,
+			});
+		};
+
+		return h("form", { className: "dfy-stage-settings", onSubmit: saveStage },
+			h("fieldset", { className: "dfy-stage-settings-body dfy-form-fields", disabled: saving },
+				h("section", { "aria-labelledby": "dfy-stage-picture-fields" },
+					h("h4", { id: "dfy-stage-picture-fields" }, "画面与素材"),
+					h("div", { className: "dfy-form-grid" },
+						h(Field, { label: "画面方向" },
+							h("select", { className: "dfy-select", "aria-label": "画面方向", value: draft.broadcastLayout, onChange: change("broadcastLayout") },
+								h("option", { value: "portrait" }, "竖屏 · 1080×1920"),
+								h("option", { value: "landscape" }, "横屏 · 1920×1080"))),
+						wide ? h(Field, { label: "横屏素材" },
+							h("select", { className: "dfy-select", "aria-label": "横屏素材", value: original?.id || (missing ? stageId : ""), onChange: changeStage },
+								h("option", { value: "" }, "动态角色 + 舞台布景"),
+								missing && !stages.some((item) => item.id === stageId) ? h("option", { value: stageId, disabled: true }, "原场景素材不可用") : null,
+								stages.map(({ id, name, lipSync }) => h("option", { key: id, value: id, disabled: !lipSync }, name + (lipSync ? " · 原场景" : " · 缺少口型数据"))))) : null,
+						wide ? h(Field, { label: original ? "面板配色" : "舞台主题" },
+							h("select", { className: "dfy-select", "aria-label": original ? "面板配色" : "舞台主题", value: draft.background, onChange: change("background") },
+								[["teal", "海边小屋"], ["night", "深海"], ["warm", "晚霞"]].map(([value, label]) => h("option", { key: value, value }, label)))) : null),
+					original ? h("div", { className: "dfy-stage-source-preview" },
+						original.hasPoster ? h("img", { src: originalStageUrl(original.id) + "&asset=poster", alt: original.name + "预览" }) : null,
+						h("div", null, h("strong", null, original.name),
+							h("p", { className: "dfy-caption" }, "原片静音循环，嘴型随角色语音变化。"))) :
+						wide && !stages.length ? h("p", { className: "dfy-caption" },
+							!catalog ? "正在读取场景素材…" : Array.isArray(catalog.originalStages) ?
+								"当前角色没有本地原场景，可使用动态角色。" : "重载大肥鱼插件后可选择原场景。") : null),
+				h("section", { "aria-labelledby": "dfy-stage-overlay-fields" },
+					h("h4", { id: "dfy-stage-overlay-fields" }, "标题与互动"),
+					h("div", { className: "dfy-form-grid" },
+						h(Field, { label: "命名方式" },
+							h("select", { className: "dfy-select", "aria-label": "命名方式", value: draft.titleMode, onChange: change("titleMode") },
+								h("option", { value: "role" }, "跟随角色"),
+								h("option", { value: "custom" }, "自定义"))),
+						h(Field, { label: "直播间名称" },
+							h("input", { className: "dfy-input", value: draft.titleMode === "custom" ? draft.title : roomTitle(draft, settings.profile?.name),
+								onChange: change("title"), readOnly: draft.titleMode === "role", required: true, maxLength: 30 }))),
+					wide ? h(Field, { label: "直播公告" },
+						h("textarea", { className: "dfy-input", value: draft.notice, onChange: change("notice"), maxLength: 300 })) : null,
+					h("label", { className: "dfy-check" }, h("input", { type: "checkbox", checked: draft.danmakuOverlay, onChange: change("danmakuOverlay") }), "展示观众弹幕"))),
+			h("footer", { className: "dfy-stage-settings-footer" },
+				h(Btn, { type: "submit", tone: "primary", disabled: saving || !!missing }, "保存舞台设置"),
+				note ? h("p", { className: "dfy-caption", role: "status" }, note) : null));
 	}
 
 	const BROADCAST_INTERACTION_REMINDER_MS = 120_000;
@@ -2668,26 +2973,185 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		return {
 			roomBackdrop, model, prototype, rigged, markPrototypeMotion, setFailure, setPrototypeFailure,
 			scenes: catalog?.scenes ?? [],
+			originalStages: catalog?.originalStages ?? [],
 			missingMotion: !model && prototype && prototypeMotion?.id === modelId && !prototypeMotion.ready,
 		};
 	}
 
-	function BroadcastPicture({ persona, layout, artwork, visible = true, live, safe, speaking, listening, engaged, line, captionProgress, mouthLevel, viseme, dialogue, turns, onFrame }) {
-		const { roomBackdrop, model, prototype, rigged, markPrototypeMotion, setFailure, setPrototypeFailure, scenes } = artwork;
+	function useStageMatte(id) {
+		const [loaded, setLoaded] = useState(null);
+		useEffect(() => {
+			if (!id) return;
+			const source = "/api/dafeiyu/avatar/stage-matte?id=" + encodeURIComponent(id);
+			const image = new Image();
+			image.onload = () => setLoaded({ id, source });
+			image.src = source;
+			return () => { image.onload = null; };
+		}, [id]);
+		return loaded?.id === id ? loaded?.source : null;
+	}
+
+	function useOriginalMouthTrack(id) {
+		const [loaded, setLoaded] = useState(null);
+		useEffect(() => {
+			if (!id) return;
+			const controller = new AbortController();
+			fetch(originalStageUrl(id) + "&asset=mouth", { signal: controller.signal })
+				.then((res) => res.ok ? res.json() : null)
+				.then((data) => {
+					if (!controller.signal.aborted && data?.ok && Array.isArray(data.frames)) setLoaded({ id, frames: data.frames });
+				}).catch(() => {});
+			return () => controller.abort();
+		}, [id]);
+		return loaded?.id === id ? loaded?.frames : null;
+	}
+
+	function stageMouthAt(frames, time) {
+		let left = 0, right = frames.length - 1;
+		if (time <= frames[left][0]) return frames[left];
+		if (time >= frames[right][0]) return frames[right];
+		while (right - left > 1) {
+			const middle = (left + right) >> 1;
+			if (frames[middle][0] <= time) left = middle;
+			else right = middle;
+		}
+		const a = frames[left], b = frames[right];
+		const f = (time - a[0]) / (b[0] - a[0]);
+		return a.map((value, i) => value + (b[i] - value) * f);
+	}
+
+	const STAGE_MOUTH_CAVITY = [55, 24, 27];
+
+	// Reuse the current picture's lip texture. The transparent patch never repaints the rest of the scene.
+	function createStageMouthPatch() {
+		const surface = document.createElement("canvas");
+		const context = surface.getContext("2d", { willReadFrequently: true });
+		let result;
+		return (output, video, track, opening, form) => {
+			const [, nx, ny, nw, tilt] = track;
+			const x = nx * video.videoWidth, y = ny * video.videoHeight, span = nw * video.videoWidth;
+			const width = Math.ceil(span * 1.38), height = Math.ceil(span * .92);
+			if (!context || x - width < 0 || y - height < 0 || x + width > video.videoWidth || y + height > video.videoHeight) return;
+			if (!result || surface.width !== width || surface.height !== height) {
+				surface.width = width; surface.height = height;
+				result = context.createImageData(width, height);
+			}
+			context.clearRect(0, 0, width, height);
+			context.save();
+			context.translate(width / 2, height / 2);
+			context.rotate(-tilt);
+			context.drawImage(video, -x, -y);
+			context.restore();
+
+			const source = context.getImageData(0, 0, width, height).data;
+			const pixels = result.data;
+			const center = height / 2;
+			for (let col = 0; col < width; col++) {
+				const distance = Math.abs(col + .5 - width / 2) / (span * (.46 + .052 * form));
+				const shape = distance >= 1 ? 0 : Math.cos(distance * Math.PI / 2) ** .95;
+				const rise = opening * span * .036 * shape;
+				const drop = opening * span * .16 * shape;
+				const top = center - rise, bottom = center + drop;
+				const fadeX = Math.min(1, shape * 4);
+				for (let row = 0; row < height; row++) {
+					const index = (row * width + col) * 4, py = row + .5;
+					pixels[index + 3] = 0;
+					if (!shape) continue;
+					const sampleY = py <= top ? py * center / top :
+						py >= bottom ? center + (py - bottom) * (height - center) / (height - bottom) : center;
+					const srcY = Math.max(0, Math.min(height - 1.01, sampleY - .5));
+					const lo = Math.floor(srcY), fraction = srcY - lo;
+					const from = (lo * width + col) * 4;
+					const cavity = Math.max(0, Math.min(1, (py - top) * 1.2, (bottom - py) * 1.2));
+					const cavityColor = STAGE_MOUTH_CAVITY;
+					for (let ch = 0; ch < 3; ch++) {
+						const warped = source[from + ch] * (1 - fraction) + source[from + width * 4 + ch] * fraction;
+						pixels[index + ch] = warped * (1 - cavity) + cavityColor[ch] * cavity;
+					}
+					pixels[index + 3] = 255 * fadeX * Math.min(1, py / 3, (height - py) / 3);
+				}
+			}
+			context.putImageData(result, 0, 0);
+			output.save();
+			output.translate(x, y);
+			output.rotate(tilt);
+			output.drawImage(surface, -width / 2, -height / 2);
+			output.restore();
+		};
+	}
+
+	function StageMouthOverlay({ frames, videoRef, active, speaking, mouthLevel }) {
+		const target = useRef(null);
+		const sample = useRef(mouthLevel);
+		sample.current = mouthLevel;
+		useEffect(() => {
+			const canvas = target.current, video = videoRef.current;
+			if (!canvas || !video || !active || !speaking) return;
+			const context = canvas.getContext("2d");
+			if (!context) return;
+			canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+			const paint = createStageMouthPatch();
+			let frame, lastTime = 0, opening = 0, lastPatch = null;
+			const clear = () => {
+				if (!lastPatch) return;
+				const [, x, y, span] = lastPatch;
+				const radius = span * canvas.width;
+				context.clearRect(x * canvas.width - radius, y * canvas.height - radius, 2 * radius, 2 * radius);
+				lastPatch = null;
+			};
+			const tick = (now) => {
+				if (now - lastTime >= 28) {
+					lastTime = now;
+					const pose = sample.current?.sample?.() || { level: sample.current?.() || 0, form: 0 };
+					const target = Math.pow(Math.max(0, Math.min(1, pose.level || 0)), .82);
+					opening += (target - opening) * (target > opening ? .72 : .86);
+					const form = Math.max(-1, Math.min(1, pose.form || 0));
+					clear();
+					if (opening >= .028 && video.readyState >= 2) {
+						lastPatch = stageMouthAt(frames, video.currentTime);
+						paint(context, video, lastPatch, opening, form);
+					}
+				}
+				frame = requestAnimationFrame(tick);
+			};
+			frame = requestAnimationFrame(tick);
+			return () => { cancelAnimationFrame(frame); clear(); };
+		}, [frames, videoRef, active, speaking]);
+		return h("canvas", { ref: target, className: "dfy-original-stage-mouth", "aria-hidden": true });
+	}
+
+	function BroadcastPicture({ persona, layout, scene: sceneSettings, artwork, visible = true, live, safe, speaking, listening, engaged, line, captionProgress, mouthLevel, viseme, dialogue, turns, onFrame }) {
+		const { roomBackdrop, model, prototype, rigged, markPrototypeMotion, setFailure, setPrototypeFailure, scenes, originalStages } = artwork;
 		const emotion = speaking ? avatarReplyEmotion(line) : 0;
 		const sceneId = persona?.media?.modelId;
-		const sceneUrl = !rigged && !model && !prototype && sceneId !== "dsh-pet" && scenes.includes(sceneId) && !safe && visible ?
+		const original = findOriginalStage(sceneSettings, originalStages, persona?.profileId);
+		const frames = useOriginalMouthTrack(original?.id);
+		const originalVideo = useIdleScene(original && frames && visible && !safe ? originalStageUrl(original.id) : null, true, onFrame, true);
+		const showOriginal = !!originalVideo.props;
+		const sceneUrl = !showOriginal && !rigged && !model && !prototype && sceneId !== "dsh-pet" && scenes.includes(sceneId) && !safe && visible ?
 			"/api/dafeiyu/avatar/scene?id=" + encodeURIComponent(sceneId) : null;
 		const scene = useIdleScene(sceneUrl, !speaking && !engaged, onFrame);
-		return h("div", { className: "dfy-broadcast" + (persona?.media?.modelId === "dsh-pet" ? " dfy-room-pet" : " dfy-room-person") + (layout === "landscape" ? " dfy-broadcast-landscape" : "") + (rigged ? " dfy-broadcast-reference" : ""),
+		const wide = layout === "landscape";
+		const title = roomTitle(sceneSettings, persona?.name);
+		const theme = sceneSettings?.background || "teal";
+		const matte = useStageMatte(!showOriginal && wide && visible && !safe && prototype && !rigged && !model && sceneId !== "dsh-pet" ? sceneId : null);
+		return h("div", { className: "dfy-broadcast" + (persona?.media?.modelId === "dsh-pet" ? " dfy-room-pet" : " dfy-room-person") + (wide ? " dfy-broadcast-landscape" : "") + (rigged ? " dfy-broadcast-reference" : "") + (model || matte ? " dfy-room-cutout" : "") + (matte ? " dfy-room-matted" : "") + (showOriginal ? " dfy-broadcast-original" : ""),
+			"data-stage-theme": theme,
 			"aria-label": layout === "landscape" ? "直播画面 1920×1080" : "直播画面 1080×1920",
 			style: { "--stage-color": persona?.theme?.primary, "--stage-dark": persona?.theme?.bg } },
-		roomBackdrop ? h("img", { className: "dfy-room-backdrop", src: roomBackdrop, alt: "" }) : null,
+		showOriginal ? h(react.Fragment, null,
+			h("video", { ...originalVideo.props, className: "dfy-original-stage-video",
+				poster: original.hasPoster ? originalStageUrl(original.id) + "&asset=poster" : undefined }),
+			h(StageMouthOverlay, { key: original.id, frames, videoRef: originalVideo.props.ref,
+				active: originalVideo.active, speaking, mouthLevel })) :
+		!safe && visible && wide ? h(LandscapeScene, { theme }) :
+			!wide && roomBackdrop ? h("img", { className: "dfy-room-backdrop", src: roomBackdrop, alt: "" }) : null,
 		h("span", { className: "dfy-pet-ai" }, persona?.aiLabelText || "AI 生成内容"),
-		!safe && visible ? h(BroadcastOverlay, { live, speaking, persona, turns }) : null,
-		safe ? h("div", { className: "dfy-broadcast-safe" }, "播出已暂停") : visible ?
+		!safe && visible ? (wide ? h(LandscapeOverlay, { scene: sceneSettings, title, live, speaking, persona: showOriginal ? null : persona, turns }) : h(BroadcastOverlay, { live, speaking, title, turns })) : null,
+		safe ? h("div", { className: "dfy-broadcast-safe" }, "播出已暂停") : visible && !showOriginal ?
 			h("div", { className: "dfy-broadcast-art" },
-				h("div", { className: "dfy-broadcast-avatar", hidden: scene.active },
+				h("div", { className: "dfy-broadcast-avatar" + (matte ? " dfy-stage-matte" : ""), hidden: scene.active,
+					style: matte ? { "--stage-matte": `url("${matte}")` } : undefined },
 					rigged ? h(RiggedRole, { key: persona.profileId, persona, speaking, listening, emotion, mouthLevel, safe, onFrame }) :
 					model ? h(Live2DScene, { key: model.id, entry: model, speaking, listening, emotion, mouthLevel, viseme, dialogue, safe, onFrame,
 						onFail: () => setFailure(model.id), onLipSync: (ok) => { if (!ok && prototype) setFailure(model.id); } }) :
@@ -2822,6 +3286,10 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				else m.staleFrames++;
 			}
 		}, []);
+		const outputLayout = preview?.scene?.broadcastLayout || "portrait";
+		useEffect(() => {
+			if (preview) window.webkit?.messageHandlers?.stageLayout?.postMessage(outputLayout);
+		}, [outputLayout, !!preview]);
 		const persona = preview?.persona;
 		const live = preview?.liveStatus === "live_confirmed";
 		const artwork = useBroadcastArtwork(persona, catalog);
@@ -2896,12 +3364,19 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		}, []);
 
 		return h("main", { className: "dfy-root dfy-output-window" },
-			h(BroadcastPicture, { persona, layout: "portrait", artwork, live, safe,
+			h(BroadcastPicture, { persona, layout: preview?.scene?.broadcastLayout || "portrait", scene: preview?.scene, artwork, live, safe,
 				speaking: frame.speaking, listening: frame.listening, line: frame.subtitle, captionProgress, mouthLevel, dialogue: motion.dialogue,
 				engaged: motion.engaged, turns, onFrame }));
 	}
 
-	function BroadcastStage({ status, settings, preview, catalog, visible, emergency, controls, publish }) {
+	function BroadcastStage({ status, settings, preview, catalog, visible, emergency, controls, publish, refresh, reloadCatalog }) {
+		const [drawerOpen, setDrawerOpen] = useState(false);
+		const stageSettingsButton = useRef(null);
+		useEffect(() => { if (!visible) setDrawerOpen(false); }, [visible]);
+		const closeDrawer = () => {
+			setDrawerOpen(false);
+			stageSettingsButton.current?.focus();
+		};
 		const [armed, setArmed] = useState(false);
 		const [notice, setNotice] = useState("");
 		const [outputs, setOutputs] = useState([]);
@@ -2920,14 +3395,15 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 		handlers.current = { speech, persona };
 		const live = status?.liveStatus === "live_confirmed";
 		const safe = emergency || status?.liveStatus === "safe_scene";
-		const layout = "portrait";
+		const layout = settings?.scene?.broadcastLayout || preview?.scene?.broadcastLayout || "portrait";
 		const artwork = useBroadcastArtwork(persona, catalog);
 		const lastInteractionAt = turns.reduce((latest, turn) => {
 			if ((turn.source !== "operator" && turn.kind !== "comment") || turn.playback !== "played") return latest;
 			return Math.max(latest, Date.parse(turn.sentAt) || 0);
 		}, 0);
-		const health = useStageHealth({ visible, live, safe, renderer: artwork.model ? "model:" + artwork.model.id : artwork.rigged || artwork.prototype ? "rig:" + persona.profileId : "",
-			catalogReady: !!catalog && !!preview, missingMotion: artwork.missingMotion,
+		const original = findOriginalStage(settings?.scene || preview?.scene, artwork.originalStages, persona?.profileId);
+		const health = useStageHealth({ visible, live, safe, renderer: original ? "video:" + original.id : artwork.model ? "model:" + artwork.model.id : artwork.rigged || artwork.prototype ? "rig:" + persona.profileId : "",
+			catalogReady: !!catalog && !!preview, missingMotion: !original && artwork.missingMotion,
 			lastInteractionAt });
 
 		const speaking = speech.phase === "speaking" && !safe;
@@ -3084,24 +3560,32 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 
 		return h("section", { className: "dfy-inline-stage", hidden: !visible, "aria-label": "插件内直播画面" },
 			h("div", { className: "dfy-inline-stage-controls" },
-				h(Btn, { tone: "primary", disabled: outputWindow.pending,
-					onClick: () => outputWindow.control("open") }, outputWindow.pending ? "正在操作…" :
-					outputWindow.open ? "显示播出窗口" : "打开独立播出窗口"),
-				outputWindow.open ? h(Btn, { disabled: outputWindow.pending,
-					onClick: () => outputWindow.control("close") }, "关闭播出窗口") : null,
-				h(Badge, { tone: armed ? "ok" : "idle", text: armed ? "播出声音已启用" : "播出声音未启用" }),
-				!armed && outputs.length ? h("select", { className: "dfy-select", value: output, "aria-label": "播出音频设备", onChange: (event) => setOutput(event.target.value) },
-					h("option", { value: "" }, "默认音频输出"),
-					outputs.map((device, i) => h("option", { key: device.deviceId, value: device.deviceId }, device.label || "音频设备 " + (i + 1)))) : null,
-				armed ? h(Btn, { onClick: stop }, "暂停播出声音") :
-					h(Btn, { tone: "primary", disabled: !persona || safe, onClick: enable }, "启用播出声音"),
-				!live ? h(Btn, { disabled: !armed || !persona || safe || speech.phase !== "idle", onClick: test }, "试播一句") : null,
+				h("div", { className: "dfy-actions" },
+					h("button", { type: "button", className: "dfy-btn", ref: stageSettingsButton,
+						disabled: !settings, "aria-haspopup": "dialog", "aria-expanded": drawerOpen,
+						"aria-controls": drawerOpen ? "dfy-stage-settings-drawer" : undefined,
+						onClick: () => { setDrawerOpen(true); void refresh(); } }, "舞台设置"),
+					h(Badge, { tone: "idle", text: layout === "landscape" ? original?.name || "横屏 · 16:9" : "竖屏 · 9:16" })),
+				h("div", { className: "dfy-actions" },
+					h(Btn, { tone: "primary", disabled: outputWindow.pending,
+						onClick: () => outputWindow.control("open") }, outputWindow.pending ? "正在操作…" :
+						outputWindow.open ? "显示播出窗口" : "打开独立播出窗口"),
+					outputWindow.open ? h(Btn, { disabled: outputWindow.pending,
+						onClick: () => outputWindow.control("close") }, "关闭播出窗口") : null,
+					h(Badge, { tone: armed ? "ok" : "idle", text: armed ? "播出声音已启用" : "播出声音未启用" }),
+					!armed && outputs.length ? h("select", { className: "dfy-select", value: output, "aria-label": "播出音频设备", onChange: (event) => setOutput(event.target.value) },
+						h("option", { value: "" }, "默认音频输出"),
+						outputs.map((device, i) => h("option", { key: device.deviceId, value: device.deviceId }, device.label || "音频设备 " + (i + 1)))) : null,
+					armed ? h(Btn, { onClick: stop }, "暂停播出声音") :
+						h(Btn, { tone: "primary", disabled: !persona || safe, onClick: enable }, "启用播出声音"),
+					!live ? h(Btn, { disabled: !armed || !persona || safe || speech.phase !== "idle", onClick: test }, "试播一句") : null),
 				outputWindow.notice ? h("span", { className: "dfy-caption", role: "status" }, outputWindow.notice) : null,
 				notice || speech.note ? h("span", { className: "dfy-caption", role: "status" }, notice || speech.note) : null,
 				h("p", { className: "dfy-stage-health", role: "status" }, health.notice)),
 			h("div", { className: "dfy-inline-stage-frame" },
-				h(BroadcastPicture, { persona, layout, artwork, visible, live, safe, speaking, listening, line, captionProgress: speech.captionProgress,
-					mouthLevel: speech.level, dialogue: motion.dialogue, engaged: motion.engaged, turns, onFrame: health.onFrame })));
+				h(BroadcastPicture, { persona, layout, scene: settings?.scene || preview?.scene, artwork, visible, live, safe, speaking, listening, line, captionProgress: speech.captionProgress,
+					mouthLevel: speech.level, dialogue: motion.dialogue, engaged: motion.engaged, turns, onFrame: health.onFrame })),
+			visible && drawerOpen && settings ? h(StageSettingsDrawer, { settings, catalog, reloadCatalog, refresh, onClose: closeDrawer }) : null);
 	}
 
 	const REPLY_SOURCE = { local_gpu: "本地模型", local_cpu: "本地模型（CPU）", cloud: "云端模型", fallback: "预设回复" };
@@ -3900,7 +4384,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 				h("strong", null, "导入预览 · v" + preview.version),
 				h("p", { className: "dfy-caption" }, "导出时间：" + preview.exportedAt),
 				h("dl", null, Object.entries({ "角色": preview.sections.persona.personaName,
-					"直播间": preview.sections.platform.roomUrl || "未填写", "画面标题": preview.sections.scene.title,
+					"直播间": preview.sections.platform.roomUrl || "未填写", "画面标题": preview.sections.scene.titleMode === "custom" ? preview.sections.scene.title : "跟随角色",
 					"云端模型": preview.sections.cloud.model || "未填写", "云端端点": preview.sections.cloud.baseUrl || "服务商预设",
 					"礼物点名": preview.sections.gifts.nameMention ? "开启" : "关闭" }).map(([key, value]) =>
 					h("div", { key, style: { overflowWrap: "anywhere" } }, h("dt", null, key), h("dd", null, value)))),
@@ -3947,7 +4431,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			}, item.label)));
 	}
 
-	function SettingsPage({ page, settings, settingsError, refresh, catalog, reloadCatalog }) {
+	function useSettingsSave(refresh) {
 		const [note, setNote] = useState("");
 		const [saving, setSaving] = useState(false);
 		const save = async (section, body) => {
@@ -3966,6 +4450,11 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			} finally { setSaving(false); }
 		};
 
+		return { save, saving, note };
+	}
+
+	function SettingsPage({ page, settings, settingsError, refresh, catalog, reloadCatalog }) {
+		const { save, saving, note } = useSettingsSave(refresh);
 		if (page.View === DiagTab) return h(DiagTab);
 		if (!settings) return settingsError ? h(Card, null,
 			h("p", { role: "alert", style: { margin: 0 } }, settingsError),
@@ -4084,8 +4573,8 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			reloadPreview();
 			return () => { previewTicket.current++; };
 		}, [reloadPreview, connected, status?.liveStatus, persona?.profileId, persona?.avatarId, persona?.voiceId,
-			persona?.live2dModelId, persona?.aiLabelText, scene?.background, scene?.title, scene?.danmakuOverlay,
-			scene?.resolution, scene?.broadcastLayout, settings?.platform?.officialClientUrl]);
+			persona?.live2dModelId, persona?.appearance, persona?.aiLabelText, scene?.background, scene?.title, scene?.titleMode, scene?.danmakuOverlay,
+			scene?.resolution, scene?.broadcastLayout, scene?.notice, scene?.originalScene, settings?.platform?.officialClientUrl]);
 		useEffect(() => {
 			reloadCatalog();
 			return () => { catalogTicket.current++; };
@@ -4170,7 +4659,7 @@ window.__ModuleLoader__.load({ id: "dsh-dafeiyu-evolve", factory: (require) => {
 			notice ? h("div", { className: "dfy-header-notice" },
 				h("span", { role: "status" }, notice), h(Btn, { tone: "ghost", onClick: () => setNotice("") }, "关闭提示")) : null,
 			h("main", { className: "dfy-body dfy-desk-body", ref: main },
-				h(BroadcastStage, { status, settings, preview, catalog, visible: showStage, emergency, controls: stageControls, publish: setLiveCaption }),
+				h(BroadcastStage, { status, settings, preview, catalog, visible: showStage, emergency, controls: stageControls, publish: setLiveCaption, refresh, reloadCatalog }),
 				section ? h("div", { className: "dfy-manage" },
 					h(SectionNav, { items: page.sections, current: section.id, onSelect: goTab, label: page.label, className: "dfy-subnav" }),
 					h("div", { className: "dfy-manage-content", key: section.id },

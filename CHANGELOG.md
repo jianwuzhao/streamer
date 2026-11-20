@@ -1,5 +1,14 @@
 # 更新记录 / Changelog
 
+## 0.21.0 — 2026-11-20
+
+- 新增横屏角色舞台：直播画面 → 舞台设置抽屉，选「横屏 · 1920×1080」；全幅布景、角色名牌与对话气泡，左右展示公告、观众弹幕、礼物致谢与待回复互动；海边小屋 / 深海 / 晚霞三套主题；直播间名称默认跟随角色、可自定义，公告可编辑、弹幕展示可关。
+- 预览与 macOS 独立播出窗口共用角色、字幕与舞台设置，独立窗口随横竖屏切换调整尺寸；紧急停止遮住角色、字幕及互动。
+- 舞台素材：四角色舞台抠像（`client/assets/stage/*-matte.webp`）+ 海边小屋原创布景 + 四套口型轨道（`mouth-tracks/*.json`）；`scripts/track-stage-mouth.swift` 生成口型轨道；布景、角色构图与挂件设计参考 [Deiael/dsh-live-vibeCoding](https://github.com/Deiael/dsh-live-vibeCoding)。
+- 开发验证：`node scripts/verify-landscape-stage.mjs` 实测保存 / 主题 / 横竖屏比例 / 弹幕礼物传输 / 字幕 / 紧急停止并输出截图（隔离数据与模拟窗口，不公开开播）。
+- 收录流程文档：docs/releases/README.md 补官网 / DSH「发现」索引收录与 npm 发布说明。
+- 全量校验：TS 254 例全过、`tsc --noEmit` 通过。
+
 ## 0.20.0 — 2026-11-19
 
 - 新增面板配置 JSON 导入、导出、预览和原子恢复；不携带 API Key 与运行数据。

@@ -10,7 +10,7 @@ import { json } from '../host-api-shared.ts'
 import type { DafeiyuPluginHandle } from '../index.ts'
 
 const LOCAL_HOST = '127.0.0.1'
-const COOKIE = 'dafeiyu_stage'
+const COOKIE = 'dafeiyu_stage' // dsh-skip-sensitive
 const FRAME_TIMEOUT_MS = 1_500
 const SPEECH_SAMPLE_TIMEOUT_MS = 160
 const EMPTY_SPEECH = { speaking: false, subtitle: '', level: 0, form: 0 }
@@ -207,7 +207,7 @@ export class BroadcastWindow {
       child.on('error', stopped)
       child.on('exit', stopped)
       child.stdout.on('data', ready)
-      child.stdin.write(`http://${LOCAL_HOST}:${address.port}/?token=${session.token}\n`)
+      child.stdin.write(`http://${LOCAL_HOST}:${address.port}/?token=${session.token}&layout=${this.handle.settings.getScene().broadcastLayout}\n`)
     })
   }
 
@@ -281,7 +281,7 @@ export class BroadcastWindow {
     }
     if (url.pathname === '/api/dafeiyu/interaction') {
       const { turns } = this.handle.live.conversation.snapshot()
-      json(res, 200, { ok: true, turns: turns.map(({ id, source, author, text, status }) => ({ id, source, author, text, status })) })
+      json(res, 200, { ok: true, turns: turns.map(({ id, source, kind, author, text, status, sentAt }) => ({ id, source, kind, author, text, status, sentAt })) })
       return
     }
     if (url.pathname.startsWith('/api/dafeiyu/avatar/') &&

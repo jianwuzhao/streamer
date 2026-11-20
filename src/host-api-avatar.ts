@@ -18,6 +18,28 @@ function fail(res: ServerResponse, err: unknown): void {
   json(res, 500, { ok: false, error: (err as Error).message })
 }
 
+function serveVideo(video: Buffer, res: ServerResponse, headers?: ServerRequest['headers']): void {
+  const header = typeof headers?.range === 'string' ? headers.range : undefined
+  const match = header?.match(/^bytes=(\d*)-(\d*)$/)
+  const start = match?.[1] ? Number(match[1]) :
+    match?.[2] ? Math.max(0, video.length - Number(match[2])) : 0
+  const end = match?.[1] && match[2] ? Math.min(Number(match[2]), video.length - 1) : video.length - 1
+  res.setHeader('accept-ranges', 'bytes')
+  res.setHeader('cache-control', 'private, no-cache')
+  if (header && (!match || !(match[1] || match[2]) || start > end)) {
+    res.statusCode = 416
+    res.setHeader('content-range', `bytes */${video.length}`)
+    res.end()
+    return
+  }
+  const body = video.subarray(start, end + 1)
+  res.statusCode = header ? 206 : 200
+  res.setHeader('content-type', 'video/mp4')
+  res.setHeader('content-length', String(body.length))
+  if (header) res.setHeader('content-range', `bytes ${start}-${end}/${video.length}`)
+  res.end(body)
+}
+
 export function handleAvatarGetRoute(
   avatar: AvatarAssetStore,
   path: string,
@@ -29,7 +51,7 @@ export function handleAvatarGetRoute(
     const scenes = BUILTIN_PROFILES.flatMap(({ media }) => media && avatar.hasScene(media.modelId) ? [media.modelId] : [])
     const prototypes = BUILTIN_PROFILES.flatMap(({ media }) => media && avatar.hasPrototype(media.modelId) ? [media.modelId] : [])
     json(res, 200, { ok: true, catalog: { vendors: avatar.vendorStatus(), models: avatar.listModels(), scenes, prototypes,
-      rigged: avatar.hasRiggedAvatar() ? [RIGGED_MODEL_ID] : [] } })
+      rigged: avatar.hasRiggedAvatar() ? [RIGGED_MODEL_ID] : [], originalStages: avatar.listOriginalStages() } })
     return true
   }
 
@@ -56,6 +78,36 @@ export function handleAvatarGetRoute(
       return true
     }
     try { json(res, 200, { ok: true, ...avatar.readPrototype(id) }) } catch (err) { fail(res, err) }
+    return true
+  }
+
+  if (path === 'avatar/original-stage') {
+    try {
+      const id = query.get('id') ?? ''
+      if (query.get('asset') === 'mouth') {
+        const frames = avatar.readOriginalStageMouth(id)
+        if (frames) json(res, 200, { ok: true, frames })
+        else json(res, 404, { ok: false, error: '原场景缺少匹配的口型数据' })
+      } else if (query.get('asset') === 'poster') {
+        const poster = avatar.readOriginalStage(id, 'png')
+        res.setHeader('content-type', 'image/png')
+        res.setHeader('cache-control', 'private, no-cache')
+        res.end(poster)
+      } else {
+        serveVideo(avatar.readOriginalStage(id, 'mp4'), res, headers)
+      }
+    } catch (err) { fail(res, err) }
+    return true
+  }
+
+  if (path === 'avatar/stage-backdrop' || path === 'avatar/stage-matte') {
+    try {
+      const body = path === 'avatar/stage-matte' ? avatar.readStageMatte(query.get('id') ?? '') : avatar.readStageBackdrop()
+      res.statusCode = 200
+      res.setHeader('content-type', 'image/webp')
+      res.setHeader('cache-control', path === 'avatar/stage-matte' ? 'private, no-cache' : 'private, max-age=3600')
+      res.end(body)
+    } catch (err) { fail(res, err) }
     return true
   }
 
@@ -100,25 +152,7 @@ export function handleAvatarGetRoute(
     }
     try {
       const video = avatar.readScene(id)
-      const header = typeof headers?.range === 'string' ? headers.range : undefined
-      const match = header?.match(/^bytes=(\d*)-(\d*)$/)
-      const start = match?.[1] ? Number(match[1]) :
-        match?.[2] ? Math.max(0, video.length - Number(match[2])) : 0
-      const end = match?.[1] && match[2] ? Math.min(Number(match[2]), video.length - 1) : video.length - 1
-      res.setHeader('accept-ranges', 'bytes')
-      res.setHeader('cache-control', 'private, no-cache')
-      if (header && (!match || !(match[1] || match[2]) || start > end)) {
-        res.statusCode = 416
-        res.setHeader('content-range', `bytes */${video.length}`)
-        res.end()
-        return true
-      }
-      const body = video.subarray(start, end + 1)
-      res.statusCode = header ? 206 : 200
-      res.setHeader('content-type', 'video/mp4')
-      res.setHeader('content-length', String(body.length))
-      if (header) res.setHeader('content-range', `bytes ${start}-${end}/${video.length}`)
-      res.end(body)
+      serveVideo(video, res, headers)
     } catch (err) {
       fail(res, err)
     }

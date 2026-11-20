@@ -10,6 +10,7 @@
  * 符号链接真实目标同样过扩展名白名单、manifest.json 限 lstat 常规文件
  * 且限读取上限——host-api 返回 base64，防巨文件撑爆面板请求。
  */
+import { ORIGINAL_STAGE_SOURCES } from './stage-sources.ts'
 import { validateFaceRig } from './face-rig.ts'
 import { hash } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
@@ -141,16 +142,28 @@ function asString(v: unknown): string | null {
   return typeof v === 'string' && v.trim() !== '' ? v : null
 }
 
+// These optional alpha mattes align to the exact prepared portrait prototypes.
+const STAGE_MATTE_SOURCES = new Map([
+  ['eciyuan-xiaxia', 'e37c84b875448ba1200c5357c7508d1a4610985d23ca40ae6582bf4e81c0a59d'],
+  ['eciyuan-lubai', '6b385138df3a8413e3e3c62d76f22731e94273080ce6a3ed45ecc5f264375550'],
+  ['eciyuan-guyu', '2278086933c5d946321fbfa0af2a5aec2ec18d85b86f79dbfbda11a424bcae95'],
+  ['eciyuan-beila', 'e2bc878d0c4844c780cec2e07c75783a8880851c2f6b51e175712356fcd2c78d'],
+])
+
 export class AvatarAssetStore {
   private readonly modelsDir: string
   private readonly vendorDir: string
+  private readonly originalStageDir?: string | undefined
+  private readonly stageDir?: string | undefined
   private readonly dshPetDir?: string | undefined
   private readonly rigged?: { readonly directory: string; readonly runtime: string } | undefined
 
-  constructor(opts: { modelsDir: string; vendorDir: string; dshPetDir?: string; rigged?: { directory: string; runtime: string } }) {
+  constructor(opts: { modelsDir: string; vendorDir: string; dshPetDir?: string; stageDir?: string; originalStageDir?: string; rigged?: { directory: string; runtime: string } }) {
     this.modelsDir = opts.modelsDir
     this.vendorDir = opts.vendorDir
     this.dshPetDir = opts.dshPetDir
+    this.stageDir = opts.stageDir
+    this.originalStageDir = opts.originalStageDir
     this.rigged = opts.rigged
   }
 
@@ -277,6 +290,69 @@ export class AvatarAssetStore {
       if (!(error instanceof AvatarAssetError && error.status === 404)) throw new AvatarAssetError('完整面部模型需要重新生成：' + (error as Error).message)
     }
     return { image, mouth: calibration, ...(faceRig ? { faceRig } : {}), ...(eyes ? { eyes } : {}), ...(motionMask ? { motionMask } : {}), ...(headMask ? { headMask } : {}) }
+  }
+
+  private originalStageFile(id: string, type: 'mp4' | 'png'): string | undefined {
+    if (!this.originalStageDir || !Object.hasOwn(ORIGINAL_STAGE_SOURCES, id)) return undefined
+    const file = join(this.originalStageDir, `${id}.${type}`)
+    const info = lstatSync(file, { throwIfNoEntry: false })
+    return info?.isFile() && info.size > 0 && info.size <= 32 * 1024 * 1024 ? file : undefined
+  }
+
+  private readonly stageMouthTracks = new Map<string, { stamp: string; frames: number[][] | null }>()
+
+  readOriginalStageMouth(id: string): number[][] | null {
+    const video = this.originalStageFile(id, 'mp4')
+    if (!video || !this.stageDir) return null
+    const trackPath = join(this.stageDir, 'mouth-tracks', `${id}.json`)
+    const videoStat = statSync(video, { throwIfNoEntry: false })
+    const trackStat = statSync(trackPath, { throwIfNoEntry: false })
+    if (!videoStat || !trackStat?.isFile() || trackStat.size > 64 * 1024) return null
+    const stamp = `${videoStat.size}:${videoStat.mtimeMs}:${videoStat.ctimeMs}:${trackStat.mtimeMs}`
+    const cached = this.stageMouthTracks.get(id)
+    if (cached?.stamp === stamp) return cached.frames
+    let frames: number[][] | null = null
+    try {
+      const track = JSON.parse(readFileSync(trackPath, 'utf8')) as { sha256: string; frames: number[][] }
+      if (Array.isArray(track.frames) && track.frames.length >= 2 && track.frames.length <= 600 &&
+          track.frames.every((row, i) => Array.isArray(row) && row.length === 5 && row.every(Number.isFinite) &&
+            row[0]! >= 0 && (i === 0 || row[0]! > track.frames[i - 1]![0]!) && row[1]! > .06 && row[1]! < .94 &&
+            row[2]! > .06 && row[2]! < .94 && row[3]! > .008 && row[3]! <= .1 && Math.abs(row[4]!) <= Math.PI / 2) &&
+          hash('sha256', readFileSync(video)) === track.sha256) {
+        frames = track.frames
+      }
+    } catch { /* A mismatched or missing track keeps this scene out of the broadcast renderer. */ }
+    this.stageMouthTracks.set(id, { stamp, frames })
+    return frames
+  }
+
+  listOriginalStages() {
+    return Object.entries(ORIGINAL_STAGE_SOURCES).flatMap(([id, source]) =>
+      this.originalStageFile(id, 'mp4') ? [{ id, ...source, hasPoster: !!this.originalStageFile(id, 'png'),
+        lipSync: this.readOriginalStageMouth(id) !== null }] : [])
+  }
+
+  readOriginalStage(id: string, type: 'mp4' | 'png'): Buffer {
+    const file = this.originalStageFile(id, type)
+    if (!file) throw new AvatarAssetError('原场景素材不可用', 404)
+    return readFileSync(file)
+  }
+
+  readStageBackdrop(): Buffer {
+    const file = this.stageDir && join(this.stageDir, 'seaside-room.webp')
+    if (!file || !existsSync(file)) throw new AvatarAssetError('舞台背景不可用', 404)
+    return readFileSync(file)
+  }
+
+  readStageMatte(id: string): Buffer {
+    const source = STAGE_MATTE_SOURCES.get(id)
+    if (!this.stageDir || !source) throw new AvatarAssetError('角色没有舞台抠像', 404)
+    const image = this.resolveAsset(id, 'portrait-frame.png', MODEL_FILE_EXTENSIONS)
+    const matte = join(this.stageDir, `${id.slice('eciyuan-'.length)}-matte.webp`)
+    if (!existsSync(matte) || hash('sha256', readFileSync(image.path)) !== source) {
+      throw new AvatarAssetError('舞台抠像与当前角色素材不匹配', 404)
+    }
+    return readFileSync(matte)
   }
 
   readDshIdle(): Buffer {

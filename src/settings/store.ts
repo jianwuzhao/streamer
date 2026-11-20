@@ -9,6 +9,7 @@
  * - 云端密钥（0.15）：可在界面维护（cloud_secret 节，SQLite 持久化）；
  *   读取路径一律只回掩码与来源，环境变量 DAFEIYU_CLOUD_API_KEY 仍优先；保存后重启插件生效。
  */
+import { ORIGINAL_STAGE_SOURCES } from '../avatar/stage-sources.ts'
 import { isRetiredSample } from '../avatar/model-store.ts'
 import { douyinRoomUrl } from '../platform/douyin-protocol.ts'
 import { z } from 'zod'
@@ -36,7 +37,8 @@ function httpUrl(message: string) {
 
 const PersonaSettingsObject = z.object({
   /** 选中的角色档案（参照 eciyuan.qq.com CHARACTERS）；主播信息由该档案驱动展示 */
-  profileId: z.preprocess((value) => value === 'lanxu' ? RIGGED_MODEL_ID : value, z.enum(profileIds).default('dsh-pet')),
+  profileId: z.enum([...profileIds, RIGGED_MODEL_ID, 'lanxu']).default('dsh-pet'),
+  appearance: z.enum(['standard', 'rigged']).default('standard'),
   /** 播出展示名：默认取所选档案中文名；保留为可覆盖字段以兼容既有设置/回退 */
   personaName: z.string().trim().min(1, '主播名称不能为空').max(24, '主播名称不超过 24 字').default('DSH 蓝发女仆').transform((value) => value === '大肥鱼' ? 'DSH 蓝发女仆' : value),
   /** Normalize retired avatars when reading existing settings. */
@@ -58,8 +60,13 @@ const PersonaSettingsObject = z.object({
   /** §23.2 输出检查最小集：AI 标识不可关闭——只接受 true。 */
   aiLabelVisible: z.literal(true).default(true),
 })
-const normalizePersona = (value: z.infer<typeof PersonaSettingsObject>) => value.profileId === RIGGED_MODEL_ID && value.personaName === '澜序' ?
-  { ...value, personaName: RIGGED_PROFILE_NAME } : value
+const normalizePersona = (value: z.infer<typeof PersonaSettingsObject>) => {
+  const legacy = value.profileId === RIGGED_MODEL_ID || value.profileId === 'lanxu'
+  const profileId = legacy ? 'xiaxia' : value.profileId
+  const appearance = legacy ? 'rigged' as const : profileId === 'xiaxia' ? value.appearance : 'standard' as const
+  const personaName = legacy && ['澜序', RIGGED_PROFILE_NAME].includes(value.personaName) ? '夏夏' : value.personaName
+  return { ...value, profileId, appearance, personaName }
+}
 export const PersonaSettings = PersonaSettingsObject.transform(normalizePersona)
 const PortablePersonaSettings = PersonaSettingsObject.strict().transform(normalizePersona)
 export type PersonaSettingsType = z.infer<typeof PersonaSettings>
@@ -79,9 +86,13 @@ export const PlatformSettings = z.object({
 export type PlatformSettingsType = z.infer<typeof PlatformSettings>
 
 export const SceneSettings = z.object({
+  titleMode: z.enum(['role', 'custom']).default('role'),
   title: z.string().trim().min(1, '直播间标题不能为空').max(30, '标题不超过 30 字').default('大肥鱼的直播间'),
   resolution: z.enum(['1280x720', '1920x1080']).default('1280x720'),
+  notice: z.string().trim().max(300, '公告不超过 300 字').default(''),
   broadcastLayout: z.enum(['portrait', 'landscape']).default('portrait'),
+  originalScene: z.union([z.literal(''), z.enum(Object.keys(ORIGINAL_STAGE_SOURCES))]).default(''),
+  roleScenes: z.partialRecord(z.enum(profileIds), z.union([z.literal(''), z.enum(Object.keys(ORIGINAL_STAGE_SOURCES))])).default({}),
   background: z.enum(['teal', 'night', 'warm']).default('teal'),
   danmakuOverlay: z.boolean().default(true),
 })
@@ -287,7 +298,13 @@ export class SettingsStore {
 
   /** 当前选中的角色档案（主播信息展示源；未知 id 回落 dsh-pet）。 */
   getPersonaProfile(): ProfileOption {
-    return resolveProfile(this.getPersona().profileId)
+    const { profileId, appearance } = this.getPersona()
+    const profile = resolveProfile(profileId)
+    if (profileId !== 'xiaxia' || appearance !== 'rigged' || !profile.media) return profile
+    return {
+      ...profile,
+      media: { ...profile.media, modelId: RIGGED_MODEL_ID, portraitUrl: '/api/dafeiyu/avatar/rigged?id=xiaxia-3d&asset=poster' },
+    }
   }
 
   getPlatform(): PlatformSettingsType {

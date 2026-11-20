@@ -34,7 +34,7 @@ export interface ProfileMedia {
 }
 
 export const RIGGED_MODEL_ID = 'xiaxia-3d'
-export const RIGGED_PROFILE_NAME = '夏夏 · 重构版'
+export const RIGGED_PROFILE_NAME = '夏夏 · 重构版' // v1 migrated display name
 
 /**
  * 角色档案（参照腾讯《鹅次元》官网 eciyuan.qq.com 的 CHARACTERS 角色介绍：
@@ -166,27 +166,13 @@ export const BUILTIN_PROFILES: readonly ProfileOption[] = [
     source: 'eciyuan',
     style: 'classic',
   },
-  {
-    id: RIGGED_MODEL_ID,
-    name: RIGGED_PROFILE_NAME,
-    enName: 'XIAXIA 3D',
-    tagline: '新传专业大二学生 · 三维骨骼形象',
-    age: '19 岁',
-    height: '162cm',
-    zodiac: '白羊座',
-    mbti: 'ENFP',
-    bio: '元气满满的校园搭子，懂梗、爱聊天，倾听时会点头，回复时会用手势配合。',
-    speakingStyle: '活泼热情，像同学聊天一样自然接梗，多用轻松的口语。',
-    theme: { bg: '#3a2440', primary: '#7b4b8a', accent: '#ffd6ec' },
-    media: { ...eciyuanMedia('xiaxia', RIGGED_MODEL_ID), portraitUrl: '/api/dafeiyu/avatar/rigged?id=xiaxia-3d&asset=poster' },
-    source: 'plugin',
-    style: 'classic',
-  },
+
 ]
 
 /** 按 id 取角色档案；未知 id 回落 dsh-pet（schema 已保证可选值合法）。 */
 export function resolveProfile(id: string): ProfileOption {
-  return BUILTIN_PROFILES.find((p) => p.id === id) ?? BUILTIN_PROFILES[0]!
+  const canonical = id === RIGGED_MODEL_ID || id === 'lanxu' ? 'xiaxia' : id
+  return BUILTIN_PROFILES.find((p) => p.id === canonical) ?? BUILTIN_PROFILES[0]!
 }
 
 export const BUILTIN_AVATARS: readonly AvatarOption[] = [
