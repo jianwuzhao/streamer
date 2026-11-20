@@ -35,15 +35,18 @@ export interface RouterDeps {
   readonly qualityGate: QualityGate
   readonly usage: UsageRecorder
   readonly localGpu?: ModelAdapter
-  readonly localCpu?: ModelAdapter
+  readonly localCpu?: ModelAdapter | undefined
   readonly cloud?: ModelAdapter
   readonly registry?: GenerationRegistry
   readonly now?: () => number
   readonly getHostProfile?: () => ProfileOption
+  readonly localAvailable?: (adapter: ModelAdapter) => boolean
+  readonly localOutcome?: (adapter: ModelAdapter, ok: boolean) => void
 }
 
 export interface RouteContext {
   readonly signal?: AbortSignal
+  readonly startedAt?: number
   readonly onDraft?: (text: string) => void
   readonly hostProfile?: ProfileOption
   readonly hostConversation?: {
@@ -51,10 +54,15 @@ export interface RouteContext {
     readonly history: readonly GenerateMessage[]
     readonly cloudHistory: readonly GenerateMessage[]
     readonly memory: readonly string[]
+    readonly program?: readonly string[]
+    readonly cloudText?: string
+    readonly address?: string
     readonly interaction?: HostInteraction
   }
   readonly localOnly?: boolean
+  readonly allowCloud?: () => boolean
   readonly preferCloud?: boolean
+  readonly preset?: { readonly text: string; readonly kind: NonNullable<AnswerReceipt['replyKind']> }
   readonly previewCharacter?: string
   readonly previewDescription?: string
   /** 近期已播出回复（重复检测） */

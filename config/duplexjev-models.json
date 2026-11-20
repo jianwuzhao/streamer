@@ -1,0 +1,6 @@
+[
+  {"id": "adventists-ai/DuplexJev-4B-Para", "label": "DuplexJev-4B-Para", "review": {"performance": "v1.4，约 10 GB 显存；Smart Turn 92.9，英语 300 ms 误截断率 21.8%", "strength": "适合语轮、重音与非语言声音判定", "limitation": "需要独立语音服务；公开权重仅限非商业用途", "sourceUrl": "https://github.com/adventists-ai/duplexjev#models"}},
+  {"id": "adventists-ai/DuplexJev-32B-Para", "label": "DuplexJev-32B-Para", "review": {"performance": "v1.5，80 GB 显存；Smart Turn 94.4，英语 300 ms 误截断率 17.7%", "strength": "比 4B 更适合多语言语轮判定", "limitation": "显存需求最高；公开权重仅限非商业用途", "sourceUrl": "https://github.com/adventists-ai/duplexjev#models"}},
+  {"id": "adventists-ai/DuplexJev-4B-Para-LiveTurn", "label": "DuplexJev-4B-Para-LiveTurn", "review": {"performance": "约 10 GB 显存；300 ms 误截断率英语 25.5%、中文 38.8%", "strength": "专注直播语音轮次结束判定", "limitation": "用途较专一；公开权重仅限非商业用途", "sourceUrl": "https://github.com/adventists-ai/duplexjev#models"}},
+  {"id": "adventists-ai/DuplexJev-32B-Vision", "label": "DuplexJev-32B-Vision", "review": {"performance": "预览版，80 GB 显存；作者报告人脸与语音情绪匹配 93.5", "strength": "可结合图片与语音进行判断", "limitation": "本面板测试仅传 WAV 音频；公开权重仅限非商业用途", "sourceUrl": "https://github.com/adventists-ai/duplexjev#models"}}
+]

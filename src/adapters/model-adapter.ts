@@ -41,6 +41,7 @@ export interface GenerateResult {
 export interface GenerateOptions {
   readonly signal?: AbortSignal
   readonly timeoutMs?: number
+  readonly singleCloudRequest?: boolean
   /** Receive the accumulated reply text as it arrives. */
   readonly onDraft?: (text: string) => void
 }

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { CloudDisabledError, OpenAICompatCloudAdapter } from './cloud.ts'
+import { CloudUsageLedger } from '../routing/cloud-usage.ts'
+import { makeTmpDb } from '../testing/helpers.ts'
 
 function makeAdapter(over: Partial<ConstructorParameters<typeof OpenAICompatCloudAdapter>[0]> = {}) {
   let fetchCount = 0
@@ -29,6 +31,24 @@ test('未配置/禁用：不发起任何网络请求即拒绝', async () => {
   })
   await assert.rejects(adapter.generate({ messages: [{ role: 'user', text: 'hi' }] }), CloudDisabledError)
   assert.equal(fetchCount(), 0)
+})
+
+test('计量并发请求：原子预留费用，失败请求仍计数，未知费用不记作零', async () => {
+  const { db, cleanup } = makeTmpDb()
+  try {
+    const ledger = new CloudUsageLedger(db)
+    const input = { model: 'test', requestLimit: 2, budgetCny: 1, inputCeiling: 100, outputCeiling: 500,
+      inputRate: 1000, outputRate: 1000 }
+    const settle = ledger.reserve(input)
+    assert.ok(settle)
+    assert.equal(ledger.reserve(input), undefined, '未完成的调用已占用预算')
+    settle({ prompt_tokens: 100, completion_tokens: 10 }, true)
+    const failed = ledger.reserve(input)
+    assert.ok(failed)
+    failed(undefined, false)
+    assert.deepEqual({ ...ledger.today() }, { requests: 2, tokens: 110, estimatedCostCny: 0.11, unknownCostRequests: 1 })
+    assert.equal(ledger.reserve({ ...input, inputRate: null, outputRate: null }), undefined, '失败请求计入次数')
+  } finally { cleanup() }
 })
 
 test('预算耗尽：budget_exhausted 且不发起请求（§19）', async () => {

@@ -36,10 +36,10 @@ export class RequestBudget {
   private readonly controller = new AbortController()
   private timer: ReturnType<typeof setTimeout> | undefined
 
-  constructor(spec: BudgetSpec, now: () => number = () => Date.now()) {
+  constructor(spec: BudgetSpec, now: () => number = () => Date.now(), startedAt = now()) {
     this.spec = spec
     this.now = now
-    this.t0 = now()
+    this.t0 = startedAt
   }
 
   /** 启动真实总超时计时器（unref，不阻止进程退出）。 */
