@@ -13,10 +13,11 @@
 import type { DafeiyuPluginHandle } from './index.ts'
 import type { BroadcastWindow } from './live/broadcast-window.ts'
 import { ConversationError, INTERACTION_KINDS, MESSAGE_LIMIT, type InteractionKind } from './live/conversation.ts'
-import { BUILTIN_VOICES, RIGGED_MODEL_ID, resolveCloudBaseUrl } from './settings/catalogs.ts'
+import { BUILTIN_PROFILES, BUILTIN_VOICES, RIGGED_MODEL_ID, resolveCloudBaseUrl } from './settings/catalogs.ts'
 import { SettingsValidationError, type Readiness } from './settings/store.ts'
 import { json, readBody, todayCostCny, FEEDBACK_LABELS, type FeedbackLabelInput, type ServerRequest, type ServerResponse } from './host-api-shared.ts'
-import { handleDataGetRoute } from './host-api-data.ts'
+import { handleDataGetRoute, modelDeployPayload } from './host-api-data.ts'
+import { duplexjevBodyLimit, testDuplexJevTurn } from './adapters/duplexjev.ts'
 import { handleAudienceGetRoute } from './host-api-audience.ts'
 import { handleAvatarGetRoute } from './host-api-avatar.ts'
 import { ReferenceVoiceError, synthesizeReferenceVoice } from './avatar/reference-voice.ts'
@@ -44,6 +45,8 @@ export interface DafeiyuStatus {
   platformReadyReason: string | null
   previewActive: boolean
   todayCostCny: number
+  todayCloudRequests: number
+  todayCloudCostUnknown: boolean
   /** 待处理问题数（负面反馈待核实队列） */
   pendingIssues: number
 }
@@ -57,6 +60,7 @@ export function buildStatus(handle: DafeiyuPluginHandle): DafeiyuStatus {
   const readiness = handle.settings.readiness()
   const persona = readyFlag(readiness.persona)
   const platform = readyFlag(readiness.platform)
+  const cloudUsage = handle.cloudUsage.today()
   return {
     liveStatus: handle.live.session.current,
     liveDisplay: handle.live.session.display(),
@@ -75,7 +79,9 @@ export function buildStatus(handle: DafeiyuPluginHandle): DafeiyuStatus {
     platformReady: platform.ready,
     platformReadyReason: platform.reason,
     previewActive: handle.live.session.previewActive,
-    todayCostCny: todayCostCny(handle.db),
+    todayCostCny: todayCostCny(handle.db) + (cloudUsage.estimatedCostCny ?? 0),
+    todayCloudRequests: cloudUsage.requests,
+    todayCloudCostUnknown: cloudUsage.unknownCostRequests > 0,
     pendingIssues: handle.feedback.pendingQueue().length,
   }
 }
@@ -114,7 +120,9 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
         // 预览输入类端点共用 8192 字节请求体上限（chat 文本 + role-speech 的 profileId/文本）
         const boundedPreviewInput = path === 'preview/chat' || path.startsWith('preview/role-speech') ||
           path.startsWith('interaction/') || path.startsWith('broadcast-window/')
-        const body = await readBody(req, path.startsWith('settings/import') ? 131072 : boundedPreviewInput ? 8192 : Infinity)
+        const bodyLimit = path === 'model/duplexjev/turn' ? duplexjevBodyLimit
+          : path.startsWith('settings/import') ? 131072 : boundedPreviewInput ? 8192 : Infinity
+        const body = await readBody(req, bodyLimit)
         if (body === null) return json(res, 413, { ok: false, error: '请求体过大' })
         let parsed: unknown
         try {
@@ -205,6 +213,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
             })
           }
           case 'live/stop': {
+            handle.referenceVoiceStream.cancel()
             const status = await handle.live.session.stop()
             stopInteraction()
             conversation.reset()
@@ -263,7 +272,8 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
             const completion = typeof args.completedKey === 'string' && typeof args.completedOk === 'boolean' ?
               { key: args.completedKey, ok: args.completedOk } : undefined
             const playingKey = typeof args.playingKey === 'string' ? args.playingKey : undefined
-            return json(res, 200, { ok: true, ...conversation.stagePoll(owner, completion, playingKey) })
+            return json(res, 200, { ok: true, ...conversation.stagePoll(owner, completion, playingKey,
+              typeof args.profileId === 'string' ? args.profileId : undefined) })
           }
           case 'interaction/replay': {
             if (typeof args.id !== 'string') return json(res, 400, { ok: false, error: '请选择一条回复' })
@@ -274,6 +284,16 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
             if (typeof args.id !== 'string') return json(res, 400, { ok: false, error: '请选择一条弹幕' })
             return json(res, 202, { ok: true, turn: conversation.reply(args.id) })
           }
+          case 'interaction/program/save':
+          case 'interaction/program/remove': {
+            if (typeof args.id !== 'string' || !/^[a-f0-9-]{36}$/i.test(args.id) ||
+                (args.summary !== undefined && typeof args.summary !== 'string')) {
+              return json(res, 400, { ok: false, error: '请选择节目记忆' })
+            }
+            if (path.endsWith('/save')) conversation.saveProgram(args.id, args.summary)
+            else conversation.removeProgram(args.id)
+            return json(res, 200, { ok: true, program: conversation.snapshot().program })
+          }
           case 'interaction/send':
           case 'preview/chat': {
             const legacy = path === 'preview/chat'
@@ -282,7 +302,10 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
             if (text.length === 0 || text.length > MESSAGE_LIMIT) {
               return json(res, 400, { ok: false, error: `请输入 1–${MESSAGE_LIMIT} 字的文字` })
             }
-            const { turn, done } = conversation.send(text, legacy)
+            if (args.depth !== undefined && args.depth !== 'deep' && args.depth !== 'normal') {
+              return json(res, 400, { ok: false, error: '请选择正常回复或深度回复' })
+            }
+            const { turn, done } = conversation.send(text, legacy, args.depth === 'deep')
             if (!legacy) return json(res, 202, { ok: true, id: conversation.snapshot().id, turn })
             const result = await done
             if (!result) return json(res, 409, { ok: false, error: '预览已结束或回复中断，请重新发送' })
@@ -401,10 +424,30 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
               res.removeListener?.('close', disconnect)
             }
           }
-          case 'model/deploy': {
-            // 一键部署本地模型：幂等启动（running 中重复调用原样返回），进度经 GET model/deploy 轮询
-            const deploy = handle.modelDeploy.start()
-            return json(res, deploy.status === 'running' ? 202 : 200, { ok: true, deploy })
+          case 'model/duplexjev/turn': {
+            const decision = await testDuplexJevTurn(args)
+            return json(res, decision.status, decision.result
+              ? { ok: true, result: decision.result } : { ok: false, error: decision.error })
+          }
+          case 'model/deploy':
+          case 'model/switch': {
+            const deployer = handle.modelDeploy
+            const current = deployer.state()
+            const model = args.model === undefined && path === 'model/deploy'
+              ? (current.status === 'running' ? current.model : deployer.activeModel) : args.model
+            if (!deployer.catalog().some(({ id }) => id === model) || typeof model !== 'string') {
+              return json(res, 400, { ok: false, error: '请选择支持的本地模型' })
+            }
+            if (path === 'model/switch') {
+              const error = await deployer.switchModel(model)
+              if (error) return json(res, 409, { ok: false, error })
+              return json(res, 200, modelDeployPayload(deployer))
+            }
+            if (deployer.busy && !(current.status === 'running' && current.model === model)) {
+              return json(res, 409, { ok: false, error: '请等待当前模型操作完成' })
+            }
+            const deploy = deployer.start(model)
+            return json(res, deploy.status === 'running' ? 202 : 200, modelDeployPayload(deployer))
           }
           case 'preview/voice-test': {
             const persona = handle.settings.getPersona()
@@ -522,10 +565,6 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
           case 'settings/cloud':
           case 'settings/data-usage':
           case 'settings/gifts': {
-            if (path === 'settings/persona' && session.liveRunId !== null &&
-              typeof args.profileId === 'string' && args.profileId !== handle.settings.getPersonaProfile().id) {
-              return json(res, 409, { ok: false, error: '下播后可切换主播角色' })
-            }
             if (path === 'settings/platform' && session.liveRunId !== null &&
               ('roomUrl' in args || 'interactionSource' in args)) {
               return json(res, 409, { ok: false, error: '下播后可更换互动来源和直播间' })
@@ -546,7 +585,10 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
                           ? handle.settings.saveDataUsage(args)
                           : handle.settings.saveGifts(args)
               if (section === 'persona') {
-                if (previousProfile !== handle.settings.getPersonaProfile().id) broadcastWindow?.interrupt()
+                if (previousProfile !== handle.settings.getPersonaProfile().id) {
+                  handle.referenceVoiceStream.cancel()
+                  broadcastWindow?.interrupt()
+                }
                 conversation.snapshot()
               }
               return json(res, 200, {
@@ -603,6 +645,16 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
             ) {
               return json(res, 400, { ok: false, error: 'viewerKey/fieldName/value 均必填' })
             }
+            if (args.profileId !== undefined) {
+              if (typeof args.profileId !== 'string' || !BUILTIN_PROFILES.some(({ id }) => id === args.profileId) ||
+                  (args.fieldName !== 'address' && args.fieldName !== 'preference' &&
+                    args.fieldName !== 'inside_joke' && args.fieldName !== 'shared_topic') ||
+                  args.value.trim().length > 40 || !handle.audience.liveMemory.correct(args.viewerKey, args.profileId, args.fieldName, args.value.trim())) {
+                return json(res, 400, { ok: false, error: '该主播记忆无法更正' })
+              }
+              conversation.invalidateViewer(args.viewerKey)
+              return json(res, 200, { ok: true })
+            }
             const field = handle.audience.profiles.viewerCorrection({
               viewerKey: args.viewerKey,
               fieldName: args.fieldName,
@@ -615,6 +667,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
               return json(res, 400, { ok: false, error: 'viewerKey 必填' })
             }
             const requestId = handle.audience.deletion.personalizationOff(args.viewerKey)
+            conversation.invalidateViewer(args.viewerKey)
             return json(res, 200, { ok: true, result: { requestId, detail: '已退出个性化：字段保留但不再用于个性化' } })
           }
           case 'audience/deletion-request': {
@@ -640,6 +693,7 @@ export function createRequestHandler(handle: DafeiyuPluginHandle, broadcastWindo
               verificationPassed: args.verificationPassed === true,
               viewerKey: args.viewerKey,
             })
+            if (receipt) conversation.invalidateViewer(args.viewerKey)
             if (receipt === null) {
               return json(res, 400, {
                 ok: false,

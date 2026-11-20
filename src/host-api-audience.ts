@@ -126,7 +126,8 @@ export function handleAudienceGetRoute(
        FROM privacy_requests WHERE viewer_key = ? ORDER BY created_at DESC LIMIT 10`,
       viewerKey,
     )
-    json(res, 200, { ok: true, summary, fields, interactions, requests })
+    const liveProfile = handle.audience.liveMemory.profile(viewerKey)
+    json(res, 200, { ok: true, summary, fields, interactions, requests, liveProfile })
     return true
   }
 

@@ -57,6 +57,15 @@ test('点头候选受限频约束，说话期间拒绝点头以免与口型冲�
   assert.equal(motion.currentPhase, 'speaking')
 })
 
+test('轻互动抬眉点头，和弹幕共用限频，安全态保持中性', () => {
+  const motion = new DialogueMotion()
+  const reaction = motion.apply('reaction', 1000)
+  assert.ok(reaction.nod > 0 && reaction.brow > 0)
+  assert.equal(motion.apply('danmaku', 1200), reaction)
+  motion.apply('safe', 2000)
+  assert.equal(motion.apply('reaction', 4000), NEUTRAL_TARGETS)
+})
+
 test('打断与紧急停止：回到中性、递增版本、清空在途动作', () => {
   const motion = new DialogueMotion()
   motion.apply('think', 1000)

@@ -35,6 +35,7 @@ import { DanmakuFeed } from './platform/danmaku-feed.ts'
 import { loadPolicyPack } from './platform/policy-pack.ts'
 import { LiveSession } from './live/session.ts'
 import { HostConversation } from './live/conversation.ts'
+import { LiveInteractionMemory } from './live/interaction-memory.ts'
 import { TrainingEntry } from './live/training-entry.ts'
 import { SettingsStore } from './settings/store.ts'
 import { resolveCloudBaseUrl } from './settings/catalogs.ts'
@@ -47,6 +48,8 @@ import { EventDedup } from './perception/dedup.ts'
 import { ResourceArbiter } from './resources/arbiter.ts'
 import { NvidiaSmiProbe, UnknownGpuProbe, type ResourceProbe } from './resources/probe.ts'
 import { GenerationRegistry } from './routing/budget.ts'
+import { CloudUsageLedger } from './routing/cloud-usage.ts'
+import { LocalReadiness } from './routing/local-readiness.ts'
 import { QualityGate } from './routing/quality-gate.ts'
 import { RequestRouter } from './routing/router.ts'
 import { DafeiyuRuntime, SqliteUsageRecorder } from './runtime.ts'
@@ -90,6 +93,8 @@ export interface DafeiyuPluginHandle {
   /** 一键部署本地模型（Ollama 安装/拉取/验证；host-api model/deploy） */
   readonly modelDeploy: LocalModelDeployer
   readonly router: RequestRouter
+  readonly cloudUsage: CloudUsageLedger
+  readonly cloudBudget: () => number | null
   readonly runtime: LearningRuntime
   readonly blackboard: BlackboardStore
   readonly arbiter: ResourceArbiter
@@ -118,6 +123,7 @@ export interface DafeiyuPluginHandle {
     readonly identity: ViewerIdentity
     readonly profiles: ProfileStore
     readonly deletion: DeletionService
+    readonly liveMemory: LiveInteractionMemory
   }
   readonly skills: {
     readonly registry: SkillRegistry
@@ -206,35 +212,30 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   const localBase = process.env.DAFEIYU_OLLAMA_URL ?? 'http://127.0.0.1:11434'
   const cpuBase = process.env.DAFEIYU_OLLAMA_CPU_URL ?? localBase
   const localModel = process.env.DAFEIYU_OLLAMA_MODEL?.trim() || config.models.local.baseModel
-  const localGpu = new OllamaAdapter({
-    baseURL: localBase,
-    model: localModel,
-    route: 'local_gpu',
-    maxOutputTokens: config.models.local.maxOutputTokens,
-  })
-  const localCpu = config.models.local.cpuFallbackEnabled && cpuBase !== localBase
-    ? new OllamaAdapter({
-        baseURL: cpuBase,
-        model: localModel,
-        route: 'local_cpu',
-        maxOutputTokens: config.models.local.maxOutputTokens,
-      })
-    : undefined
-
-  // 一键部署本地模型（向导「模型与云端」）：复用 scripts/setup-ollama.mjs，输出经环形日志缓冲下发面板
   const modelDeploy = new LocalModelDeployer({
     packageDir: packageDir(),
     dataDir,
     ollamaUrl: localBase,
     model: localModel,
+    savedModel: settings.getLocalModel(),
+    saveModel: (model) => settings.saveLocalModel(model),
+  })
+  const localAdapter = (baseURL: string, route: 'local_gpu' | 'local_cpu') => new OllamaAdapter({
+    baseURL,
+    model: modelDeploy.activeModel,
+    route,
+    maxOutputTokens: config.models.local.maxOutputTokens,
   })
 
+  const cloudUsage = new CloudUsageLedger(db)
+  const localReadiness = new LocalReadiness()
   const cloud = new OpenAICompatCloudAdapter({
     // 0.15.1：resolve 每次调用时读取实时云端配置（界面保存即时生效，无需重载插件）
     resolve: () => {
       const live = liveCloudConfig()
       // 端点解析优先级：环境变量 > 界面自定义端点 > 服务商预设（腾讯云混元 / DeepSeek 官方）> 不可路由占位
-      const settingsBaseUrl = settings.getCloud().baseUrl
+      const cloudSettings = settings.getCloud()
+      const settingsBaseUrl = cloudSettings.baseUrl
       const baseURL =
         process.env.DAFEIYU_CLOUD_BASE_URL ??
         (settingsBaseUrl !== ''
@@ -247,9 +248,13 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
         enabled: live.models.cloud.enabled,
         providerConfigured: live.models.cloud.provider !== 'configure_before_acceptance',
         dailyBudgetCny: live.models.cloud.dailyBudgetCny,
+        dailyRequestLimit: cloudSettings.dailyRequestLimit,
+        inputCnyPerMillion: cloudSettings.inputCnyPerMillion,
+        outputCnyPerMillion: cloudSettings.outputCnyPerMillion,
       }
     },
     costTracker: sqliteCostTracker(db),
+    ledger: cloudUsage,
   })
 
   // 4. 路由、治理与资源
@@ -262,8 +267,10 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
     featureGates,
     qualityGate,
     usage,
-    localGpu,
-    ...(localCpu !== undefined ? { localCpu } : {}),
+    get localGpu() { return localAdapter(localBase, 'local_gpu') },
+    get localCpu() { return cpuBase === localBase ? undefined : localAdapter(cpuBase, 'local_cpu') },
+    localAvailable: (adapter) => localReadiness.available(adapter.route === 'local_cpu' ? cpuBase : localBase, adapter.model),
+    localOutcome: (adapter, ok) => localReadiness.outcome(adapter.route === 'local_cpu' ? cpuBase : localBase, adapter.model, ok),
     cloud,
     registry,
   })
@@ -306,6 +313,7 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   const identity = new ViewerIdentity(db)
   const profiles = new ProfileStore(db)
   const deletionService = new DeletionService(db)
+  const liveMemory = new LiveInteractionMemory(db, config.scope.workspace, config.profiles.inactiveProfileRetentionDays)
   const feedbackStore = new FeedbackStore(db)
   const giftLedger = new GiftLedger(db)
   const giftAck = new GiftAckService(db, {
@@ -364,6 +372,22 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
   const conversation = new HostConversation({ session, settings, router, runtime,
     ...(roomId ? { roomId } : {}),
     roomForRun: () => interactionSource() === 'browser' ? settings.getPlatform().roomUrl : roomId,
+    memory: liveMemory,
+    canRecord: () => config.profiles.enabled && !config.killSwitch && settings.getDataUsage().confirmed,
+    resolveViewer: (message) => {
+      if (!message.viewerId) return undefined
+      const input = { platform: config.platform.id, roomScope: message.roomId, platformUserId: message.viewerId,
+        ...(message.nickname ? { nickname: message.nickname } : {}) }
+      const viewerKey = identity.pseudonymize(input)
+      if (config.profiles.enabled && !config.killSwitch && settings.getDataUsage().confirmed && liveMemory.personalizes(viewerKey)) {
+        identity.resolve(input)
+      }
+      return viewerKey
+    },
+    checkModels: () => {
+      localReadiness.available(localBase, modelDeploy.activeModel)
+      if (cpuBase !== localBase && config.models.local.cpuFallbackEnabled) localReadiness.available(cpuBase, modelDeploy.activeModel)
+    },
     recall: async (text, profileId) => {
       const characterId = profileId
       const { memories } = await retrievalService.retrieve({ text, characterId },
@@ -400,13 +424,15 @@ export function createPlugin(ctx: DafeiyuPluginContext = {}): DafeiyuPluginHandl
     avatar,
     referenceVoiceStream,
     modelDeploy,
+    cloudUsage,
+    cloudBudget: () => liveCloudConfig().models.cloud.dailyBudgetCny,
     router,
     runtime,
     blackboard,
     arbiter,
     policy,
     memory,
-    audience: { identity, profiles, deletion: deletionService },
+    audience: { identity, profiles, deletion: deletionService, liveMemory },
     skills: { registry: skillRegistry, executor: skillExecutor },
     feedback: feedbackStore,
     gifts: {

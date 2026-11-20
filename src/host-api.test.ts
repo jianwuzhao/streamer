@@ -44,6 +44,73 @@ async function configureWizardBasics(handler: ReturnType<typeof createRequestHan
   await call(handler, 'POST', '/api/dafeiyu/settings/platform', { operatorLoginConfirmedAt: '2026-11-12T10:00:00Z' })
 }
 
+test('DuplexJev 语轮测试向本机网关发送 WAV 并返回模型、决定和置信度', async (t) => {
+  const gateway = 'http://127.0.0.1:8020'
+  const previous = process.env.DAFEIYU_DUPLEXJEV_URL
+  process.env.DAFEIYU_DUPLEXJEV_URL = gateway
+  t.after(() => {
+    if (previous === undefined) delete process.env.DAFEIYU_DUPLEXJEV_URL
+    else process.env.DAFEIYU_DUPLEXJEV_URL = previous
+  })
+  const audioBase64 = Buffer.from(
+    '524946462600000057415645666d74201000000001000100803e0000007d00000200100064617461020000000000', 'hex',
+  ).toString('base64')
+  const request = t.mock.method(globalThis, 'fetch', async (url: URL, opts: RequestInit) => {
+    assert.equal(String(url), gateway + '/v1/decide')
+    assert.equal(opts.redirect, 'error')
+    assert.deepEqual(JSON.parse(String(opts.body)), {
+      audio_b64: audioBase64, format: 'wav', lang: 'zh',
+      questions: [{ id: 'turn', text: '说话人说完了吗？', options: ['说完了', '还没说完'], lang: 'zh' }],
+    })
+    return Response.json({ model: 'adventists-ai/DuplexJev-4B-Para', answers: { turn: { answer: '说完了', confidence: 0.91 } } })
+  })
+  const handler = createRequestHandler({ live: {} } as ReturnType<typeof createPlugin>)
+  const endpoint = '/api/dafeiyu/model/duplexjev/turn'
+  const reply = await call(handler, 'POST', endpoint, { audioBase64, lang: 'zh' })
+  assert.equal(reply.code, 200)
+  assert.equal(reply.payload.result.model, 'adventists-ai/DuplexJev-4B-Para')
+  assert.equal(reply.payload.result.answer, '说完了')
+  assert.equal(reply.payload.result.confidence, 0.91)
+  assert.equal((await call(handler, 'POST', endpoint, { audioBase64: 'ZmlsZQ==', lang: 'en' })).code, 400)
+  assert.equal((await call(handler, 'POST', endpoint, { audioBase64: 'A'.repeat(2 ** 21), lang: 'en' })).code, 413)
+  process.env.DAFEIYU_DUPLEXJEV_URL = 'https://example.com'
+  assert.equal((await call(handler, 'POST', endpoint, { audioBase64, lang: 'zh' })).code, 503)
+  assert.equal(request.mock.callCount(), 1)
+})
+
+test('本地模型切换后，新推理请求和插件重启都使用已保存的模型', async (t) => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-model-selection-'))
+  const switched = 'qwen3:0.6b'
+  const generated: string[] = []
+  t.mock.method(globalThis, 'fetch', async (url: string, options?: RequestInit) => {
+    if (url.endsWith('/api/tags')) return Response.json({ models: [{ name: switched }] })
+    const { model } = JSON.parse(String(options?.body))
+    if (url.endsWith('/api/show')) return new Response('{}', { status: model === switched ? 200 : 404 })
+    assert.ok(url.endsWith('/api/chat'))
+    generated.push(model)
+    return Response.json({ model, message: { content: '欢迎来直播间，今天一起聊聊天吧。' } })
+  })
+  const first = createPlugin({ dataDir })
+  try {
+    const handler = createRequestHandler(first)
+    assert.equal((await call(handler, 'POST', '/api/dafeiyu/model/switch', { model: switched })).code, 200)
+    await first.router.routePreview({
+      requestId: 'model-switch-preview', sessionId: 'preview', roomId: 'local',
+      text: '你好', type: 'operator', purposeTags: [], occurredAt: new Date().toISOString(),
+    }, '大肥鱼')
+    assert.deepEqual(generated, [switched])
+    const reloaded = createPlugin({ dataDir })
+    try {
+      assert.equal(reloaded.modelDeploy.activeModel, switched)
+    } finally {
+      reloaded.dispose()
+    }
+  } finally {
+    first.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('host-api：状态/四主操作/紧急停止路由；非本插件路径放行；未配置开播给单一原因', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-api-'))
   const plugin = createPlugin({ dataDir, log: () => {} })
@@ -890,6 +957,7 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
   let localStream: ReadableStream<Uint8Array> | undefined
   const answer = '草莓种在向阳处吧。浇水后咱们再去看看。'
   t.mock.method(globalThis, 'fetch', async (url: string, options: RequestInit) => {
+    if (url.endsWith('/api/tags') || url.endsWith('/api/show')) return Response.json({})
     const { messages, stream } = JSON.parse(String(options.body))
     requests.push({ url, messages })
     if (url.endsWith('/api/chat')) {
@@ -948,6 +1016,7 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
     assert.doesNotMatch(cloudMessages[0]!.content, /蓝发女仆|温室东侧/)
     assert.deepEqual(cloudMessages.slice(1), [{ role: 'user', content: '介绍一下自己' }])
 
+    localAvailable = true
     await post('live/start')
     await post('live/operator-confirm')
     const live = await state()
@@ -964,11 +1033,11 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
     assert.equal((await state()).turns[0].status, 'answered', '开播后首条评论无需手动回复')
     const firstViewerRequest = requests[before]!
     assert.equal(requests.length, before + 1)
-    assert.match(firstViewerRequest.url, /\/chat\/completions$/)
+    assert.match(firstViewerRequest.url, /\/api\/chat$/)
     assert.match(firstViewerRequest.messages[0]!.content, /「夏夏」，正在直播间互动/)
     assert.match(firstViewerRequest.messages[0]!.content, /MBTI：ENFP/)
     assert.doesNotMatch(JSON.stringify(firstViewerRequest.messages), /观众小柚|viewer-a|温室东侧/)
-    assert.equal((await state()).turns[0].answer.route, 'cloud')
+    assert.equal((await state()).turns[0].answer.route, 'local_gpu')
 
     const ownerA = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'
     const ownerB = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb'
@@ -1033,14 +1102,13 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
     const next = (await post('interaction/stage', { owner: ownerA })).payload.reply
     assert.ok(next?.key)
     const list = (await call(api, 'GET', '/api/dafeiyu/replies')).payload.replies
-    assert.equal(list[0].model, 'qwen3:4b-actual')
-    assert.equal(list[0].tokensIn, 13)
-    assert.equal(list[0].tokensOut, 5)
-    assert.equal(list[0].tokensTotal, 18)
-    assert.equal((await state()).turns.at(-1).answer.tokensTotal, 18)
+    const localReply = list.find((reply: { model?: string }) => reply.model === 'qwen3:4b-actual')
+    assert.equal(localReply.tokensIn, 13)
+    assert.equal(localReply.tokensOut, 5)
+    assert.equal(localReply.tokensTotal, 18)
+    assert.equal((await state()).turns.at(-1).answer.replyKind, 'preset')
     assert.equal(plugin.live.conversation.allowsStageSpeech(live.id, ownerA, next.key, next.text), true)
-    assert.match(requests.at(-1)!.messages[0]!.content, /礼物事件/)
-    assert.match(requests.at(-1)!.messages.at(-1)!.content, /鲜花 ×3/)
+    assert.equal(requests.at(-1)!.messages.at(-1)!.content, '早上好', '礼物答谢无需模型')
     await post('interaction/stage', { owner: ownerA, completedKey: next.key, completedOk: true })
     await post('interaction/stage', { owner: ownerA, release: true })
     await post('interaction/automatic', { kinds: ['join', 'gift'] })
@@ -1052,10 +1120,10 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
       await settle()
       return (await state()).turns.at(-1)
     }
-    assert.equal((await receive('viewer-b', 'join')).answer.route, 'cloud')
-    assert.match(requests.at(-1)!.messages[0]!.content, /进房事件/)
-    assert.equal((await receive('viewer-b', 'gift')).answer.route, 'fallback', '重复候选由角色专属预设接替')
-    assert.match(requests.at(-1)!.url, /\/api\/chat$/)
+    const beforeEvents = requests.length
+    assert.equal((await receive('viewer-b', 'join')).answer.replyKind, 'preset')
+    assert.equal((await receive('viewer-b', 'gift')).answer.replyKind, 'preset')
+    assert.equal(requests.length, beforeEvents)
 
     cloudAvailable = false
     localAvailable = false
@@ -1065,7 +1133,7 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
     assert.equal(welcomeA.route, 'fallback')
     assert.equal(welcomeB.route, 'fallback')
     assert.notEqual(welcomeA.text, welcomeB.text)
-    assert.match(welcomeA.text + welcomeB.text, /下课|新搭子/)
+    assert.match(welcomeA.text + welcomeB.text, /下课|新搭子|靠窗/)
     assert.match(thanks.text, /谢谢/)
     assert.equal(thanks.route, 'fallback')
 
@@ -1112,6 +1180,179 @@ test('主播互动使用渠道对应的上下文，停播后丢弃旧房间、�
     assert.equal(plugin.live.conversation.receive({ ...event, id: 'm2' }), false)
     assert.equal((await post('preview/role-speech', { profileId: 'xiaxia', text: answer, interactionId: live.id })).code, 409)
     assert.equal(plugin.db.prepare('SELECT COUNT(*) AS n FROM reply_log WHERE question_text = ?').get('正在生成时停播')?.n, 0)
+  } finally {
+    plugin.dispose()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('直播回放：三种模型模式、独立对话、主播交接、画像和实际付费用量', async (t) => { // dsh-skip-func-length
+  const dataDir = mkdtempSync(join(tmpdir(), 'dafeiyu-live-memory-'))
+  for (const [key, value] of Object.entries({
+    DAFEIYU_OLLAMA_URL: 'http://127.0.0.1:1', DAFEIYU_OLLAMA_CPU_URL: 'http://127.0.0.1:1',
+    DAFEIYU_CLOUD_BASE_URL: 'http://127.0.0.1:2/v1', DAFEIYU_CLOUD_API_KEY: 'fake',
+    DAFEIYU_DANMAKU_ROOM_ID: 'memory-room', DAFEIYU_DANMAKU_URL: '',
+  })) {
+    const previous = process.env[key]
+    process.env[key] = value
+    t.after(() => {
+      if (previous === undefined) delete process.env[key]
+      else process.env[key] = previous
+    })
+  }
+
+  const plugin = createPlugin({ dataDir, log: () => {} })
+  const api = createRequestHandler(plugin)
+  const post = (path: string, body?: unknown) => call(api, 'POST', '/api/dafeiyu/' + path, body)
+  const read = async (path: string) => (await call(api, 'GET', '/api/dafeiyu/' + path)).payload
+  const settle = () => new Promise<void>((resolve) => setImmediate(resolve))
+  const cloudSettings = { enabled: true, provider: 'custom', model: 'paid-chat', dailyBudgetCny: 1,
+    dailyRequestLimit: 20, publicChatAllowed: true, inputCnyPerMillion: 2, outputCnyPerMillion: 5 }
+  let localReady = true
+  let cloudReply = '可以，把每日浇水记录下来，再比较光照的影响。'
+  let truncate = false
+  const local: Array<{ role: string; content: string }[]> = []
+  const cloud: typeof local = []
+  t.mock.timers.enable({ apis: ['Date'] })
+  t.mock.method(globalThis, 'fetch', async (input: string | URL, options?: RequestInit) => {
+    const url = String(input)
+    if (url.endsWith('/api/tags') || url.endsWith('/api/show')) {
+      return localReady ? Response.json({}) : new Response(null, { status: 404 })
+    }
+    const messages = JSON.parse(String(options?.body)).messages as typeof local[number]
+    if (url.endsWith('/api/chat')) {
+      local.push(messages)
+      if (!localReady) return new Response(null, { status: 404 })
+      const text = messages.at(-1)?.content.includes('花盆怎么选') ? '草莓种植建议用透水花盆，先确认排水孔。' :
+        '关于这条弹幕，我们可以先看实际情况。第' + local.length + '次聊到这个问题。'
+      return Response.json({ message: { content: text }, prompt_eval_count: 30, eval_count: 12 })
+    }
+    assert.ok(url.endsWith('/chat/completions'), url)
+    cloud.push(messages)
+    return Response.json({ choices: [{ message: { content: truncate ? '' : cloudReply }, finish_reason: truncate ? 'length' : 'stop' }],
+      usage: { prompt_tokens: 40, completion_tokens: 10, total_tokens: 50 } })
+  })
+
+  const role = async (profileId: string) => assert.equal((await post('settings/persona', { profileId })).code, 200)
+  const start = async () => {
+    await post('live/start')
+    await post('live/operator-confirm')
+    await read('interaction')
+    await settle()
+  }
+  const comment = async (id: string, viewerId: string, text: string) => {
+    assert.equal(plugin.live.conversation.receive({ id, viewerId, text, roomId: 'memory-room',
+      nickname: '同名观众', sentAt: new Date().toISOString() }), true)
+    await settle()
+    const state = await read('interaction')
+    const turn = state.turns.at(-1)
+    assert.equal(turn.status, 'answered', text)
+    return turn.answer
+  }
+  const owner = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'
+  const playPending = async () => {
+    for (let count = 0; count < 8; count++) {
+      const response = await post('interaction/stage', { owner })
+      const reply = response.payload.reply
+      if (!reply) break
+      await post('interaction/stage', { owner, completedKey: reply.key, completedOk: true })
+    }
+    await post('interaction/stage', { owner, release: true })
+  }
+
+  try {
+    await configureWizardBasics(api)
+    await role('xiaxia')
+    await post('settings/data-usage', { confirmed: true })
+    await post('settings/cloud', cloudSettings)
+    await start()
+    const initialRun = (await read('interaction')).id
+    const keyA = plugin.audience.identity.pseudonymize({ platform: plugin.config.platform.id,
+      roomScope: 'memory-room', platformUserId: 'A' })
+    assert.equal((await comment('a1', 'A', '以后叫我草莓队长')).replyKind, 'preset')
+    assert.equal((await comment('joke1', 'A', '我们的共同梗是浇水警报')).replyKind, 'preset')
+    assert.equal((await comment('preference1', 'B', '我喜欢冷笑话')).replyKind, 'preset')
+    assert.equal((await comment('a2', 'A', '草莓种植需要多少日照？')).route, 'local_gpu')
+    assert.match(local.at(-1)![0]!.content, /草莓队长/)
+    assert.equal((await comment('b1', 'B', '我想了解音乐')).route, 'local_gpu')
+    assert.doesNotMatch(JSON.stringify(local.at(-1)), /草莓队长|多少日照/)
+    assert.equal((await comment('a3', 'A', '少一些会怎样？')).route, 'local_gpu')
+    assert.match(JSON.stringify(local.at(-1)), /多少日照/)
+    assert.doesNotMatch(JSON.stringify(local.at(-1)), /了解音乐/)
+    assert.equal(cloud.length, 0)
+
+    await post('interaction/send', { text: '草莓种植的花盆怎么选？' })
+    await settle()
+    await playPending()
+    const program = (await read('interaction')).program.current.find((item: { summary: string }) => item.summary.includes('排水孔'))
+    assert.ok(program)
+    assert.equal((await post('interaction/program/save', { id: program.id, summary: program.summary })).code, 200)
+    await role('guyu')
+    assert.notEqual((await read('interaction')).id, initialRun)
+    const stale = await post('interaction/stage', { owner, profileId: 'xiaxia' })
+    assert.equal(stale.payload.owner, false)
+    assert.equal((await comment('a4', 'A', '草莓种植的话题继续聊？')).route, 'local_gpu')
+    assert.match(JSON.stringify(local.at(-1)), /排水孔|上一位主播/)
+    assert.doesNotMatch(JSON.stringify(local.at(-1)), /草莓队长/)
+    assert.doesNotMatch((await comment('joke2', 'A', '还记得我们的梗吗？')).text, /浇水警报/)
+    await playPending()
+    await role('xiaxia')
+    assert.match((await comment('joke3', 'A', '还记得我们的梗吗？')).text, /浇水警报/)
+    await post('interaction/send', { text: '请深入讲讲草莓种植', depth: 'deep' })
+    await settle()
+    assert.equal((await read('interaction')).turns.at(-1).answer.routingReason, 'deep')
+    assert.match(JSON.stringify(cloud.at(-1)), /排水孔/)
+    assert.doesNotMatch(JSON.stringify(cloud.at(-1)), /草莓队长|同名观众/)
+
+    await post('settings/cloud', { ...cloudSettings, enabled: false })
+    assert.equal((await comment('a5', 'A', '草莓应该怎么浇水？')).route, 'local_gpu')
+    assert.match(local.at(-1)![0]!.content, /草莓队长/)
+    const profile = await read('audience/profile?viewer=' + keyA)
+    assert.equal(profile.liveProfile.sessions, 1)
+    assert.ok(profile.liveProfile.topics.some((item: { topic: string }) => item.topic === '草莓种植'))
+    assert.deepEqual(profile.liveProfile.relationships.filter((item: { kind: string }) => item.kind === 'address')
+      .map((item: { profileId: string; value: string }) => [item.profileId, item.value]), [['xiaxia', '草莓队长']])
+
+    localReady = false
+    await post('live/stop')
+    t.mock.timers.tick(16_000)
+    await post('settings/cloud', cloudSettings)
+    await start()
+    assert.equal((await read('interaction')).program.current.length, 0)
+    assert.ok((await read('interaction')).program.saved.some((item: { id: string }) => item.id === program.id))
+    const localBefore = local.length
+    const onlyCloud = await comment('a6', 'A', '同名观众想接着聊草莓花盆')
+    assert.equal(onlyCloud.routingReason, 'cloud_only')
+    assert.match(onlyCloud.text, /^草莓队长，/)
+    assert.doesNotMatch(JSON.stringify(cloud.at(-1)), /草莓队长|同名观众/)
+    cloudReply = '浇水之前，可以先检查表土有没有干。'
+    assert.equal((await comment('a7', 'A', '那浇水呢？')).route, 'cloud')
+    assert.match(JSON.stringify(cloud.at(-1)), /想接着聊草莓花盆/)
+    assert.equal(local.length, localBefore)
+    assert.equal((await comment('b2', 'B', '刚才那个呢？')).replyKind, 'clarification')
+    assert.equal(cloud.length, 3)
+    assert.equal((await comment('a8', 'A', '只告诉你别说出去，我住在别处')).route, 'fallback')
+    truncate = true
+    assert.equal((await comment('a9', 'A', '请分析一下排水')).route, 'fallback')
+    assert.equal(cloud.length, 4, '单轮截断只发送一次请求')
+    await post('settings/cloud', { ...cloudSettings, dailyRequestLimit: 4 })
+    assert.equal((await comment('a10', 'A', '再聊一会儿？')).route, 'fallback')
+    assert.equal(cloud.length, 4)
+    const costs = await read('costs')
+    assert.equal(costs.cloudUsage.requests, 4)
+    assert.equal(costs.cloudUsage.tokens, 200)
+    assert.ok(Math.abs(costs.cloudUsage.estimatedCostCny - 0.00052) < 1e-9)
+
+    assert.equal((await post('audience/correction', { viewerKey: keyA, profileId: 'xiaxia', fieldName: 'address', value: '果园搭子' })).code, 200)
+    assert.equal(plugin.audience.liveMemory.relationship(keyA, 'xiaxia').find(({ kind }) => kind === 'address')?.value, '果园搭子')
+    await post('audience/personalization-off', { viewerKey: keyA })
+    await comment('a11', 'A', '以后叫我新队长')
+    assert.equal((await read('audience/profile?viewer=' + keyA)).liveProfile.relationships.length, 0)
+    const deletion = await post('audience/deletion-request', { viewerKey: keyA })
+    await post('audience/deletion-execute', { viewerKey: keyA, requestId: deletion.payload.result.requestId, verificationPassed: true })
+    assert.equal(plugin.db.prepare('SELECT COUNT(*) AS n FROM live_viewer_interactions WHERE viewer_key = ?').get(keyA)?.n, 0)
+    await post('interaction/program/remove', { id: program.id })
+    assert.equal((await read('interaction')).program.saved.length, 0)
   } finally {
     plugin.dispose()
     rmSync(dataDir, { recursive: true, force: true })

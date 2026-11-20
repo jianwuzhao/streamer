@@ -28,6 +28,7 @@ export type DialoguePhase = (typeof DIALOGUE_PHASES)[number]
 /** 触发动作的输入事件。 */
 export const DIALOGUE_EVENTS = [
   'danmaku',        // 收到弹幕：短暂把视线移到互动区
+  'reaction',       // 点赞等轻互动：抬眉、轻点头
   'input-start',    // 观众开始语音输入：点头候选
   'input-pause',    // 输入停顿：点头候选（与 input-start 共享限频）
   'think',          // 等待回复：逐步转入思考
@@ -147,6 +148,8 @@ export class DialogueMotion {
     switch (event) {
       case 'danmaku':
         return this.interact(now, 0.42, -0.16, 0.09)
+      case 'reaction':
+        return this.interact(now, 0.15, 0.18, 0.06, true)
       case 'input-start':
       case 'input-pause':
         return this.nodCandidate(now, 0.72, -0.1)
@@ -180,7 +183,7 @@ export class DialogueMotion {
   }
 
   /** 收到弹幕：视线短暂移向互动区（左右交替），合并窗口内只算一次。 */
-  private interact(now: number, nod: number, brow: number, tilt: number): MotionTargets {
+  private interact(now: number, nod: number, brow: number, tilt: number, reaction = false): MotionTargets {
     if (now - this.lastInteractAt < this.mergeWindowMs) {
       this.coalesced += 1
       return this.current
@@ -203,7 +206,7 @@ export class DialogueMotion {
       gazeX: this.interactSide * 0.34 * scale,
       gazeY: -0.12 * scale,
       sway: this.interactSide * 0.08 * scale,
-      nod: Math.min(this.current.nod, nod * scale),
+      nod: reaction ? nod * scale : Math.min(this.current.nod, nod * scale),
       brow: brow * scale,
       tilt: this.interactSide * tilt * scale,
       blendMs: 420,

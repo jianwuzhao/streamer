@@ -4,7 +4,8 @@
  * 命中路径自行写响应并返回 true；未命中返回 false 交回主入口。
  */
 import type { DafeiyuPluginHandle } from './index.ts'
-import { probeOllamaInstallState, type OllamaInstallState } from './model-deploy.ts'
+import type { DeploySnapshot, LocalModelDeployer } from './model-deploy.ts'
+import duplexjevModels from '../config/duplexjev-models.json' with { type: 'json' }
 import { runSelfCheck } from './installer/selfcheck.ts'
 import { exportDiagnosticReport } from './installer/diagnostics.ts'
 import { BUILTIN_AVATARS, BUILTIN_VOICES, BUILTIN_PROFILES, CLOUD_PROVIDER_PRESETS, resolveCloudBaseUrl } from './settings/catalogs.ts'
@@ -106,43 +107,55 @@ interface LatestTrainingRunRow {
  * 探测只在后台刷新：GET 路由同步读缓存——未过期直接返回，过期返回旧值并异步刷新，
  * 面板请求永不被本机网络探测延迟（宿主连接瀑布可能对慢响应超时）。
  */
-const installProbeCache = new WeakMap<
-  DafeiyuPluginHandle,
-  { state: OllamaInstallState | null; expires: number; refreshing: boolean }
->()
+interface InstallProbeEntry {
+  deploy: DeploySnapshot
+  inventory: Awaited<ReturnType<LocalModelDeployer['installedModels']>> | null
+  expires: number
+  refreshing: boolean
+}
+const installProbeCache = new WeakMap<LocalModelDeployer, InstallProbeEntry>()
 
-function refreshInstallProbe(handle: DafeiyuPluginHandle): void {
-  const entry = installProbeCache.get(handle)
-  if (entry?.refreshing === true) return
-  installProbeCache.set(handle, { state: entry?.state ?? null, expires: entry?.expires ?? 0, refreshing: true })
-  probeOllamaInstallState({
-    ollamaUrl: process.env.DAFEIYU_OLLAMA_URL ?? 'http://127.0.0.1:11434',
-    model: handle.modelDeploy.state().model,
-    timeoutMs: 1_200,
-  })
-    .then((state) => {
-      installProbeCache.set(handle, { state, expires: Date.now() + 10_000, refreshing: false })
-    })
-    .catch(() => {
-      const current = installProbeCache.get(handle)
-      installProbeCache.set(handle, {
-        state: current?.state ?? null,
-        expires: Date.now() + 10_000,
-        refreshing: false,
-      })
-    })
+function normalizeOllamaName(model: string): string {
+  const name = model.toLowerCase().replace(/^library\//, '')
+  return name.split('/').at(-1)?.includes(':') ? name : `${name}:latest`
 }
 
-/** 同步取安装探测快照：无缓存/过期时返回现值并触发后台刷新（首次为 null，下轮轮询补齐）。 */
-function ollamaInstallSnapshot(handle: DafeiyuPluginHandle, deployStatus: string): OllamaInstallState | null {
-  if (deployStatus === 'running') return null
-  const entry = installProbeCache.get(handle)
-  if (entry === undefined) {
-    refreshInstallProbe(handle)
-    return null
+export function modelDeployPayload(deployer: LocalModelDeployer) {
+  const deploy = deployer.state()
+  let entry = installProbeCache.get(deployer)
+  if (deploy.status !== 'running') {
+    if (entry?.deploy !== deploy) {
+      entry = { deploy, inventory: null, expires: 0, refreshing: false }
+      installProbeCache.set(deployer, entry)
+    }
+    if (!entry.refreshing && entry.expires <= Date.now()) {
+      const pending = entry
+      pending.refreshing = true
+      void deployer.installedModels().then((inventory) => {
+        pending.inventory = inventory
+        pending.expires = Date.now() + 10_000
+        pending.refreshing = false
+      })
+    }
   }
-  if (entry.expires <= Date.now()) refreshInstallProbe(handle)
-  return entry.state
+  const inventory = entry?.inventory ?? null
+  const installed = new Set(inventory?.models.map(normalizeOllamaName))
+  const modelInstalled = installed.has(normalizeOllamaName(deploy.model))
+  return {
+    ok: true,
+    deploy,
+    activeModel: deployer.activeModel,
+    audioModels: duplexjevModels,
+    reachable: inventory?.reachable ?? null,
+    models: deployer.catalog().map((model) => ({
+      ...model,
+      installed: inventory?.reachable ? installed.has(normalizeOllamaName(model.id)) : null,
+    })),
+    install: inventory && deploy.status !== 'running' ? {
+      checkedAt: inventory.checkedAt, reachable: inventory.reachable,
+      model: deploy.model, ollamaUrl: deploy.ollamaUrl, modelInstalled, ready: modelInstalled,
+    } : null,
+  }
 }
 
 export async function handleDataGetRoute(
@@ -194,11 +207,7 @@ export async function handleDataGetRoute(
     // 一键部署本地模型：状态轮询（no-store，running 期间前端 2s 轮询）；
     // install = Ollama 服务/目标模型探测（未安装提示数据源；running 期间为 null）
     res.setHeader('cache-control', 'no-store')
-    json(res, 200, {
-      ok: true,
-      deploy: handle.modelDeploy.state(),
-      install: ollamaInstallSnapshot(handle, handle.modelDeploy.state().status),
-    })
+    json(res, 200, modelDeployPayload(handle.modelDeploy))
     return true
   }
 
@@ -459,12 +468,15 @@ export async function handleDataGetRoute(
   }
 
   if (path === 'costs') {
+    const cloudUsage = handle.cloudUsage.today()
     json(res, 200, {
       ok: true,
-      todayCostCny: todayCostCny(handle.db),
+      todayCostCny: todayCostCny(handle.db) + (cloudUsage.estimatedCostCny ?? 0),
+      cloudUsage,
       cloudEnabled: handle.featureGates.cloudCallsEnabled,
       disabledReasons: handle.featureGates.cloudDisabledReasons,
-      dailyBudgetCny: handle.config.models.cloud.dailyBudgetCny,
+      dailyBudgetCny: handle.cloudBudget(),
+      dailyRequestLimit: handle.settings.getCloud().dailyRequestLimit,
       note: '费用以服务商账单为准；预算未配置时付费调用被禁用',
     })
     return true

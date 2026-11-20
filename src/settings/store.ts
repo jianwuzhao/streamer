@@ -111,8 +111,14 @@ export const CloudSettings = z.object({
     .default(''),
   model: z.string().trim().max(128, '模型名不超过 128 字').default(''),
   dailyBudgetCny: z.number().positive('每日费用上限须为正数').nullable().default(null),
+  publicChatAllowed: z.boolean().default(false),
+  dailyRequestLimit: z.number().int().min(1).max(100_000).default(100),
+  inputCnyPerMillion: z.number().nonnegative().nullable().default(null),
+  outputCnyPerMillion: z.number().nonnegative().nullable().default(null),
 })
 export type CloudSettingsType = z.infer<typeof CloudSettings>
+
+const LocalModelSettings = z.object({ model: z.string().trim().default('') })
 
 /**
  * 云端密钥（界面维护，0.15）：存 cloud_secret 节。
@@ -157,7 +163,7 @@ const SettingsBackup = z.object({
   sections: PortableSections,
 }).strict()
 
-export type SettingsSectionKey = 'persona' | 'platform' | 'scene' | 'cloud' | 'cloud_secret' | 'data_usage' | 'gifts'
+export type SettingsSectionKey = 'persona' | 'platform' | 'scene' | 'cloud' | 'cloud_secret' | 'data_usage' | 'gifts' | 'local_model'
 
 /** 密钥掩码（getCloudKeyStatus 专用）：首 3 + •••• + 尾 4；过短全部打码，永不回明文。 */
 function maskSecret(secret: string): string {
@@ -266,6 +272,7 @@ export class SettingsStore {
       backup.sections.platform.operatorLoginConfirmedAt = null
       backup.sections.dataUsage.confirmed = false
       backup.sections.cloud.enabled = false
+      backup.sections.cloud.publicChatAllowed = false
       return backup
     } catch (err) {
       throw new SettingsValidationError('配置备份校验失败，请使用本插件导出的 v1 JSON 文件', zodIssues(err as z.ZodError))
@@ -317,6 +324,14 @@ export class SettingsStore {
 
   getCloud(): CloudSettingsType {
     return this.readSection('cloud', CloudSettings)
+  }
+
+  getLocalModel(): string {
+    return this.readSection('local_model', LocalModelSettings).model
+  }
+
+  saveLocalModel(model: string): void {
+    this.saveSection('local_model', LocalModelSettings, { model })
   }
 
   getDataUsage(): DataUsageSettingsType {
