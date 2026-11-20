@@ -3,10 +3,11 @@ import { createHash } from 'node:crypto'
 import { createReadStream, closeSync, openSync, writeSync } from 'node:fs'
 import { access, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { request } from 'node:http'
-import { delimiter, join, resolve } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { setTimeout as wait } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
+import localModels from '../config/local-models.json' with { type: 'json' }
 
 // Official release assets and SHA-256 values, pinned together.
 const release = 'v0.40.16'
@@ -23,11 +24,15 @@ const model = process.env.DAFEIYU_OLLAMA_MODEL?.trim() || 'qwen3:4b'
 const root = join(resolve(process.env.DAFEIYU_DATA_DIR || fileURLToPath(new URL('../data', import.meta.url))), 'ollama')
 const windows = process.platform === 'win32'
 
-// 模型权重来源（0.15）：modelscope = 国内镜像直连（默认，不使用代理）；registry = Ollama 官方仓库（通常需要代理）。
-const source = (process.env.DAFEIYU_OLLAMA_SOURCE || 'modelscope').trim().toLowerCase()
+// 有镜像映射时直连 ModelScope，其余模型由 Ollama 拉取官方仓库的标签。
+const repo = process.env.DAFEIYU_MODELSCOPE_REPO?.trim()
+const file = process.env.DAFEIYU_MODELSCOPE_FILE?.trim()
+const mirror = repo && file ? { repo, file } : localModels.find((entry) => entry.id === model)?.mirror
+const useRegistry = process.env.DAFEIYU_OLLAMA_SOURCE?.trim().toLowerCase() === 'registry' || !mirror
 const modelscopeBase = (process.env.DAFEIYU_MODELSCOPE_BASE || 'https://modelscope.cn').replace(/\/+$/, '')
-const modelscopeCatalog = {
-  'qwen3:4b': { repo: 'Qwen/Qwen3-4B-GGUF', file: 'Qwen3-4B-Q4_K_M.gguf' },
+
+function windowsTool(...segments) {
+  return process.env.SystemRoot ? join(process.env.SystemRoot, 'System32', ...segments) : segments.at(-1)
 }
 
 function macProxy() {
@@ -46,7 +51,10 @@ function macProxy() {
 function environment() {
   const selected = process.env.DAFEIYU_OLLAMA_PROXY ??
     (process.env.HTTPS_PROXY || process.env.https_proxy || process.env.ALL_PROXY || process.env.all_proxy || macProxy())
-  const env = { ...process.env }
+  // Windows 环境变量不区分大小写，规范化后再覆盖代理和服务的启动参数。
+  const env = windows
+    ? Object.fromEntries(Object.entries(process.env).map(([key, value]) => [key.toUpperCase(), value]))
+    : { ...process.env }
   for (const key of ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy', 'NO_PROXY']) delete env[key]
   if (selected && selected !== 'direct') {
     const proxy = URL.canParse(selected) ? new URL(selected) : null
@@ -61,7 +69,7 @@ function environment() {
 
 function run(bin, args, env) {
   return new Promise((resolveRun, reject) => {
-    const child = spawn(bin, args, { env, stdio: 'inherit' })
+    const child = spawn(bin, args, { env, stdio: 'inherit', windowsHide: true })
     child.once('error', reject)
     child.once('exit', (code) => code === 0 ? resolveRun() : reject(new Error(`${bin} 执行失败（${code ?? '已中断'}）`)))
   })
@@ -98,9 +106,9 @@ async function sha256File(path) {
 /** curl 下载（走 env 代理）：--progress-bar 的 \r 进度收敛为 ≥5% 一条的日志行。 */
 function runCurl(file, url, env) {
   return new Promise((resolveRun, reject) => {
-    const child = spawn(windows ? 'curl.exe' : 'curl', ['-q', '--fail', '--location', '--retry', '3',
+    const child = spawn(windows ? windowsTool('curl.exe') : 'curl', ['-q', '--fail', '--location', '--retry', '3',
       '--connect-timeout', '15', '--proto', '=https', '--proto-redir', '=https',
-      '--progress-bar', '--output', file, url], { env, stdio: ['ignore', 'ignore', 'pipe'] })
+      '--progress-bar', '--output', file, url], { env, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true })
     let buffered = ''
     let lastPct = -1
     child.stderr.on('data', (chunk) => {
@@ -231,14 +239,7 @@ async function createFromGguf(base, file, digest) {
 }
 
 /** ModelScope 直连导入：下载/校验 GGUF → 注册 blob → create 命名目标模型 → 清理原始权重。 */
-async function importModelscope(base) {
-  const repo = process.env.DAFEIYU_MODELSCOPE_REPO?.trim()
-  const file = process.env.DAFEIYU_MODELSCOPE_FILE?.trim()
-  const preset = modelscopeCatalog[model]
-  if (!(repo && file) && !preset) {
-    throw new Error(`模型 ${model} 未内置 ModelScope 映射：设 DAFEIYU_MODELSCOPE_REPO 与 DAFEIYU_MODELSCOPE_FILE 指定 GGUF，或 DAFEIYU_OLLAMA_SOURCE=registry 走官方仓库（需代理）。`)
-  }
-  const target = repo && file ? { repo, file } : preset
+async function importModelscope(base, target) {
   const dest = join(root, 'models', target.file)
   const url = `${modelscopeBase}/models/${target.repo}/resolve/master/${target.file}`
   let digest = ''
@@ -261,6 +262,19 @@ async function importModelscope(base) {
   await rm(`${dest}.sha256`, { force: true })
   console.log('已导入模型并清理原始权重文件')
 }
+
+async function extractArchive(file, payload, env) {
+  if (!windows) return run('tar', ['-xf', file, '-C', payload], env)
+  try {
+    await run(windowsTool('tar.exe'), ['-xf', file, '-C', payload], env)
+  } catch {
+    await run(windowsTool('WindowsPowerShell', 'v1.0', 'powershell.exe'), [
+      '-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
+      '$ErrorActionPreference = "Stop"; Expand-Archive -LiteralPath $env:DAFEIYU_ZIP_PATH -DestinationPath $env:DAFEIYU_ZIP_DEST -Force',
+    ], { ...env, DAFEIYU_ZIP_PATH: file, DAFEIYU_ZIP_DEST: payload })
+  }
+}
+
 async function install(env) {
   const executable = windows ? 'ollama.exe' : process.platform === 'linux' ? 'bin/ollama' : 'ollama'
   const target = join(root, release)
@@ -268,11 +282,14 @@ async function install(env) {
   const name = windows ? 'ollama.exe' : 'ollama'
   const bin = await installed([
     join(target, executable),
-    ...(env.PATH || '').split(delimiter).filter(Boolean).map((entry) => join(entry, name)),
+    ...(env.PATH || '').split(delimiter).filter(Boolean).map((entry) => join(windows ? entry.replace(/^"|"$/g, '') : entry, name)),
     ...standardApp,
     ...(windows && env.LOCALAPPDATA ? [join(env.LOCALAPPDATA, 'Programs', 'Ollama', name)] : []),
   ])
-  if (bin) return bin
+  if (bin) {
+    console.log(`复用已安装的 Ollama：${bin}`)
+    return bin
+  }
 
   const asset = archives[`${process.platform}-${process.arch}`]
   if (!asset) throw new Error('当前系统架构没有预置安装包，请安装 Ollama 后重试。')
@@ -288,19 +305,18 @@ async function install(env) {
         throw new Error('安装包下载失败。请检查代理，或用 DAFEIYU_OLLAMA_ARCHIVE 指向官方安装包。')
       }
     }
-    const hash = createHash('sha256')
-    for await (const chunk of createReadStream(file)) hash.update(chunk)
-    if (hash.digest('hex') !== expected) throw new Error('安装包 SHA-256 与官方发布值不符。')
+    if (await sha256File(file) !== expected) throw new Error('安装包 SHA-256 与官方发布值不符。')
     const payload = join(staging, 'runtime')
     await mkdir(payload)
-    await run(windows ? 'tar.exe' : 'tar', ['-xf', resolve(file), '-C', payload], env)
+    console.log('正在解压已校验的 Ollama 安装包…')
+    await extractArchive(resolve(file), payload, env)
     await access(join(payload, executable))
     await rename(payload, target).catch(async (error) => {
       if (!await installed([join(target, executable)])) throw error
     })
     return join(target, executable)
   } finally {
-    await rm(staging, { recursive: true, force: true })
+    await rm(staging, { recursive: true, force: true, maxRetries: 3 })
   }
 }
 
@@ -363,7 +379,6 @@ async function main() {
       base.username || base.password || base.pathname !== '/' || base.search || base.hash) {
     throw new Error('一键配置使用本机 HTTP 端点，例如 http://127.0.0.1:11434。')
   }
-  if (source !== 'registry') console.log(`模型来源：ModelScope 国内镜像（${modelscopeBase}，直连下载，无需代理）`)
   const env = environment()
   const existing = await reachable(base)
   if (!existing) {
@@ -372,6 +387,7 @@ async function main() {
     const logfile = join(root, 'serve.log')
     const log = openSync(logfile, 'a', 0o600)
     const child = spawn(bin, ['serve'], {
+      cwd: dirname(bin),
       env: { ...env, OLLAMA_HOST: `${base.hostname}:${base.port || '80'}`, OLLAMA_NO_CLOUD: '1' },
       detached: true, windowsHide: true, stdio: ['ignore', log, log],
     })
@@ -390,7 +406,8 @@ async function main() {
   }
   const show = await json(base, '/api/show', { model })
   if (show.status === 404) {
-    if (source === 'registry') {
+    if (useRegistry) {
+      console.log(/^hf\.co\//i.test(model) ? '模型来源：Hugging Face GGUF（由 Ollama 拉取）' : '模型来源：Ollama 官方仓库')
       if (existing && env.HTTPS_PROXY) console.log('正在复用已运行的 Ollama。模型下载使用该服务启动时的代理设置。')
       try {
         await pull(base)
@@ -401,7 +418,8 @@ async function main() {
         throw error
       }
     } else {
-      await importModelscope(base)
+      console.log(`模型来源：ModelScope 国内镜像（${modelscopeBase}，直连下载）`)
+      await importModelscope(base, mirror)
     }
   } else if (show.status !== 200) {
     throw new Error('无法查询 Ollama 模型，请检查服务版本和日志。')
@@ -410,7 +428,8 @@ async function main() {
   }
   console.log('正在验证模型能否生成回复…')
   const result = await json(base, '/api/chat', {
-    model, messages: [{ role: 'user', content: '请用中文打个简短的招呼。' }],
+    model, messages: [{ role: 'user', content: /^hf\.co\/maureesewilliams\/baby-boon:/i.test(model)
+      ? 'Say hello in one short sentence.' : '请用中文打个简短的招呼。' }],
     think: false, stream: false, options: { num_predict: 24 },
   }, 180_000)
   if (result.status !== 200 || !result.body.message?.content?.trim()) {

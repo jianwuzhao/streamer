@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { test } from 'node:test'
-import type { ChildProcess, SpawnOptions } from 'node:child_process'
+import { execFile, type ChildProcess, type SpawnOptions } from 'node:child_process'
+import { createServer } from 'node:http'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { createRequestHandler } from './host-api.ts'
 import type { DafeiyuPluginHandle } from './index.ts'
 import { LocalModelDeployer, probeOllamaInstallState, type SpawnFn } from './model-deploy.ts'
@@ -18,7 +21,12 @@ class FakeChild extends EventEmitter {
   }
 }
 
-function makeDeployer(overrides: { packageDir?: string; noScript?: boolean } = {}) {
+function makeDeployer(overrides: {
+  packageDir?: string
+  noScript?: boolean
+  fetchImpl?: typeof fetch
+  saveModel?: (model: string) => void
+} = {}) {
   const packageDir = overrides.packageDir ?? mkdtempSync(join(tmpdir(), 'dafeiyu-deploy-'))
   if (overrides.noScript !== true) {
     mkdirSync(join(packageDir, 'scripts'), { recursive: true })
@@ -39,6 +47,8 @@ function makeDeployer(overrides: { packageDir?: string; noScript?: boolean } = {
     model: 'qwen3:4b',
     execPath: '/usr/bin/node',
     spawnFn,
+    ...(overrides.fetchImpl ? { fetchImpl: overrides.fetchImpl } : {}),
+    ...(overrides.saveModel ? { saveModel: overrides.saveModel } : {}),
     now: () => '2026-11-16T10:00:00.000Z',
   })
   return { deployer, children, spawned, cleanup: () => rmSync(packageDir, { recursive: true, force: true }) }
@@ -94,7 +104,7 @@ test('model-deploy：idle 起步；start 进入 running 并注入运行环境', 
   }
 })
 
-test('model-deploy：stdout/stderr 跨 chunk 拼行；exit 0 → ok', async () => {
+test('model-deploy：stdout/stderr 跨 chunk 拼行；退出并收齐日志 → ok', async () => {
   const { deployer, children, cleanup } = makeDeployer()
   try {
     deployer.start()
@@ -102,7 +112,7 @@ test('model-deploy：stdout/stderr 跨 chunk 拼行；exit 0 → ok', async () =
     child.stdout.emit('data', Buffer.from('下载 Ollama v0.40.16（直'))
     child.stdout.emit('data', Buffer.from('连）\n模型下载：pulling 40%\n'))
     child.stderr.emit('data', Buffer.from('warn: 复用已运行实例\n'))
-    child.emit('exit', 0)
+    child.emit('close', 0)
     const snap = deployer.state()
     assert.equal(snap.status, 'ok')
     assert.equal(snap.error, null)
@@ -117,7 +127,7 @@ test('model-deploy：exit 非 0 → failed 带退出码；error 事件同样 fai
   const { deployer, children, spawned, cleanup } = makeDeployer()
   try {
     deployer.start()
-    children[0]!.emit('exit', 3)
+    children[0]!.emit('close', 3)
     const failed = deployer.state()
     assert.equal(failed.status, 'failed')
     assert.equal(failed.error, '部署进程退出码 3')
@@ -147,7 +157,7 @@ test('model-deploy：CR 刷新的进度条输出独立成行（curl --progress-b
     const child = children[0]!
     child.stderr.emit('data', Buffer.from('###  10%\r'))
     child.stderr.emit('data', Buffer.from('###  40%\r###  80%\r\n模型导入：parsing GGUF\n'))
-    child.emit('exit', 0)
+    child.emit('close', 0)
     const snap = deployer.state()
     assert.equal(snap.status, 'ok')
     assert.deepEqual(snap.log, ['###  10%', '###  40%', '###  80%', '模型导入：parsing GGUF'])
@@ -232,10 +242,128 @@ test('host-api：GET model/deploy 轮询状态；POST 幂等启动（running 中
     assert.equal(again.payload.deploy.status, 'running')
     assert.equal(spawned.length, 1)
 
-    children[0]!.emit('exit', 0)
+    children[0]!.emit('close', 0)
     const done = await call('GET', '/api/dafeiyu/model/deploy')
     assert.equal(done.payload.deploy.status, 'ok')
   } finally {
     cleanup()
   }
+})
+
+test('host-api：切换已安装模型不启动部署，部署成功后才保存新模型', async () => {
+  const saved: string[] = []
+  const installed = ['qwen3:4b', 'qwen3:0.6b']
+  const { deployer, children, spawned, cleanup } = makeDeployer({
+    saveModel: (model) => saved.push(model),
+    fetchImpl: async (input, init) => String(input).endsWith('/api/tags')
+      ? Response.json({ models: installed.map((name) => ({ name })) })
+      : new Response('{}', { status: installed.includes(JSON.parse(String(init?.body)).model) ? 200 : 404 }),
+  })
+  try {
+    const handler = createRequestHandler({ modelDeploy: deployer, live: {} } as DafeiyuPluginHandle)
+    const call = async (path: string, model?: string) => {
+      const res = makeRes()
+      await handler(makeReq(model ? 'POST' : 'GET', '/api/dafeiyu/model/' + path,
+        model ? JSON.stringify({ model }) : ''), res, async () => {})
+      return { status: res.statusCode, body: JSON.parse(res.body) }
+    }
+    await call('deploy')
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    const inventory = await call('deploy')
+    assert.equal(inventory.body.models.find((option: { id: string }) => option.id === 'qwen3:0.6b').installed, true)
+    const { review, ...deepseek } = inventory.body.models.find((option: { id: string }) => option.id === 'deepseek-r1:1.5b')
+    assert.equal(typeof review.performance, 'string')
+    assert.deepEqual(deepseek, {
+      id: 'deepseek-r1:1.5b', label: 'DeepSeek-R1 1.5B', family: 'DeepSeek', source: 'registry', installed: false,
+    })
+    const babyBoon = inventory.body.models.find((option: { family: string }) => option.family === 'Baby Boon')
+    assert.equal(babyBoon.source, 'huggingface')
+    assert.equal(inventory.body.models.filter((option: { family: string }) => option.family === 'Lythri').length, 2)
+    assert.equal(inventory.body.audioModels.length, 4)
+    assert.equal((await call('deploy', inventory.body.audioModels[0].id)).status, 400)
+    assert.equal((await call('switch', 'qwen3:8b')).status, 409)
+    assert.equal((await call('deploy', 'unknown')).status, 400)
+    assert.equal((await call('switch', 'qwen3:0.6b')).body.activeModel, 'qwen3:0.6b')
+    assert.equal(spawned.length, 0)
+
+    const started = await call('deploy', deepseek.id)
+    assert.equal(started.status, 202)
+    assert.equal(started.body.deploy.model, deepseek.id)
+    assert.equal(started.body.activeModel, 'qwen3:0.6b')
+    assert.equal(spawned[0]!.options.env?.DAFEIYU_OLLAMA_MODEL, deepseek.id)
+    assert.equal((await call('deploy', 'qwen3:8b')).status, 409)
+    assert.equal((await call('switch', 'qwen3:4b')).status, 409)
+
+    children[0]!.emit('close', 1)
+    assert.equal((await call('deploy')).body.activeModel, 'qwen3:0.6b')
+    await call('deploy', deepseek.id)
+    installed.push(deepseek.id)
+    children[1]!.emit('close', 0)
+    assert.equal((await call('deploy')).body.activeModel, deepseek.id)
+    assert.deepEqual(saved, ['qwen3:0.6b', deepseek.id])
+  } finally {
+    cleanup()
+  }
+})
+
+test('部署脚本从 Ollama 与 Hugging Face 拉取所选模型，验证后重复运行会复用', async (t) => {
+  const installed = new Set<string>()
+  const paths: string[] = []
+  const requestedModels: string[] = []
+  const verificationPrompts: string[] = []
+  const server = createServer(async (req, res) => {
+    paths.push(req.url ?? '')
+    if (req.url === '/api/version') return res.end(JSON.stringify({ version: '0.40.16' }))
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk as Buffer)
+    const { model, messages } = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    requestedModels.push(model)
+    if (req.url === '/api/show') {
+      res.statusCode = installed.has(model) ? 200 : 404
+      return res.end('{}')
+    }
+    if (req.url === '/api/pull') {
+      installed.add(model)
+      return res.end('{"status":"pulling","total":100,"completed":50}\n{"status":"success"}\n')
+    }
+    if (req.url === '/api/chat') {
+      verificationPrompts.push(messages[0].content)
+      return res.end(JSON.stringify({ message: { content: 'Hello!' } }))
+    }
+    res.statusCode = 404
+    res.end('{}')
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  t.after(() => server.close())
+  const address = server.address()
+  assert.ok(address && typeof address !== 'string')
+  const script = fileURLToPath(new URL('../scripts/setup-ollama.mjs', import.meta.url))
+  const run = (model: string) => promisify(execFile)(process.execPath, [script], {
+    timeout: 10_000,
+    env: {
+      ...process.env,
+      DAFEIYU_OLLAMA_MODEL: model,
+      DAFEIYU_OLLAMA_URL: `http://127.0.0.1:${address.port}`,
+      DAFEIYU_OLLAMA_PROXY: 'direct',
+      DAFEIYU_OLLAMA_SOURCE: '',
+      DAFEIYU_MODELSCOPE_REPO: '',
+      DAFEIYU_MODELSCOPE_FILE: '',
+    },
+  })
+  const gemma = 'gemma3:270m'
+  const babyBoon = 'hf.co/maureesewilliams/baby-boon:Q4_K_M'
+  assert.match((await run(gemma)).stdout, /Ollama 官方仓库[\s\S]*50%[\s\S]*gemma3:270m 已就绪/)
+  assert.match((await run(babyBoon)).stdout, /Hugging Face GGUF[\s\S]*50%[\s\S]*baby-boon:Q4_K_M 已就绪/)
+  assert.match((await run(babyBoon)).stdout, /已安装 hf\.co\/maureesewilliams\/baby-boon:Q4_K_M/)
+  assert.deepEqual(paths, [
+    '/api/version', '/api/show', '/api/pull', '/api/chat',
+    '/api/version', '/api/show', '/api/pull', '/api/chat',
+    '/api/version', '/api/show', '/api/chat',
+  ])
+  assert.deepEqual(requestedModels, [gemma, gemma, gemma, ...Array(5).fill(babyBoon)])
+  assert.match(verificationPrompts[0]!, /请用中文/)
+  assert.match(verificationPrompts[1]!, /Say hello/)
 })

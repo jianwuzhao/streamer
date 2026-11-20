@@ -91,7 +91,7 @@ export async function runSelfCheck(opts: {
   }
   items.push({
     id: 'local_model', label: '本地推理端点（Ollama）', ok: ollamaOk, detail: ollamaDetail,
-    ...(ollamaOk ? {} : { fixAction: '安装/启动 Ollama 并拉取 Qwen3-4B-Instruct-2507 量化产物；未就绪时仅本地规则与固定回复可用' }),
+    ...(ollamaOk ? {} : { fixAction: '在「模型与云端」选择本地模型并一键部署' }),
   })
 
   // 6. GPU 探测（开发机/无驱动 ⇒ 在线训练不可验收，如实标注）

@@ -1,0 +1,47 @@
+name: Verify Ollama deployment on Windows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            arch: x64
+          - runner: windows-11-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          architecture: ${{ matrix.arch }}
+      - name: Install portable Ollama and verify a model
+        shell: pwsh
+        env:
+          DAFEIYU_OLLAMA_MODEL: qwen2.5:0.5b
+          DAFEIYU_OLLAMA_URL: http://127.0.0.1:11435
+          DAFEIYU_OLLAMA_PROXY: direct
+          OLLAMA_MODELS: ${{ runner.temp }}/ollama-models
+        run: |
+          $env:DAFEIYU_DATA_DIR = Join-Path $env:RUNNER_TEMP '大肥鱼 Ollama'
+          node scripts/setup-ollama.mjs
+          if ($LASTEXITCODE -ne 0) {
+            $log = Join-Path $env:DAFEIYU_DATA_DIR 'ollama/serve.log'
+            if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 80 }
+            exit $LASTEXITCODE
+          }
+          $portable = Get-ChildItem -LiteralPath (Join-Path $env:DAFEIYU_DATA_DIR 'ollama') -Filter 'ollama.exe' -Recurse
+          if (!$portable) { throw 'The portable Ollama executable was not installed.' }
+          $retryOutput = node scripts/setup-ollama.mjs
+          $retryOutput | Write-Output
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($retryOutput -match '模型来源：') { throw 'The second run downloaded the model again.' }
