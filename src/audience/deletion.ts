@@ -81,6 +81,8 @@ export class DeletionService {
       `UPDATE viewer_profiles SET deletion_status = 'deleted' WHERE viewer_key = ?`,
       opts.viewerKey,
     )
+    run(this.db, 'DELETE FROM live_relationship_memory WHERE viewer_key = ?', opts.viewerKey)
+    run(this.db, 'DELETE FROM live_viewer_interactions WHERE viewer_key = ?', opts.viewerKey)
     run(
       this.db,
       `UPDATE privacy_requests SET status = 'resolved', resolved_at = ? WHERE request_id = ?`,

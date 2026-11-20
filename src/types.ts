@@ -124,6 +124,8 @@ export interface AnswerReceipt {
   readonly text: string
   readonly route: AnswerRoute
   readonly reasonCode?: ReasonCode
+  readonly replyKind?: 'preset' | 'reaction' | 'clarification'
+  readonly routingReason?: 'local_first' | 'cloud_only' | 'deep' | 'local_failed' | 'cloud_failed'
   readonly usageId: number | null
   readonly model?: string | null
   readonly tokensIn?: number | null

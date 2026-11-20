@@ -527,4 +527,52 @@ ALTER TABLE usage ADD COLUMN tokens_total INTEGER;
 ALTER TABLE reply_log ADD COLUMN usage_id INTEGER;
 `,
   },
+  {
+    version: 12,
+    name: '012_live_memory_and_cloud_requests',
+    sql: `
+CREATE TABLE live_viewer_interactions (
+  viewer_key TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  profile_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  topic TEXT,
+  observed_at TEXT NOT NULL,
+  PRIMARY KEY (viewer_key, source_id)
+);
+CREATE INDEX idx_live_viewer_recent ON live_viewer_interactions(viewer_key, observed_at DESC);
+CREATE TABLE live_relationship_memory (
+  viewer_key TEXT NOT NULL,
+  profile_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  value TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  observed_at TEXT NOT NULL,
+  PRIMARY KEY (viewer_key, profile_id, kind)
+);
+CREATE TABLE live_program_memory (
+  id TEXT PRIMARY KEY,
+  workspace TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  profile_id TEXT NOT NULL,
+  topic TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_live_program_workspace ON live_program_memory(workspace, updated_at DESC);
+CREATE TABLE cloud_requests (
+  id INTEGER PRIMARY KEY,
+  budget_day TEXT NOT NULL,
+  model TEXT NOT NULL,
+  reserved_cny REAL,
+  cost_cny REAL,
+  tokens_in INTEGER,
+  tokens_out INTEGER,
+  tokens_total INTEGER,
+  status TEXT NOT NULL DEFAULT 'pending'
+);
+CREATE INDEX idx_cloud_requests_day ON cloud_requests(budget_day);
+`,
+  },
 ]
